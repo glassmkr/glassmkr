@@ -32,6 +32,16 @@ class FakeDb {
 
   private exec(txId: number, sql: string, params: unknown[]): { rows: Row[]; rowCount: number } {
     this.log.push({ tx: txId, sql: sql.trim().split("\n")[0].trim() });
+    // Postgres rejects NUL (0x00) in text/varchar values with "unterminated
+    // quoted string" / "invalid byte sequence". The first enroll token target
+    // joined its parts with a NUL and was INSERTed into a TEXT column, so every
+    // real enroll threw while this fake stored it silently and the suite passed.
+    // Model the constraint so that class of bug fails here, not only in prod.
+    for (const v of params) {
+      if (typeof v === "string" && v.includes("\u0000")) {
+        throw new Error('invalid byte sequence: NUL (0x00) is not allowed in a Postgres text value');
+      }
+    }
     if (this.failOn && sql.includes(this.failOn)) {
       this.failOn = null;
       throw new Error("injected statement failure");
@@ -364,6 +374,43 @@ describe("enrollment cannot create a duplicate name", () => {
     db.servers.set("srv_9", { id: "srv_9", customer_id: CUST, name: "web-9", status: "active" });
     const res = await confirmedEnroll({ customerId: CUST, name: "web-9", token, confirmName: "web-9" });
     expect(res).toEqual({ ok: false, reason: "name_taken" });
+  });
+});
+
+describe("the enroll token target is Postgres-safe", () => {
+  // Regression for the NUL-byte enroll bug (2026-08-30): the target is stored
+  // in mcp_confirm_tokens.target (TEXT), and Postgres rejects NUL. The first
+  // enrollTarget joined its parts with a NUL, so every real enroll threw a
+  // caught INTERNAL_ERROR while prepare succeeded and this suite passed. The
+  // fake now rejects NUL params too, so a regression fails here.
+  const nul = String.fromCharCode(0);
+
+  it("emits no NUL byte, for any combination of parts", () => {
+    for (const t of [
+      enrollTarget("web-1"),
+      enrollTarget("web-1", "web-1.example.com"),
+      enrollTarget("web-1", "web-1.example.com", ["prod", "eu"]),
+      enrollTarget("a b c", null, []),
+    ]) {
+      expect(t.includes(nul)).toBe(false);
+    }
+  });
+
+  it("stays injective across the parts (no cross-part collision)", () => {
+    const seen = new Set([
+      enrollTarget("a", "b", ["c"]),
+      enrollTarget("a", "b", ["c", "d"]),
+      enrollTarget("a", "bc", ["d"]),
+      enrollTarget("ab", "c", ["d"]),
+      enrollTarget("a", null, ["b", "c"]),
+    ]);
+    expect(seen.size).toBe(5);
+  });
+
+  it("the fake DB rejects a NUL param, matching Postgres", () => {
+    // Guards the guard: if this ever stops throwing, the fake has drifted from
+    // Postgres and the NUL class stops being caught here.
+    expect(() => db.query("INSERT INTO t (x) VALUES ($1)", [`a${nul}b`])).rejects.toThrow(/NUL/);
   });
 });
 
