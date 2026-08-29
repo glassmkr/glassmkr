@@ -1356,18 +1356,6 @@
     border-radius: 4px;
     padding: 18px 22px;
   }
-  .tw-upgrade h3 {
-    margin: 0 0 8px;
-    font-size: 15px;
-    font-weight: 600;
-    color: #ECEEF1;
-  }
-  .tw-upgrade p {
-    margin: 0 0 10px;
-    font-size: 13px;
-    color: #A2A9B4;
-    line-height: 1.55;
-  }
   .tw-upgrade-actions {
     display: flex;
     gap: 8px;

@@ -107,4 +107,13 @@
     font-size: 13px;
     color: var(--text-secondary);
   }
+  /* 24px minimum tap target on the standalone auth links (prelaunch audit).
+     inline-block + line-height grows the hit area without breaking the
+     sentence flow; WCAG 2.5.5 exempts inline links but the audit asked for it. */
+  .switch-link a {
+    display: inline-block;
+    min-height: 24px;
+    line-height: 24px;
+    padding: 0 2px;
+  }
 </style>

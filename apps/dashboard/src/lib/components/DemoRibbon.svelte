@@ -107,10 +107,6 @@
     position: relative;
     z-index: 95;
   }
-  .dot {
-    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
-    box-shadow: 0 0 0 3px rgba(70, 185, 138, 0.18); flex-shrink: 0;
-  }
   .label { font-weight: 600; color: var(--text-primary); }
   .sub { color: var(--text-secondary); }
 

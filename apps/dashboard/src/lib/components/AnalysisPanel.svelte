@@ -335,7 +335,6 @@
     border: 1px solid var(--surface-border);
     border-radius: 4px;
   }
-  .analysis-upgrade p { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
   .optimizations { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--surface-border); }
   .optimizations h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: 8px; }
   .optimizations ul { list-style: none; padding: 0; margin: 0; }
