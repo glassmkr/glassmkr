@@ -1,0 +1,92 @@
+name: Deploy
+
+# Deploy triggers directly on push to main (i.e. PR squash-merge).
+# Previously chained via workflow_run on CI, but CI no longer runs on
+# push:main (CI runs only on PR, gating the merge). PR CI must pass for
+# merge to be allowed, so the deploy is still gated on green CI —
+# branch protection enforces it, not the workflow_run chain.
+on:
+  push:
+    branches: [main]
+
+# Serialize deploys. deploy.sh runs `pnpm turbo build` into a shared build
+# directory on the host and swaps systemd services; two runs overlapping
+# race those outputs and can leave a torn build (manifest referencing a
+# chunk the interleaved build overwrote), which 500s every site. With this
+# group, a deploy triggered while another is in flight queues until the
+# first finishes instead of running concurrently. cancel-in-progress:false
+# so we never abort a deploy mid-swap. (2026-05-31 incident: rapid
+# back-to-back merges took prod down via exactly this race.)
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+# Least-privilege (security audit 2026-05-22, T-101). Deploy uses SSH
+# secrets to run the remote deploy script; it does not write back to
+# GitHub. contents:read is the tightest correct scope.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Services
+    runs-on: ubuntu-latest
+    # Armed by the DEPLOY_ENABLED repository variable plus the DEPLOY_* secrets,
+    # set by the maintainer at the public-canonical cutover (2026-08-30). Until
+    # both exist, pushes to main build nothing here and fail nothing here.
+    # Actions secrets are not exposed to forks or pull requests; this job runs
+    # only on push to main of THIS repository.
+    if: ${{ vars.DEPLOY_ENABLED == '1' }}
+    steps:
+      - name: Deploy over SSH
+        # SHA-pinned (T-103). v1.2.5 as of 2026-05-26.
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            # Refresh the repo and the invoked copy of the deployer BEFORE
+            # running it.
+            #
+            # The workflow invokes /home/agent/deploy.sh rather than the repo's
+            # scripts/deploy.sh on purpose: the deployer does `git reset --hard`
+            # on its own repository, and bash reads a script incrementally, so
+            # executing the file that the reset is about to rewrite can run half
+            # of one version and half of another.
+            #
+            # The cost used to be silent drift: nothing updated the copy, so
+            # every edit to scripts/deploy.sh landed in git, changed nothing,
+            # and looked deployed. Doing the copy here, as a completed step
+            # before execution begins, closes the drift AND keeps the
+            # incremental-read safety, because the file is whole before bash
+            # opens it.
+            cd /home/agent/glassmkr-sveltekit
+            # Public-canonical cutover: the production checkout tracked the
+            # private repository until 2026-08-30. Idempotent and self-healing;
+            # the public repository needs no credentials to fetch.
+            git remote set-url origin https://github.com/glassmkr/glassmkr.git
+            git fetch --all --quiet
+            # Extract ONLY the deployer from the fetched ref. Deliberately not a
+            # `git reset` here: deploy.sh does its own reset and then compares
+            # the SHA it moved from against the one it moved to, so resetting
+            # first makes every deploy look like a no-op and skip the build
+            # entirely. That happened once, on 2026-08-28, and a silent no-op
+            # deploy is worse than a failing one.
+            # Stage the deployer AND its helper from the SAME fetched revision.
+            # deploy.sh sources scripts/lib/nginx-prune.sh; taking one from the
+            # new revision while the other comes from whatever is in the
+            # worktree is version skew in the code that runs `sudo rm` against
+            # prod nginx. Both are written to temporary names and moved into
+            # place, so an interrupted fetch cannot leave a half-written
+            # deployer that then executes.
+            mkdir -p /home/agent/deploy-lib
+            git show origin/main:scripts/deploy.sh > /home/agent/deploy.sh.new
+            git show origin/main:scripts/lib/nginx-prune.sh > /home/agent/deploy-lib/nginx-prune.sh.new
+            mv /home/agent/deploy-lib/nginx-prune.sh.new /home/agent/deploy-lib/nginx-prune.sh
+            mv /home/agent/deploy.sh.new /home/agent/deploy.sh
+            chmod +x /home/agent/deploy.sh
+            /home/agent/deploy.sh

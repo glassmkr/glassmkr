@@ -15,7 +15,7 @@
 // scripts/check-rendered.mjs fetches the URL below and fails if reality and this
 // flag disagree in EITHER direction, so a forgotten flip is caught by the same
 // suite that runs against the live site.
-export const DASHBOARD_REPO_PUBLIC = false;
+export const DASHBOARD_REPO_PUBLIC = true;
 
 export const DASHBOARD_REPO_URL = "https://github.com/glassmkr/glassmkr";
 export const AGENT_REPO_URL = "https://github.com/glassmkr/crucible";

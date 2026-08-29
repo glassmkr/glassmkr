@@ -111,7 +111,7 @@
 
       <details>
         <summary>Is Glassmkr open source?</summary>
-        <p>Yes, entirely. The dashboard monorepo is AGPL-3.0-only at <a href="https://github.com/glassmkr/crucible">github.com/glassmkr/crucible</a>; the Crucible agent is AGPL-3.0-only at <a href="https://github.com/glassmkr/crucible">github.com/glassmkr/crucible</a>. One Docker Compose file runs the whole stack on your own hardware: see <a href="/docs/self-hosting">/docs/self-hosting</a>.</p>
+        <p>Yes, entirely. The dashboard monorepo is AGPL-3.0-only at <a href="https://github.com/glassmkr/glassmkr">github.com/glassmkr/glassmkr</a>; the Crucible agent is AGPL-3.0-only at <a href="https://github.com/glassmkr/crucible">github.com/glassmkr/crucible</a>. One Docker Compose file runs the whole stack on your own hardware: see <a href="/docs/self-hosting">/docs/self-hosting</a>.</p>
       </details>
 
       <details>
@@ -210,7 +210,7 @@ sudo rm -rf /etc/glassmkr</code></pre>
 
       <details>
         <summary>Can I self-host the dashboard?</summary>
-        <p>Yes. The entire stack is open source: the dashboard monorepo (including the alert evaluation engine) is AGPL-3.0-only at <a href="https://github.com/glassmkr/crucible">github.com/glassmkr/crucible</a>, and the Crucible agent is AGPL-3.0-only at <a href="https://github.com/glassmkr/crucible">github.com/glassmkr/crucible</a>. One Docker Compose file brings it up: see <a href="/docs/self-hosting">/docs/self-hosting</a>. On your own instance, your data never leaves your hardware.</p>
+        <p>Yes. The entire stack is open source: the dashboard monorepo (including the alert evaluation engine) is AGPL-3.0-only at <a href="https://github.com/glassmkr/glassmkr">github.com/glassmkr/glassmkr</a>, and the Crucible agent is AGPL-3.0-only at <a href="https://github.com/glassmkr/crucible">github.com/glassmkr/crucible</a>. One Docker Compose file brings it up: see <a href="/docs/self-hosting">/docs/self-hosting</a>. On your own instance, your data never leaves your hardware.</p>
       </details>
     </section>
 
