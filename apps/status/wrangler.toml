@@ -1,0 +1,9 @@
+# Cloudflare Pages project config for the status page.
+#
+# nodejs_compat is required: gray-matter parses the build-time-inlined incident
+# markdown at request time and pulls in Node builtins (Buffer, path). Without
+# the flag the Worker throws at runtime even though the build succeeds.
+name = "glassmkr-status"
+pages_build_output_dir = ".svelte-kit/cloudflare"
+compatibility_date = "2026-07-25"
+compatibility_flags = ["nodejs_compat"]

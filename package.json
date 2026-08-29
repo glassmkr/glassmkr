@@ -1,0 +1,51 @@
+{
+  "name": "glassmkr",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check": "turbo check",
+    "test": "turbo test",
+    "clean": "turbo clean",
+    "validate:rules": "node scripts/validate-rule-ids.mjs",
+    "lint:bola": "node scripts/lint-account-id-constraint.mjs",
+    "lint:bola:test": "node scripts/lint-account-id-constraint.test.mjs",
+    "lint:tier-gating": "node scripts/lint-tier-gating.mjs",
+    "lint:emdash": "node scripts/lint-no-emdash.mjs",
+    "lint:deploy-prebuild-sync": "node scripts/lint-deploy-prebuild-sync.mjs",
+    "lint:migrate-noop:test": "node scripts/migrate-silent-noop.test.mjs",
+    "lint:clickhouse-params": "node scripts/lint-clickhouse-params.mjs",
+    "lint:clickhouse-params:test": "node scripts/lint-clickhouse-params.test.mjs",
+    "lint:fallback-version": "node scripts/lint-fallback-version.mjs",
+    "lint:fallback-version:test": "node scripts/lint-fallback-version.test.mjs",
+    "lint:rule-category": "node scripts/lint-rule-category.mjs",
+    "lint:rule-category:test": "node scripts/lint-rule-category.test.mjs",
+    "lint:rule-count": "node scripts/lint-rule-count.mjs",
+    "lint:rule-count:test": "node scripts/lint-rule-count.test.mjs",
+    "validate:rules:test": "node scripts/validate-rule-ids.test.mjs",
+    "test:nginx-prune": "bash scripts/test-nginx-prune.sh",
+    "check:exhibits": "node scripts/check-exhibits.mjs",
+    "check:rendered": "node scripts/check-rendered.mjs",
+    "lint:comment-leak": "node scripts/lint-orphaned-comment-text.mjs",
+    "lint:comment-leak:test": "node scripts/lint-orphaned-comment-text.test.mjs",
+    "lint:plan-language": "node scripts/lint-plan-language.mjs",
+    "lint:plan-language:test": "node scripts/lint-plan-language.test.mjs",
+    "gen-openapi:test": "node scripts/gen-openapi.test.mjs"
+  },
+  "devDependencies": {
+    "@glassmkr/crucible": "^0.13.16",
+    "turbo": "^2.5.0",
+    "vitest": "^4.1.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "devalue@>=5.6.3 <=5.8.0": ">=5.8.1",
+      "postcss@<8.5.10": ">=8.5.15",
+      "uuid@<11.1.1": ">=11.1.1 <12",
+      "cookie@<0.7.0": ">=0.7.0"
+    }
+  },
+  "packageManager": "pnpm@9.15.0",
+  "license": "AGPL-3.0-only"
+}

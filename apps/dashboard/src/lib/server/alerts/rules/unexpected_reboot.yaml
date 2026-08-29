@@ -1,0 +1,260 @@
+# unexpected_reboot; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B7.
+#
+# Single-severity rule (always critical). No condition_match split.
+# The evaluator lives in a separate function (evaluateUnexpectedReboot)
+# because it needs previous-snapshot uptime context; the main rules
+# array contains only a stub returning []. Operator action is forensic:
+# find the cause from logs/IPMI before declaring the box healthy.
+#
+# Planned-reboot suppression already happens in evaluateUnexpectedReboot
+# (operator runs `glassmkr-crucible mark-reboot`); this YAML only fires for
+# actually-unexpected reboots, so the fix is always "investigate cause".
+id: unexpected_reboot
+priority: P1
+# Forensic rule: reboot already happened; uptime resets and there is no
+# automatic signal to clear the alert. Operator closes after reading
+# logs/IPMI SEL to identify cause.
+manual_resolve: true
+# Codex 2026-05-22B F6: was `subordinate_to: kernel_panic_detected`. That
+# parent rule was speculatively pre-declared during the C4 work but never
+# shipped (pstore + kdump + wtmp evidence collected but no rule emits
+# `kernel_panic_detected`). Runtime subordination fails open (loader does
+# not throw on forward refs; the runtime simply never finds the parent in
+# active_alerts and emits independently), so this is not alert loss, but
+# the YAML was promising a collapse that can never happen. Drop the
+# reference. If a real kernel_panic_detected rule lands later, the
+# subordination edge can be re-introduced explicitly.
+title: Unexpected reboot
+summary: "Server rebooted without an operator-acknowledged planned reboot. Possible causes: kernel panic, hardware fault (PSU brownout, thermal shutdown, watchdog), power outage, or remote reboot via BMC."
+fix:
+  quick_check:
+    command: |
+      last reboot | head -10
+      uptime
+      sudo journalctl --list-boots --no-pager 2>/dev/null | head -10
+      # Was the previous shutdown clean?
+      sudo journalctl -b -1 --no-pager 2>/dev/null | tail -50 | grep -iE 'shutdown|systemd-shutdown|reached target' | tail -10
+    description: "Reboot history + current uptime + last-boot journal tail showing whether the previous shutdown was clean. A clean shutdown ends with 'systemd-shutdown' / 'Reached target Shutdown' lines; their absence is the signal."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (the host is back up; the reboot is in the past)
+    - BMC / IPMI access for SEL inspection (the most reliable post-mortem source for hardware-caused reboots)
+    - "Awareness that some causes (power loss, watchdog) leave no OS-side log; IPMI SEL may be the only evidence"
+    - Time to investigate before declaring resolved (premature dismissal masks recurring faults)
+  safe_mode:
+    command: |
+      uptime
+      last reboot --since '24 hours ago' 2>/dev/null
+      journalctl --list-boots --no-pager
+      sudo ipmitool sel elist 2>/dev/null | tail -30
+      sudo dmesg -T | head -30
+    description: |
+      Read-only post-mortem. `uptime` confirms how recent the
+      reboot is. `last reboot` and `journalctl --list-boots`
+      show reboot history with timestamps. ipmitool SEL is the
+      authoritative hardware view; kernel panics and OS
+      shutdowns leave no SEL entry, hardware faults do.
+      `dmesg -T` head shows what the kernel says about the
+      current boot (drivers loading, initial errors).
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: investigate the cause from multiple sources.
+        # Classify into: hardware, kernel panic, power, or watchdog.
+
+        # 1. When + how recent
+        uptime
+        last reboot 2>/dev/null | head -5
+        journalctl --list-boots --no-pager | tail -5
+
+        # 2. Hardware view (IPMI SEL); most authoritative for
+        #    power / thermal / watchdog causes
+        sudo ipmitool sel elist 2>/dev/null | tail -40
+        # Look for events with timestamps just before reboot:
+        #   - "Power Supply: Power Lost" -> facility / cord issue
+        #   - "Power Unit: Power off/down" -> intentional / button
+        #   - "Watchdog 2: Hard reset" -> kernel hung, watchdog fired
+        #   - "Temperature: Upper Critical" -> thermal shutdown
+        #   - "OS Stop/Shutdown: OS graceful shutdown" -> planned-ish
+
+        # 3. Kernel-panic view; look at the PREVIOUS boot's tail
+        sudo journalctl -b -1 --no-pager | tail -100
+        # Search for: "Kernel panic", "BUG:", "Oops:", "Hardware
+        # Error", "general protection fault".
+
+        # 4. systemd-side view; what was running when it died
+        sudo journalctl -b -1 -p err --no-pager | tail -30
+
+        # 5. Persistent panic logs; three places to check:
+        #
+        # 5a. pstore (kernel writes a crash dump here just before
+        #     reboot if the platform supports it; UEFI ESRT, ACPI ERST,
+        #     or similar backend). This is THE most reliable kernel-
+        #     panic post-mortem source on modern hardware.
+        ls -la /sys/fs/pstore/ 2>/dev/null
+        # If files exist, each `dmesg-*-N` is a separately-saved crash log.
+        # Read them in order:
+        sudo cat /sys/fs/pstore/dmesg-* 2>/dev/null | tail -100
+        # IMPORTANT: pstore files persist across reboots but get consumed
+        # by /usr/lib/systemd/systemd-pstore on boot (moved to /var/lib/
+        # systemd/pstore/). If /sys/fs/pstore/ is empty, look there:
+        ls -la /var/lib/systemd/pstore/ 2>/dev/null
+        sudo cat /var/lib/systemd/pstore/*/dmesg.txt 2>/dev/null | tail -100
+        #
+        # 5b. kdump (full vmcore; heavier, requires kdump-tools configured)
+        ls -la /var/crash/ 2>/dev/null
+        ls -la /var/log/kdump/ 2>/dev/null
+        # If a vmcore exists, the dmesg-* file alongside it has the panic
+        # backtrace; on RHEL-family:
+        # sudo crash /usr/lib/debug/lib/modules/$(uname -r)/vmlinux /var/crash/*/vmcore
+        # On Debian-family: sudo apt-get install crash; same usage.
+        # Quick textual summary without full crash session:
+        sudo vmcore-dmesg /var/crash/*/vmcore 2>/dev/null | tail -60
+        #
+        # 5c. systemd-pstore unit status (tells you if the pstore
+        #     migration ran on this boot; i.e., a crash from the PRIOR
+        #     boot was captured):
+        systemctl status systemd-pstore 2>/dev/null | tail -5
+
+        # 6. Hypervisor / cloud view (if this is a VM or cloud instance):
+        #
+        #    AWS EC2:
+        #      - Console: EC2 -> Instances -> Actions -> Monitor and
+        #        troubleshoot -> Get system log; "Get console output"
+        #        gives the last 64 KB of serial output.
+        #      - EC2 stops/restarts the instance for host-side faults;
+        #        "Instance status checks" page shows "2/2" pass or fail
+        #        and CloudWatch events log host-side replacements.
+        #
+        #    GCP Compute Engine:
+        #      - `gcloud compute instances get-serial-port-output <name>`
+        #        gives full serial log (huge). Live serial during boot:
+        #        `gcloud compute instances tail-serial-port-output <name>`.
+        #      - Live migration vs reboot: check the instance's Operations
+        #        log for `compute.instances.live-migrate` vs reboot events.
+        #
+        #    Hetzner / OVH / other bare-metal:
+        #      - Provider portal usually exposes BMC console.
+        #      - Most providers do NOT replace failing hardware
+        #        automatically; their fault is to escalate.
+
+        # 7. Once cause is identified, take focused action:
+        #    a) Hardware fault -> see ipmi_sel_critical / ecc_errors
+        #       / cpu_temperature_high / ipmi_fan_failure as
+        #       appropriate.
+        #    b) Kernel panic -> file a kernel bug + plan kernel
+        #       upgrade; check kernel_vulnerabilities + kernel_needs_reboot.
+        #    c) Power loss -> facility ticket; verify UPS health.
+        #    d) Watchdog -> investigate the hang (was kernel
+        #       responsive? what was the last log line?).
+        #    e) Cause indeterminate -> document + monitor for
+        #       recurrence (one-off reboots rarely repeat in a
+        #       useful pattern).
+      description: |
+        Main path: collect IPMI SEL + kernel logs from the previous
+        boot + uptime context, classify cause, hand off to the
+        focused rule (ipmi_sel_critical / ecc_errors / etc.) or
+        document if cause is indeterminate.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence shape missing. Run the same post-
+        # mortem manually.
+        uptime
+        last reboot 2>/dev/null
+        sudo journalctl -b -1 --no-pager | tail -50
+        sudo ipmitool sel elist 2>/dev/null | tail -30
+      description: |
+        Missing-evidence fallback. Same post-mortem flow as the
+        main variant; runs without the convenience of evidence-
+        provided previous-uptime context.
+  validation:
+    command: |
+      # Assert the alert's own condition has cleared instead of printing
+      # uptime and leaving it to the reader. The rule fires while
+      # uptime_seconds < 600 on an unacknowledged reboot, so clearing means
+      # the host is past that window and has come back cleanly.
+      #
+      # Missing inputs fail rather than pass.
+      UP=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+      case "$UP" in ''|*[!0-9]*) echo 'CANNOT VERIFY: /proc/uptime unavailable'; exit 1 ;; esac
+      if [ "$UP" -lt 600 ]; then
+        echo "STILL IN THE ALERT WINDOW: up ${UP}s, rule clears at 600s"; exit 1
+      fi
+      FAILED=$(systemctl --failed --no-legend --no-pager 2>/dev/null | grep -c . || true)
+      if [ "${FAILED:-0}" -gt 0 ]; then
+        echo "CAME BACK DEGRADED: ${FAILED} failed unit(s)"
+        systemctl --failed --no-pager
+        exit 1
+      fi
+      # A new critical SEL entry means the reboot cause is still active.
+      # Absent ipmitool is not a failure: plenty of hosts have no BMC.
+      if command -v ipmitool >/dev/null 2>&1; then
+        sudo ipmitool sel list 2>/dev/null | tail -5
+      fi
+      echo "OK: up ${UP}s (past the 600s alert window), no failed units"
+    description: |
+      After fix (or after documenting the cause), confirm the host
+      is healthy:
+      - Uptime is growing (no further reboots)
+      - No failed units in --failed
+      - SEL info shows no new critical events
+      Re-firing the alert means another reboot happened; escalate.
+  rollback:
+    available: false
+    command: null
+    note: |
+      A reboot is not reversible; the system is in its new state.
+      The investigation is the workflow; there is nothing to "roll
+      back". If the cause is recurring and hardware-related,
+      replacement of the failing component is the fix and is
+      irreversible in itself. If kernel-panic-induced, kernel
+      package downgrade is technically possible but rarely the
+      right move (the bug is usually a config issue or driver
+      conflict, not a regression in the new kernel).
+  impact:
+    blast_radius: |
+      Investigation commands are non-disruptive. Focused
+      remediation (hardware swap, kernel upgrade, facility
+      ticket) has the blast radius of the focused rule it hands
+      off to.
+    estimated_duration: |
+      Investigation: 30 minutes - several hours depending on
+      log clarity. Focused remediation: see the handed-off
+      rule's estimated_duration. Documenting indeterminate
+      cause + monitoring window: 7-30 days observation before
+      declaring the one-off truly one-off.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from journalctl(1) --list-boots / -b -1,
+      last(1), ipmitool(1) sel, kdump(8). The "IPMI SEL is the
+      only source for hardware-caused reboots" insight is
+      important; kernel panic + thermal shutdown leave no
+      OS log because the OS was dead before it could write.
+      Planned-reboot suppression is handled by the evaluator's
+      mark-reboot path; this YAML only fires on actually-
+      unexpected reboots. Not deliberately re-triggered on
+      validation fleet (would require crashing a live host).
+
+      Pattern library 2026-05-18: Category 6 / 7 (system state).
+      pstore + kdump + wtmp enrichment activated 2026-05-19 per
+      CC_SPEC_FORGE_C1_C6_DEFERRED_TUNES §3, consuming Crucible
+      v0.10.4 snap.reboot_evidence. Severity now depends on
+      corroboration: any of pstore_present, vmcore_present, or
+      prior_shutdown_clean === false bumps the alert to critical;
+      uptime-only detection emits at warning (lower-signal). The
+      detection_signals object in evidence carries the four boolean
+      flags so the dashboard surface can render the corroboration
+      story. Pre-0.10.4 agents see no enrichment and uniformly
+      emit at warning. subordinate_to: kernel_panic_detected wired
+      so when both fire on the same host (after kernel_panic_detected
+      rule ships in a follow-up PR), this rule demotes to
+      evidence-only.

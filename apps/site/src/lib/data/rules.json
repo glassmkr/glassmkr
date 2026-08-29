@@ -1,0 +1,492 @@
+[
+  {
+    "id": "disk_io_errors",
+    "priority": "P1",
+    "title": "Disk I/O errors",
+    "summary": "Kernel logged I/O errors against one or more block devices. Indicates failing storage hardware, a flaky cable/controller, or filesystem corruption. Investigate immediately to prevent data loss.",
+    "_category": "Storage"
+  },
+  {
+    "id": "disk_latency_high",
+    "priority": "P3",
+    "title": "Disk latency high",
+    "summary": "Disk's average read or write latency exceeds the threshold under non-trivial IOPS load. Indicates a struggling drive, saturated I/O queue, in-progress RAID rebuild, or noisy-neighbor workload.",
+    "_category": "Storage"
+  },
+  {
+    "id": "drive_smart_unreadable",
+    "priority": "P2",
+    "title": "Disks present but SMART is unreadable",
+    "summary": "One or more fixed disks are present but their SMART health cannot be read, so their health is invisible to monitoring. This is NOT a drive fault: it is a coverage gap. The usual cause is that smartmontools (the `smartctl` binary) is not installed, or a disk sits behind a RAID/HBA controller that needs a specific `smartctl -d` device type. While SMART is unreadable, a real failure on the affected disks would not raise smart_failing or wear alerts.\n\nFix by installing smartmontools and confirming each disk reads with `smartctl -H`, or by determining the controller's device type (`smartctl --scan-open`). Acknowledge this advisory if a listed device genuinely exposes no SMART (some virtual or enclosure devices).\n",
+    "_category": "Storage"
+  },
+  {
+    "id": "nvme_critical_warning",
+    "priority": "P1",
+    "title": "NVMe critical warning byte non-zero",
+    "summary": "An NVMe device's Critical Warning byte (NVM Express §5.21) is non-zero. Per spec, any non-zero bit is a vendor-recommended immediate-action signal: temperature threshold exceeded, available spare below threshold, reliability degraded, read-only mode, volatile memory backup failed, or persistent memory region read-only.",
+    "_category": "Storage"
+  },
+  {
+    "id": "nvme_wear_high",
+    "priority": "P2",
+    "title": "SSD wear high",
+    "summary": "A solid-state drive's write-endurance indicator is at or above the configured threshold. This covers both NVMe (percentage-used) and SATA SSDs (Percent_Lifetime_Remain / Wear_Leveling_Count, which Crucible maps into the same percentage-used signal). Plan replacement before the drive enters read-only protection mode at 100%. The rule id stays nvme_wear_high for history; it is not NVMe-only. Use nvme-cli for NVMe devices (/dev/nvmeXnY) and smartctl for SATA SSDs (/dev/sdX); smartctl -a works for both.",
+    "_category": "Storage"
+  },
+  {
+    "id": "raid_degraded",
+    "priority": "P1",
+    "title": "RAID array degraded",
+    "summary": "One or more disks have failed in an mdadm software array or a hardware RAID controller (Dell PERC, LSI/Broadcom MegaRAID, HPE Smart Array, Adaptec). One more failure may cause data loss.",
+    "_category": "Storage"
+  },
+  {
+    "id": "smart_failing",
+    "priority": "P1",
+    "title": "Drive failing per SMART",
+    "summary": "SMART reports a failing drive (reallocated sectors, or aggregate health != PASSED). Back up data and replace the drive.",
+    "_category": "Storage"
+  },
+  {
+    "id": "zfs_pool_unhealthy",
+    "priority": "P1",
+    "title": "ZFS pool unhealthy",
+    "summary": "ZFS pool in non-OPTIMAL state. Severity scales with vdev redundancy class (Crucible v0.10.4+): SUSPENDED pools and FAULTED top-level vdevs page critical; DEGRADED on single/raidz1/mirror_2way pages critical; raidz3/mirror_3way+ pages warning. L2ARC failures emit at info severity (no data loss). SLOG faults handled by zfs_slog_faulted.",
+    "_category": "ZFS"
+  },
+  {
+    "id": "zfs_scrub_errors",
+    "priority": "P1",
+    "title": "ZFS scrub found errors",
+    "summary": "ZFS pool's most recent scrub detected checksum or repair errors, or the pool has not been scrubbed in over 30 days. Errors suggest failing disks or silent corruption; missing scrub is preventive-maintenance gap.",
+    "_category": "ZFS"
+  },
+  {
+    "id": "zfs_slog_faulted",
+    "priority": "P1",
+    "title": "ZFS SLOG vdev faulted",
+    "summary": "A ZIL log vdev (SLOG) is FAULTED or REMOVED. Sync-write durability for the pool is compromised until the SLOG is replaced.",
+    "_category": "ZFS"
+  },
+  {
+    "id": "disk_fill_projection",
+    "priority": "P1",
+    "title": "Disk fill projection imminent",
+    "summary": "Linear projection on filesystem available_bytes indicates exhaustion within 24h (P1) or 7d (P2). Companion to disk_space_high (absolute %).",
+    "_category": "Filesystem"
+  },
+  {
+    "id": "disk_space_high",
+    "priority": "P2",
+    "title": "Disk space high",
+    "summary": "Filesystem usage at or above the configured threshold (default 85%). At 100% services that write to this filesystem will fail; at >=95% the buffer is hours-not-days.",
+    "_category": "Filesystem"
+  },
+  {
+    "id": "fd_exhaustion",
+    "priority": "P1",
+    "title": "File descriptor exhaustion",
+    "summary": "Host-wide file descriptor usage at or above 80% of fs.file-max OR a single process at or above 80% of its RLIMIT_NOFILE soft limit. The per-process path activates with Crucible v0.11.0+; older agents only emit on the host-wide path.",
+    "_category": "Filesystem"
+  },
+  {
+    "id": "filesystem_readonly",
+    "priority": "P1",
+    "title": "Filesystem is read-only",
+    "summary": "A mounted filesystem is read-only, so anything that writes to it will fail; data already on it stays readable. Severity depends on whether the KERNEL corroborates it. If the kernel logged a remount-read-only event, the filesystem was forced read-only because it failed, usually from I/O errors, and this is critical. If only the mount options say read-only, it is reported as a warning and an observation, because that state also has entirely benign causes; an intentionally read-only bind mount, immutable infrastructure, or an operator remount. Confirm which before treating it as a fault.",
+    "_category": "Filesystem"
+  },
+  {
+    "id": "inode_high",
+    "priority": "P2",
+    "title": "Inode usage high",
+    "summary": "Filesystem has many small files; inode usage at or above 85% of the table. At 100%, file creation fails with ENOSPC even though `df -h` shows free space.",
+    "_category": "Filesystem"
+  },
+  {
+    "id": "lvm_thinpool_metadata_high",
+    "priority": "P1",
+    "title": "LVM thin pool metadata near full",
+    "summary": "LVM thin pool metadata volume at or above 80%. Metadata exhaustion is silent and catastrophic: writes across all thin volumes in the pool start failing in unpredictable ways at 100%. Extend the metadata volume before it fills.",
+    "_category": "Filesystem"
+  },
+  {
+    "id": "cpu_high",
+    "priority": "P2",
+    "title": "CPU usage high",
+    "summary": "Aggregate CPU utilization at or above 90% (idle below 10%). Critical at >=98% (idle <2%). Either a runaway process or workload exceeding capacity.",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "cpu_iowait_high",
+    "priority": "P2",
+    "title": "CPU I/O wait high",
+    "summary": "CPU is spending 20%+ of its time waiting on disk I/O. Indicates storage bottleneck; either an overwhelmed device or runaway I/O from one process.",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "cpu_pressure_high",
+    "priority": "P2",
+    "title": "CPU pressure stall sustained",
+    "summary": "PSI reports CPU contention persistently above threshold. Aggregate signal across the host; subordinates cpu_high and load_high to this incident when it fires. Not available on stock RHEL-family kernels (PSI ships disabled there; enable with the psi=1 boot parameter).",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "io_pressure_high",
+    "priority": "P2",
+    "title": "I/O pressure sustained",
+    "summary": "PSI reports I/O contention with corroborating disk-latency or error signal. Catches the modern-NVMe case where iowait stays at zero but the CPU is briefly blocking on I/O often enough to matter. Not available on stock RHEL-family kernels (PSI ships disabled there; enable with the psi=1 boot parameter).",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "load_high",
+    "priority": "P3",
+    "title": "Load average high",
+    "summary": "1-minute load average exceeds 2x the CPU core count for several minutes. Usually indicates an I/O bottleneck (high D-state processes) rather than pure CPU saturation.",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "mem_pressure_high",
+    "priority": "P1",
+    "title": "Memory pressure sustained",
+    "summary": "PSI reports memory contention with active paging or rapid MemAvailable decline. Real pressure signal, not used% noise. Not available on stock RHEL-family kernels (PSI ships disabled there; enable with the psi=1 boot parameter).",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "oom_kills",
+    "priority": "P1",
+    "title": "OOM killer recently fired",
+    "summary": "Kernel out-of-memory killer terminated one or more processes in the recent window. Severe memory pressure or a memory leak. Killed services may be down.",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "ram_high",
+    "priority": "P3",
+    "title": "RAM usage high",
+    "summary": "Memory pressure on the host. Warning at 90%, critical at 95%. Sustained pressure leads to swap thrashing and OOM kills.",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "swap_high",
+    "priority": "P2",
+    "title": "Swap usage high",
+    "summary": "Swap usage at or above 50%. Swap I/O is 10-100x slower than RAM; sustained swap = thrashing. Critical band (>=80%) indicates imminent service degradation.",
+    "_category": "Memory & CPU"
+  },
+  {
+    "id": "accept_backlog_or_syn_flood",
+    "priority": "P1",
+    "title": "Accept backlog or SYN flood",
+    "summary": "2 or more of conntrack_exhaustion / listen_overflow / tcp_retrans_high are active on the same host within 5 minutes. Indicates accept-queue buildup or SYN flood.",
+    "_category": "Network"
+  },
+  {
+    "id": "bond_slave_down",
+    "priority": "P1",
+    "title": "Bond slave interface down",
+    "summary": "A slave NIC in a bonded interface has MII status down. The bond is running with reduced redundancy; one more failure breaks the bond entirely.",
+    "_category": "Network"
+  },
+  {
+    "id": "conntrack_exhaustion",
+    "priority": "P1",
+    "title": "Conntrack table near full",
+    "summary": "Linux nf_conntrack table is at or above 75% capacity. At 100%, new connections are silently dropped; services appear to work but new clients can't connect. Critical band (>=90%) means dropping is imminent.",
+    "_category": "Network"
+  },
+  {
+    "id": "interface_errors",
+    "priority": "P2",
+    "title": "Interface errors high",
+    "summary": "Network interface reports elevated CRC / frame / carrier errors (physical layer) OR elevated packet drops (software ring/softirq layer). Tier red = critical (cable swap or kernel tuning urgent); tier yellow = warning.",
+    "_category": "Network"
+  },
+  {
+    "id": "interface_saturation",
+    "priority": "P3",
+    "title": "Interface near saturation",
+    "summary": "Network interface utilization above the configured threshold (default 90% of negotiated speed). Plan bandwidth upgrade or traffic shaping; queue depth growth predicts the next OOMing connection-handling daemon.",
+    "_category": "Network"
+  },
+  {
+    "id": "lacp_partner_lost",
+    "priority": "P1",
+    "title": "LACP partner lost",
+    "summary": "Bond MII layer reports up but the LACP partner is unsynchronized. The bond appears functional while traffic is dropped by the switch. Also emits a warning when the active aggregator has fewer ports than configured (redundancy reduced).",
+    "_category": "Network"
+  },
+  {
+    "id": "link_speed_mismatch",
+    "priority": "P2",
+    "title": "Link speed mismatch",
+    "summary": "Network interface negotiated a speed at least 2x below the NIC's highest advertised mode. Usually physical-layer or autoneg; sometimes PCIe slot bound; rarely a deliberate operator choice on multi-mode NICs (the 2x floor filters the small-gap case).",
+    "_category": "Network"
+  },
+  {
+    "id": "listen_overflow",
+    "priority": "P2",
+    "title": "TCP listen-queue dropping connections",
+    "summary": "/proc/net/netstat TcpExt ListenOverflows (any non-zero rate) or ListenDrops (at least 1.0/sec sustained) is incrementing; the kernel is dropping arriving connections at accept-queue level. Either the application can't accept() fast enough or net.core.somaxconn is too small for the offered load. The ListenDrops floor avoids paging on quiet hosts that see sporadic long-tail SYN-scan drops.",
+    "_category": "Network"
+  },
+  {
+    "id": "softnet_drops",
+    "priority": "P1",
+    "title": "Kernel softnet dropping packets",
+    "summary": "/proc/net/softnet_stat reports kernel input-queue drops at sustained rate (>1 pkt/s). The NET_RX softirq backlog is filling faster than the kernel can process; packets are being silently discarded. Often correlated with conntrack pressure or CPU pressure.",
+    "_category": "Network"
+  },
+  {
+    "id": "tcp_retrans_high",
+    "priority": "P2",
+    "title": "TCP retransmit rate elevated",
+    "summary": "TCP retransmit ratio (retransmits / segments sent) over the most recent snapshot interval exceeds 2%, gated so the ratio only fires at meaningful traffic volume: at least 1.0 retransmits/sec AND an implied segment rate of at least 50/sec. Above 1% commonly impacts performance; above 5% significantly degrades throughput. The volume gate prevents false alarms on quiet hosts where a handful of retransmits over few segments produces a misleadingly high ratio.",
+    "_category": "Network"
+  },
+  {
+    "id": "cmos_battery_low",
+    "priority": "P3",
+    "title": "CMOS battery low",
+    "summary": "Motherboard CMOS coin-cell battery (CR2032) is reading below 2.6V; the cell is ~80% discharged and may fail to hold BIOS settings across the next power cycle. Replacement is scheduled, not emergency; the host runs fine until cold boot.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "cpu_temperature_high",
+    "priority": "P1",
+    "title": "CPU temperature high",
+    "summary": "CPU thermal reading at or above the warning threshold (default 80°C; critical 90°C). At critical, thermal throttling kicks in and silicon damage risk climbs.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "ecc_errors",
+    "priority": "P1",
+    "title": "ECC memory errors",
+    "summary": "Memory controller reported one or more uncorrectable ECC errors. Data corruption has occurred; the DIMM is failing. Replace immediately.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "ipmi_fan_failure",
+    "priority": "P1",
+    "title": "IPMI fan failure",
+    "summary": "BMC reports one or more chassis fans in critical state or at 0 RPM. Cooling capacity is reduced; CPU temperatures may climb and trigger thermal throttling or emergency shutdown.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "ipmi_monitoring_unavailable",
+    "priority": "P3",
+    "title": "BMC present but unreadable",
+    "summary": "The kernel exposes an IPMI device on this host, so it has a BMC, but the agent read nothing from it. Two different faults look identical from here; the BMC may be silent, or the agent's own privileged access path may be broken, so run the quick check before escalating to hardware. Fan failure, PSU redundancy loss, SEL critical, SEL full and the SEL-derived ECC counts are all inactive while this lasts, and the host will read healthy on every one of them regardless of its real hardware state. If the BMC itself is down then remote power control and console access are unavailable too, so plan on-site help if the machine also needs recovery.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "ipmi_sel_critical",
+    "priority": "P1",
+    "title": "IPMI SEL critical events",
+    "summary": "BMC System Event Log contains one or more critical-severity asserted events in the last N days (default 30). Critical events indicate real hardware faults; DIMM, PSU, fan, voltage, or temperature.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "ipmi_sel_full",
+    "priority": "P3",
+    "title": "IPMI SEL full or near-full",
+    "summary": "The BMC System Event Log is full or near-full. A full SEL silently stops recording new events, so ipmi_sel_critical and the SEL-derived ECC counts go deaf to every future hardware fault. Export the SEL, then clear it so the BMC records again.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "mce_uncorrected",
+    "priority": "P0",
+    "title": "Uncorrected machine check exception",
+    "summary": "EDAC reports an uncorrected memory error. Replace the affected DIMM.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "memory_channels_underpopulated",
+    "priority": "P3",
+    "title": "Memory channels under-populated",
+    "summary": "The board exposes more memory channels than have DIMMs installed (or DIMMs run below rated speed), so peak memory bandwidth is reduced. On EPYC-class boards the alert also flags placement, when the installed DIMMs double up on adjacent channels (one memory-controller group) instead of spreading one per group; the same DIMM count placed wrong idles controllers and weakens interleaving. Not a fault; a hardware-population advisory. Fix is physical DIMM installation or rebalancing during a maintenance window, per the board manual's population table.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "psu_redundancy_loss",
+    "priority": "P1",
+    "title": "PSU redundancy lost",
+    "summary": "One or more PSUs are in fault, absent, or degraded state. Single power failure now risks full server outage. Dell BMCs report this via an aggregate sensor; other vendors via per-PSU sensors.",
+    "_category": "Hardware (BMC/IPMI)"
+  },
+  {
+    "id": "gpu_corrected_ecc_storm",
+    "priority": "P3",
+    "title": "GPU corrected-ECC level high",
+    "summary": "GPU corrected-ECC counter is high or single-bit retired pages are non-zero. SBE storms typically precede DBE faults; this rule gives operators time to plan preventive replacement before uncorrected ECC fires.",
+    "_category": "GPU"
+  },
+  {
+    "id": "gpu_driver_or_firmware_drift",
+    "priority": "P3",
+    "title": "GPU vbios drift within host",
+    "summary": "Multiple GPUs of the same model on this host report different vbios versions. Within-host vbios drift typically indicates a failed firmware update or mixed-batch installation.",
+    "_category": "GPU"
+  },
+  {
+    "id": "gpu_driver_unsafe_reboot",
+    "priority": "P1",
+    "title": "GPU will not survive a reboot",
+    "summary": "This host has an NVIDIA GPU, but either the nvidia kernel module is not loaded (the GPU is unusable now) or nouveau is not blacklisted. If nouveau is not blacklisted it binds the GPU first on the next boot, the nvidia driver cannot load, nvidia-smi fails, and a marketplace (Vast) host silently de-lists itself. The fix is non-disruptive and only affects the next boot.",
+    "_category": "GPU"
+  },
+  {
+    "id": "gpu_pcie_link_degraded",
+    "priority": "P2",
+    "title": "GPU PCIe link degraded",
+    "summary": "GPU's current PCIe gen or width is below the GPU's advertised maximum. Host-to-GPU bandwidth is capped below the GPU's capability; meaningful for large-model loading and PCIe-attached weights, catastrophic for training-style workloads.",
+    "_category": "GPU"
+  },
+  {
+    "id": "gpu_power_cap_throttling",
+    "priority": "P2",
+    "title": "GPU power-cap throttling",
+    "summary": "GPU is being throttled by software power cap (sw_power_cap) or hardware power brake (hw_power_brake_slowdown). May be intentional (operator-configured limit) or unexpected (PSU sizing, chassis power policy).",
+    "_category": "GPU"
+  },
+  {
+    "id": "gpu_thermal_critical",
+    "priority": "P1",
+    "title": "GPU thermal critical",
+    "summary": "GPU die temperature at or above the HW slowdown threshold, or the kernel reports a hardware thermal slowdown. A software thermal slowdown at the card's thermal target (normal load behavior) does not fire. Sustained operation at thermal limits accelerates wear and reduces throughput. Boot grace 300s for post-boot sensor stabilisation.",
+    "_category": "GPU"
+  },
+  {
+    "id": "gpu_uncorrected_ecc",
+    "priority": "P0",
+    "title": "GPU uncorrected ECC or DBE retired pages",
+    "summary": "GPU reports uncorrected ECC errors, double-bit ECC retired pages, or pending retirements. Uncorrected ECC means error correction could not recover; in-flight data may have been corrupted. Pending retirements require a reboot.",
+    "_category": "GPU"
+  },
+  {
+    "id": "gpu_xid_critical",
+    "priority": "P0",
+    "title": "GPU XID critical event",
+    "summary": "NVIDIA XID error classified as critical per NVIDIA's published XID severity table. Hardware-witnessed fault on the GPU; data may be at risk and the workload likely degraded.",
+    "_category": "GPU"
+  },
+  {
+    "id": "nvlink_link_down",
+    "priority": "P1",
+    "title": "NVLink link down",
+    "summary": "An NVLink on a multi-GPU host is in the down state. Multi-GPU bandwidth is reduced; if the GPU participates in NCCL collectives the entire training/inference job's latency degrades.",
+    "_category": "GPU"
+  },
+  {
+    "id": "clock_drift",
+    "priority": "P2",
+    "title": "Clock drift",
+    "summary": "System clock is at least 5 seconds off from upstream NTP. Critical at >=60s; TLS validation, log correlation, database replication, and cron all break.",
+    "_category": "Time & Services"
+  },
+  {
+    "id": "ntp_not_synced",
+    "priority": "P2",
+    "title": "NTP not synced",
+    "summary": "Either the kernel clock is unsynchronized (critical; drift in progress) OR the NTP daemon has stopped while the clock is still synced (warning; drift will start once kernel state expires).",
+    "_category": "Time & Services"
+  },
+  {
+    "id": "service_flapping",
+    "priority": "P1",
+    "title": "systemd service flapping",
+    "summary": "A systemd unit has hit its start-limit (systemd stopped restarting it) OR has restarted 5+ times. A service that can't stabilise consumes resources without delivering value; investigate before bumping restart limits.",
+    "_category": "Time & Services"
+  },
+  {
+    "id": "systemd_service_failed",
+    "priority": "P1",
+    "title": "systemd service failed",
+    "summary": "One or more systemd units are in the failed state. The service is not running; dependent functionality is offline. Crucible 0.9.2+ also ships the last 5 journal lines per failed unit in evidence so root cause is one click away.",
+    "_category": "Time & Services"
+  },
+  {
+    "id": "systemd_service_oom_killed",
+    "priority": "P1",
+    "title": "systemd service killed by OOM",
+    "summary": "systemd reports a failed unit with Result=oom-kill. The kernel OOM killer terminated the service; pair with the host-level oom_kills emission to find the underlying memory pressure source.",
+    "_category": "Time & Services"
+  },
+  {
+    "id": "unexpected_reboot",
+    "priority": "P1",
+    "title": "Unexpected reboot",
+    "summary": "Server rebooted without an operator-acknowledged planned reboot. Possible causes: kernel panic, hardware fault (PSU brownout, thermal shutdown, watchdog), power outage, or remote reboot via BMC.",
+    "_category": "Time & Services"
+  },
+  {
+    "id": "bios_firmware_age",
+    "priority": "P3",
+    "title": "BIOS firmware metadata is aging",
+    "summary": "The host's SMBIOS BIOS release date is more than 24 months old. This is NOT a fault and NOT necessarily out of date: the installed BIOS may still be the latest release the board vendor has ever published. It is a prompt to confirm, against the vendor's catalog, that the BIOS/UEFI and BMC firmware are current, since stale platform firmware is a common source of unpatched hardware-level vulnerabilities and errata.\n\nAcknowledge this advisory once you have confirmed the installed version is the latest published for this board, or after you have scheduled the update.\n",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "kernel_needs_reboot",
+    "priority": "P2",
+    "title": "Reboot required (newer kernel installed)",
+    "summary": "A newer kernel package is installed on disk but the running kernel is older. Security patches in the new kernel are not active until reboot.",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "kernel_vulnerabilities",
+    "priority": "P2",
+    "title": "Kernel vulnerability mitigations missing",
+    "summary": "One or more CPU vulnerability mitigations (Spectre, Meltdown, MDS, TSA, Downfall, etc.) report unmitigated or partial coverage in /sys/devices/system/cpu/vulnerabilities/.\n\nAlert message shows one bullet per unmitigated vuln plus a state hint:\n\n  Unmitigated CPU vulnerabilities:\n  • tsa: Vulnerable: Clear CPU buffers attempted, no microcode  [software band-aid engaged; awaiting AMD microcode]\n  • gather_data_sampling: Vulnerable: No microcode  [update CPU microcode + kernel and reboot; vendor-side only if still Vulnerable afterwards]\n\nDefault action is to update the CPU microcode + kernel packages and reboot (on Debian/Ubuntu the microcode is in the non-free-firmware component; enable it if apt reports no candidate). A vuln is vendor-side (ACK-able) only when a kernel software band-aid is already engaged for every unmitigated vuln AND updating microcode does not clear it. The alert auto-resolves when /sys flips to \"Mitigation: ...\".\n",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "no_firewall",
+    "priority": "P1",
+    "title": "No host firewall active",
+    "summary": "No active firewall rules detected. All listening ports are reachable from any network the host is connected to, unless protected by network-level ACLs (VPC, cloud SG, on-prem ACL).",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "os_end_of_life",
+    "priority": "P2",
+    "title": "OS release past (or nearing) end of life",
+    "summary": "This host's operating-system release is at, past, or within 180 days of the end of its standard security support, per the endoflife.date lifecycle dataset.\n\nThis is NOT automatically \"unsupported\": many releases keep receiving security fixes past standard support if enrolled in an extended-support programme (Ubuntu Pro/ESM, RHEL EUS/ELS). The alert reconciles the release EOL date with this host's actual enrollment where the agent can read it. Where enrollment cannot be verified, the wording says so rather than assuming the worst.\n\nResolve by upgrading to a supported release, or by confirming/entering extended support. Acknowledge once you have a plan.\n",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "pending_security_updates",
+    "priority": "P2",
+    "title": "Pending security updates",
+    "summary": "Package manager reports one or more security updates available AND auto-updates are not configured. Manual patching is required; counterpart to unattended_upgrades_disabled which fires when the auto-update mechanism itself is missing.",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "server_unreachable",
+    "priority": "P1",
+    "title": "Server unreachable",
+    "summary": "Dashboard has not received a snapshot from this server in 2x the configured collection interval (default 10 minutes). Either the Crucible agent stopped reporting, the network is down, or the server is offline. Alert auto-resolves on next successful snapshot.",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "ssh_config_unapplied",
+    "priority": "P2",
+    "title": "SSH config changed but not applied",
+    "summary": "sshd_config was modified after the sshd daemon last loaded its configuration. The running daemon is still using the previous config, so any change (including security hardening like disabling root password login) is not yet in effect. Reload or restart sshd to apply.",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "ssh_root_password",
+    "priority": "P1",
+    "title": "SSH allows root password login",
+    "summary": "sshd allows root login with password. Brute-force-able from the network. Switch to key-only root login (still works for key-based ops); ideally disable root SSH entirely and use a sudo-equipped operator account.",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "unattended_upgrades_disabled",
+    "priority": "P3",
+    "title": "Unattended security upgrades disabled",
+    "summary": "No automatic security update mechanism is configured. The host is at the operator's mercy for patch cadence; if patches are pending, the counterpart pending_security_updates rule will fire.",
+    "_category": "Security & Patching"
+  }
+]

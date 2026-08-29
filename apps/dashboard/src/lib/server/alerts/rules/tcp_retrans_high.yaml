@@ -1,0 +1,156 @@
+# tcp_retrans_high; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C7_C10_ACTIVATION_2026-05-19.md §4.
+# Low-traffic gate added 2026-05-22 (block comment in evaluator.ts).
+#
+# Fires when retransmits / segments-sent ratio over the most recent
+# snapshot interval exceeds 2% AND the absolute retransmit rate is
+# at least 1.0 retransmits/sec. Two gates because empirical iperf3
+# measurement (2026-05-22) showed idle val hosts hitting 7-10%
+# "ratios" from 1-4 retransmits in 60s; pure small-denominator
+# noise. Same hosts at 9.37 Gbit/s under load dropped to 0.000%
+# ratio. The rate floor suppresses idle noise while leaving real
+# high-traffic problems firing (any host losing 1+ pkt/sec is
+# genuinely degraded). Threshold rationale per OneUptime
+# engineering guide March 2026: 1% starts impacting performance;
+# 5% causes significant degradation.
+#
+# Capability gate: snap.tcp_stats.retrans_ratio (Crucible v0.11.0+;
+# null on first snapshot, so the boot grace of 300s gives a couple
+# snapshots before the rule can fire).
+#
+# Participates in accept_backlog_or_syn_flood incident group: when
+# 2+ of this, conntrack_exhaustion, listen_overflow fire on a host,
+# the classifier dominates per PR #162.
+id: tcp_retrans_high
+priority: P2
+title: TCP retransmit rate elevated
+summary: "TCP retransmit ratio (retransmits / segments sent) over the most recent snapshot interval exceeds 2%, gated so the ratio only fires at meaningful traffic volume: at least 1.0 retransmits/sec AND an implied segment rate of at least 50/sec. Above 1% commonly impacts performance; above 5% significantly degrades throughput. The volume gate prevents false alarms on quiet hosts where a handful of retransmits over few segments produces a misleadingly high ratio."
+incident_group:
+  group_id: accept_backlog_or_syn_flood
+  correlation_window_seconds: 300
+fix:
+  quick_check:
+    command: |
+      nstat -az TcpRetransSegs TcpOutSegs TcpInSegs 2>/dev/null
+      # Per-connection retransmit counts:
+      ss -tin | grep -E 'retrans|cwnd' | head -20
+    description: "Aggregate retrans ratio (TcpRetransSegs/TcpOutSegs) + per-connection retransmit/cwnd state from ss. A high aggregate but only a few connections retransmitting means a remote endpoint is degraded."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the affected host
+    - Awareness of which peers this host talks to over TCP
+    - Ability to run mtr / tcpdump from the host (or a topologically near vantage point)
+  safe_mode:
+    command: |
+      cat /proc/net/snmp | grep -A1 "^Tcp:"
+      ss -i state established | head
+      # Per-peer breakdown of retransmits is not in /proc; pkt capture for the
+      # affected peers tells you which segment is being retransmitted:
+      # sudo timeout 10 tcpdump -n -i any 'tcp[tcpflags] & (tcp-syn|tcp-fin|tcp-rst) != 0 or tcp[tcpflags] & 0x40 != 0' | head -50
+    description: |
+      Read-only inspection. /proc/net/snmp shows cumulative TCP
+      counters the agent rates. `ss -i` per-socket info exposes the
+      RTT and retransmit counters per established connection so you
+      can find the loud peer; on busy hosts it can be 1000+ lines so
+      filter aggressively.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # ====== Step 1: rule out baseline noise ======
+        # Important context (campaign-3 learning, 2026-05-20): on
+        # mixed intra-DC + consumer-WAN fleets, 1-2% retransmit is
+        # often the legitimate steady state; not a fault. Before
+        # acting, decide whether this host's ratio is genuinely
+        # elevated vs its own normal. Pull 24h history if available
+        # (Dashboard server detail page; metrics chart) before
+        # diagnosing a remediation.
+
+        # ====== Step 2: concentrate vs broadcast classification ======
+        # Identify the noisiest peers (top retransmit counters per socket):
+        sudo ss -ti state established | awk '/retrans/ {print prev,$0} {prev=$0}' | head -20
+        # If one or two peers dominate the retransmit counters -> path-side
+        # to that peer; jump to step 3. If retransmits are spread broadly
+        # across many peers -> host-side; jump to step 4.
+
+        # ====== Step 3: path-side diagnosis ======
+        # sudo mtr --report --report-cycles 30 <peer_ip>
+        # Look for loss columns; consistently lossy hop = path fault.
+        # For active path-quality probe (consumes bandwidth, ~3s):
+        # iperf3 -c <peer_ip> -t 30 -P 4 -O 5    # if peer runs iperf3
+        # If only specific peers retransmit, it's peer-side or path-side;
+        # contact the peer's owner or the path provider.
+
+        # ====== Step 4: host-side diagnosis ======
+        # If retransmits are broad, the host's send-side or path is at fault:
+        # a) NIC errors / drops -> see interface_errors rule
+        # b) Link saturation -> see interface_saturation rule
+        # c) Congestion control mismatch:
+        sysctl net.ipv4.tcp_congestion_control
+        # Default `cubic` is fine for most workloads. `bbr` helps on
+        # high-bandwidth high-latency paths but can over-aggress on
+        # short-RTT intra-DC. Switching cong-control without measurement
+        # is rarely the right move; only consider if path is known
+        # high-BDP and current cubic shows obvious throughput issues.
+        # d) Bufferbloat downstream:
+        # sudo tc qdisc show dev <iface>
+        # If default `pfifo_fast`/`fq_codel` and queue depths are large,
+        # consider tuning bufferbloat (`fq_codel` or `cake` qdisc).
+
+        # ====== Step 5: when to leave it alone ======
+        # If after diagnosis the cause is "real-world peer flakiness"
+        # (consumer ISPs, mobile clients, cross-region peers) AND the
+        # host's services tolerate the retransmit overhead, this is a
+        # benign alert. Consider raising the threshold for this host
+        # via config_override (interface_utilization_percent equivalent)
+        # rather than chasing a fix that doesn't exist. Document the
+        # decision so the next on-call doesn't re-investigate.
+      description: |
+        Five-step diagnostic. Baseline check first (1-2% can be normal
+        on mixed fleets); then concentrate-vs-broadcast classification
+        steers to path-side (mtr/iperf3) or host-side (NIC/cong-control/
+        bufferbloat) diagnosis; step 5 documents when "do nothing" is
+        the correct answer. Campaign-3 finding: don't assume every
+        retransmit alert is actionable; many are baseline noise.
+  validation:
+    command: |
+      cat /proc/net/snmp | grep -A1 "^Tcp:"
+    description: |
+      Wait for the agent to re-compute retrans_ratio on the next
+      snapshot (typically 60s). The rule auto-resolves when the
+      ratio drops back under 2% for the next snapshot interval.
+  rollback:
+    available: false
+    command: null
+    note: |
+      This rule's remediation depends entirely on the underlying
+      cause; rollback semantics belong to the specific action
+      taken (e.g. failing back from a different uplink, undoing a
+      bond reconfiguration).
+  impact:
+    blast_radius: |
+      No impact from the alert itself. Customer-facing impact of
+      high retransmits depends on what's running on the host;
+      throughput-bound services degrade most. The rule body is
+      diagnostic, not corrective.
+    estimated_duration: |
+      Triage 10-30 min; remediation varies (path investigation,
+      cable / SFP swap, switch reconfig).
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic /proc/net/snmp fixtures (Crucible parseTcpSnmp)
+    tester: Glassmkr ops
+    research_basis: heuristic-from-guide
+    source_note: |
+      Pattern library 2026-05-18 Category 4 (Network). Default
+      threshold per OneUptime engineering guide March 2026:
+      "retransmission rate above 1% commonly starts to impact
+      performance; above 5% usually causes significant throughput
+      degradation." Glassmkr default at 2% (above legitimate noise,
+      below the first impact threshold). Crucible v0.11.0 ships
+      agent-computed retrans_ratio via the vmstat (C3) precedent.
+      Participates in accept_backlog_or_syn_flood incident group:
+      when 2+ subordinates fire together that classifier dominates
+      and these emissions attach as evidence.

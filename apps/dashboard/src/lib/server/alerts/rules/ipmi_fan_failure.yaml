@@ -1,0 +1,160 @@
+# ipmi_fan_failure; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B6.
+#
+# Single-severity rule (always critical). No condition_match split;
+# main variant covers the standard fan-replacement workflow,
+# fallback covers missing-evidence. Cross-references
+# cpu_temperature_high since a failed fan and a high CPU temp are
+# often the same root cause surfacing through two rules.
+# R-P2-2 ownership-branch remediation (val-fleet 2026-05-29): this is a
+# vendor-side physical-hardware rule whose remediation assumes chassis
+# access. The customer-facing alert card appends the shared
+# OWNERSHIP_REMEDIATION_NOTE (evaluator.ts, single source of truth) so an
+# operator who cannot physically service the host still has a path:
+#   "If you operate this hardware (owned or colocated): handle the
+#    inspection or swap yourself, or dispatch a remote-hands technician.
+#    If this is rented or provider-managed: file a hardware service ticket
+#    with your provider. Either way, the physical check needs to happen
+#    on-site."
+# Keep this rule's remediation consistent with that note.
+id: ipmi_fan_failure
+priority: P1
+title: IPMI fan failure
+summary: BMC reports one or more chassis fans in critical state or at 0 RPM. Cooling capacity is reduced; CPU temperatures may climb and trigger thermal throttling or emergency shutdown.
+fix:
+  quick_check:
+    command: |
+      sudo ipmitool sdr type Fan 2>/dev/null
+      # Some chassis put fan failure on chassis-status discrete sensors:
+      sudo ipmitool chassis status 2>/dev/null | grep -i 'fan'
+    description: "Every fan sensor with its current RPM + threshold. Look for fans at 0 RPM marked 'cr' (critical), or fans reading well below their LCR (lower critical) threshold. Chassis-status fallback catches discrete fan-failure bits."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (diagnosis is non-disruptive)
+    - Physical / remote-hands access (fan modules require physical replacement; most enterprise fans are hot-swap, consumer chassis usually require power-down)
+    - Replacement fan module on hand matching the chassis specification (fan size, connector, RPM range)
+    - "Awareness that high CPU temps may be co-firing: check cpu_temperature_high before / during this fix"
+  safe_mode:
+    command: |
+      sudo ipmitool sdr type Fan 2>/dev/null
+      sudo ipmitool sdr type Temperature 2>/dev/null | head -10
+      sudo ipmitool sel elist 2>/dev/null | grep -iE 'fan|cooling' | tail -10
+      sensors 2>/dev/null | head -20
+    description: |
+      Read-only inspection. `sdr type Fan` lists every fan sensor
+      with current RPM + status. `sdr type Temperature` confirms
+      whether the cooling reduction has translated to elevated
+      temps yet. SEL filter surfaces when the fan failure was
+      first detected.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: identify failed fan, replace, verify.
+
+        # 1. List all fans + state
+        sudo ipmitool sdr type Fan 2>/dev/null
+        # Look for status "cr" (critical) / "nr" (non-recoverable)
+        # or RPM = 0 with status != absent.
+
+        # 2. Check thermal impact
+        sudo ipmitool sdr type Temperature 2>/dev/null
+        sensors 2>/dev/null
+        # If CPU temps are above warning -> cpu_temperature_high
+        # workflow runs in parallel; prioritise fan swap.
+
+        # 3. Failure history
+        sudo ipmitool sel elist 2>/dev/null | grep -iE 'fan|cooling' | tail -10
+
+        # 4. Physical inspection (need remote-hands):
+        #    a) Locate the failed fan by position label (FAN1, FAN2,
+        #       etc.) on the chassis silkscreen; matches the BMC
+        #       sensor name.
+        #    b) Verify it's truly stationary, not just slow (some
+        #       fans report 0 RPM when their tach signal dies but
+        #       are physically spinning; in that case status will
+        #       be cr but blades visibly turning; usually means
+        #       fan PWM controller failed, replace anyway).
+        #    c) Check for debris (cable in blade path is common,
+        #       removing it often restores function).
+
+        # 5. Hot-swap the fan module (enterprise chassis):
+        #    - Pull the latch / clip
+        #    - Lift the fan module out
+        #    - Insert replacement; orient airflow direction (arrows
+        #      on module) to match adjacent fans (intake side or
+        #      exhaust side consistently).
+        #    - BMC should clear the critical state within 30-60s.
+
+        # 6. Verify
+        sudo ipmitool sdr type Fan 2>/dev/null
+        sudo ipmitool sdr type Temperature 2>/dev/null
+
+        # 7. Watch temps for the next few minutes; replacement
+        #    fan should restore the cooling delta in <5 minutes.
+        sudo ipmitool sdr type Temperature; echo; sudo ipmitool sdr type Fan   # one-shot; re-run to monitor
+      description: |
+        Main path: identify failed fan, distinguish PWM/tach
+        failure vs physical stop, hot-swap module, watch temps
+        return to normal. Cross-references cpu_temperature_high
+        if temps are climbing simultaneously.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence (failed_fans) is missing. Diagnose
+        # all fans manually.
+        sudo ipmitool sdr type Fan 2>/dev/null
+        sudo ipmitool sel elist 2>/dev/null | grep -i fan | tail -10
+      description: |
+        Missing-evidence fallback. Walk all fans manually; identify
+        the failed module before scheduling a swap.
+  validation:
+    command: |
+      sudo ipmitool sdr type Fan 2>/dev/null
+      sudo ipmitool sdr type Temperature 2>/dev/null
+    description: |
+      After fix, confirm:
+      - All non-absent fans report RPM > 0 and status "ok"
+      - Temperature sensors back to baseline (compare to pre-failure
+        if you saved a snapshot, otherwise just confirm under
+        warning thresholds)
+      Re-firing the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Fan replacement is not reversible; the old fan is failing;
+      reinstalling it just re-triggers the alert. If the replacement
+      is itself faulty, the second swap is a forward-fix. Temp
+      damage from the cooling reduction (if any) is also not
+      reversible.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Hot-swap fan module:
+      no service impact (the BMC briefly accelerates remaining fans
+      to compensate; brief noise increase). Cold-swap (consumer
+      chassis): full host outage during swap. Loss of all chassis
+      fans simultaneously would cause emergency thermal shutdown , 
+      this rule firing on a single fan means redundancy is reduced,
+      not gone.
+    estimated_duration: |
+      Diagnosis: 5 minutes. Hot-swap: 2-5 minutes physical + 30-60s
+      BMC reconciliation. Cold-swap: 10-30 minutes incl. POST.
+      Temperature stabilisation after fan swap: 1-5 minutes.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from ipmitool(1) sdr (Fan / Temperature
+      types), IPMI 2.0 spec on fan sensor encoding. PWM-vs-tach
+      failure distinction is from Glassmkr ops experience with
+      a Supermicro chassis where 2 fans reported 0 RPM but were
+      physically spinning at full speed; root cause was a failed
+      Hall sensor wire. Not deliberately re-triggered on validation
+      fleet for this deepening pass.
+
+      Pattern library 2026-05-18: Category 5 (thermal). Fan-vs-temp correlation handled by a separate fan_temp_correlation rule (deferred to next audit). Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

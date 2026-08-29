@@ -1,0 +1,119 @@
+# Dashboard by Glassmkr
+
+> Bare metal monitoring dashboard, AGPL-3.0-only and self-hostable. 70 alert rules, per-core CPU, SMART, IPMI, network diagnostics.
+
+## Quick Start
+
+Install the Crucible agent on your server. The bootstrap script supports Ubuntu
+and Debian only and needs root plus a key:
+```
+curl -sf https://glassmkr.com/install.sh | sudo bash -s -- --api-key gmk_cru_live_xxx
+```
+On RHEL, Rocky, Alma, Arch or Alpine use the single-file binary instead, which
+needs no Node: https://glassmkr.com/docs/getting-started
+
+Sign up at https://app.glassmkr.com/register, add your server, configure the API key in /etc/glassmkr/crucible.yaml (legacy installs: /etc/glassmkr/collector.yaml; the agent reads either). Crucible pushes health snapshots every 5 minutes by default (interval_seconds, minimum 60).
+
+## API Reference
+
+Base URL: https://app.glassmkr.com/api/v1
+Authentication: Bearer token. Account API access: gmk_acct_live_xxx (or legacy forge_xxx). Crucible ingest: gmk_cru_live_xxx (or legacy col_xxx).
+
+### Server Management
+- GET /servers - list all servers for authenticated customer
+- GET /servers/:id - server details
+- DELETE /servers/:id - remove server
+- GET /servers/:id/health - latest snapshot with active alerts
+- GET /servers/:id/alerts?status=active|all - alerts (active only or full history)
+- GET /servers/:id/metrics?hours=24 - time-series data for charts (CPU, RAM, load, swap, network, per-core CPU)
+- GET /servers/:id/history?hours=24 - raw snapshot history
+- GET /servers/:id/analyses - AI analysis history (free; needs an LLM endpoint configured on self-hosted)
+- POST /servers/:id/analyze - trigger new AI analysis (free; needs an LLM endpoint configured on self-hosted)
+
+### Alert Management
+- POST /alerts/:id/acknowledge - acknowledge an active alert
+- GET /servers/:id/mutes - list muted rules for a server
+- POST /servers/:id/mutes - mute a rule: { "alert_type": "interface_errors" }
+- DELETE /servers/:id/mutes - unmute a rule: { "alert_type": "interface_errors" }
+
+### Notification Channels
+- GET /channels - list channels
+- POST /channels - create channel: { "name": "ops", "channel_type": "telegram|slack|email", "config": { "chat_id": "123" } }
+- PUT /channels/:id - update channel
+- DELETE /channels/:id - delete channel
+- POST /channels/:id/test - send test notification
+
+### Billing (dormant: hosted has no paid tier; endpoints remain for legacy subscription management only)
+- GET /billing/status - subscription status
+- POST /billing/checkout - retired; answers 410 (no new subscription can be created)
+- POST /billing/portal - Stripe customer portal
+- GET /billing/token - MCP API token
+- POST /billing/token/rotate - rotate token
+
+### Ingest (Crucible)
+- POST /ingest - push snapshot (Bearer gmk_cru_live_xxx or legacy col_xxx, rate limited to 1/min)
+- GET /version - latest Crucible version info
+
+## Alert Rules (70)
+
+The full catalogue, with the firing condition and remediation workflow for
+each rule, is at https://glassmkr.com/docs/rules and as a machine map at
+https://glassmkr.com/docs/rules/llms.txt. The lists below are a sample by
+priority, not the complete set.
+
+Priority P0 Critical (data already at risk):
+- mce_uncorrected, gpu_uncorrected_ecc, gpu_xid_critical
+
+Priority P1 Urgent (act now):
+- raid_degraded, smart_failing, ecc_errors (uncorrectable), psu_redundancy_loss, ipmi_fan_failure, filesystem_readonly
+
+Priority P2 High (fix within hours):
+- oom_kills, ram_high, disk_space_high, ipmi_sel_critical, disk_io_errors, zfs_pool_unhealthy, inode_high, cpu_high
+
+Priority P3 Medium (fix within days):
+- cpu_iowait_high, nvme_wear_high, disk_latency_high, cpu_temperature_high, ssh_root_password, pending_security_updates, kernel_vulnerabilities, zfs_scrub_errors, load_high
+
+Priority P4 Low (next maintenance):
+- no_firewall, kernel_needs_reboot, unattended_upgrades_disabled, interface_errors, link_speed_mismatch, interface_saturation, ecc_errors (correctable), clock_drift
+
+## Snapshot Payload Structure
+
+Crucible sends this JSON to POST /ingest every 5 minutes:
+- system: { hostname, ip, os, kernel, uptime_seconds }
+- cpu: { user_percent, system_percent, iowait_percent, idle_percent, load_1m, load_5m, load_15m, cores: [{ core, user_percent, system_percent, iowait_percent, idle_percent, irq_percent, softirq_percent }] }
+- memory: { total_mb, used_mb, available_mb, swap_total_mb, swap_used_mb }
+- disks: [{ device, mount, total_gb, used_gb, percent_used, fstype, options, inodes_total, inodes_used, inodes_free }]
+- smart: [{ device, model, health, temperature_c, percentage_used, reallocated_sectors, pending_sectors, power_on_hours }]
+- network: [{ interface, speed_mbps, rx_bytes_sec, tx_bytes_sec, rx_errors, tx_errors, rx_drops, tx_drops }]
+- raid: [{ device, level, status, degraded, disks, failed_disks }]
+- ipmi: { available, sensors: [{ name, value, unit, status }], ecc_errors: { correctable, uncorrectable }, fans: [{ name, rpm, status }] }
+- os_alerts: { oom_kills_recent, zombie_processes, time_drift_ms }
+- security: { ssh, firewall, pending_updates, kernel_vulns, kernel_reboot, auto_updates }
+
+## For AI Agents
+
+Dashboard is designed for programmatic access. An AI agent can:
+1. Register a server via the dashboard (manual step, provides API key)
+2. Install Crucible via SSH: curl -sf https://glassmkr.com/install.sh | bash
+3. Query server health via GET /servers/:id/health
+4. List and acknowledge alerts via GET /servers/:id/alerts and POST /alerts/:id/acknowledge
+5. Mute noisy rules via POST /servers/:id/mutes
+6. Trigger AI analysis via POST /servers/:id/analyze (free; needs an LLM endpoint configured on self-hosted)
+7. Access metrics for charting via GET /servers/:id/metrics
+
+MCP: this dashboard serves a first-party MCP endpoint at /mcp. Manage
+connections and scopes at https://app.glassmkr.com/settings/mcp. Self-hosting it
+needs TLS in front and a few environment variables; see
+https://glassmkr.com/docs/mcp. The separate Bench project is archived and is no
+longer the MCP path.
+
+## Documentation
+
+- Getting started: https://glassmkr.com/docs/getting-started
+- Documentation index: https://glassmkr.com/docs
+- Alert rules: https://glassmkr.com/docs/rules
+- Configuration: https://glassmkr.com/docs/configuration
+- Channels: https://glassmkr.com/docs/channels
+- API reference: https://glassmkr.com/docs/api
+- Troubleshooting: https://glassmkr.com/docs/troubleshooting
+- FAQ: https://glassmkr.com/docs/faq

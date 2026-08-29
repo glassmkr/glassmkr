@@ -1,0 +1,179 @@
+# clock_drift; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B7, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator fires at >=5s drift (warning), critical at >=60s. Variants
+# split on the 60s critical boundary on the `drift_seconds` attribute.
+# Cross-references ntp_not_synced (which fires when the daemon isn't
+# running at all; different signal). Boot grace 300s suppresses
+# transient drift right after a reboot before chrony catches up.
+id: clock_drift
+priority: P2
+subordinate_to: ntp_not_synced
+title: Clock drift
+summary: System clock is at least 5 seconds off from upstream NTP. Critical at >=60s; TLS validation, log correlation, database replication, and cron all break.
+fix:
+  quick_check:
+    command: |
+      timedatectl status
+      chronyc tracking 2>/dev/null
+      ntpq -p 2>/dev/null
+      date -u
+    description: "System clock state + chronyd's tracking (offset from selected source + RMS jitter) + ntpd's peer list. One of chronyc/ntpq will work depending on the installed daemon."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (inspection + daemon restart are non-disruptive)
+    - "For critical band (>=60s drift): brief downtime tolerance for affected services if a large step-correction is applied (TLS sessions may renegotiate)"
+    - NTP upstream reachable (test with `chronyc tracking` or `timedatectl status`)
+    - Awareness that some workloads (financial, real-time DBs) consider any unscheduled time jump destructive
+  safe_mode:
+    command: |
+      timedatectl status
+      timedatectl show -p NTP -p NTPSynchronized -p TimeUSec
+      chronyc tracking 2>/dev/null || systemctl status systemd-timesyncd --no-pager 2>/dev/null
+      systemctl status chronyd systemd-timesyncd ntpd 2>/dev/null | grep -E 'Active:|Loaded:'
+    description: |
+      Read-only inspection. `timedatectl status` shows kernel sync
+      state + current time + active daemon. `chronyc tracking`
+      (chrony's CLI) reports drift in finer detail than the OS
+      summary. The systemctl filter at the end identifies which of
+      the three common daemons (chrony / systemd-timesyncd / ntpd)
+      is running.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: drift_seconds
+        op: gte
+        value: 60
+      command: |
+        # Critical path (>=60s drift). TLS, log correlation, replication
+        # all broken. Step-correct AND fix the upstream issue.
+
+        # 1. Snapshot the current state
+        timedatectl status
+        date -u
+
+        # 2. Identify the active daemon
+        systemctl is-active chronyd systemd-timesyncd ntpd 2>/dev/null
+
+        # 3. Force an immediate step correction (chrony preferred)
+        sudo chronyc makestep 2>/dev/null || \
+          sudo systemctl restart systemd-timesyncd
+
+        # 4. If daemon isn't running -> escalate to ntp_not_synced
+        # sudo systemctl enable --now chronyd  # RHEL family
+        # sudo systemctl enable --now systemd-timesyncd  # Debian/Ubuntu
+
+        # 5. Investigate root cause:
+        #    a) Upstream NTP server unreachable? (firewall, network)
+        chronyc sources 2>/dev/null || \
+          timedatectl show-timesync --all 2>/dev/null
+        #    b) Hypervisor clock drift (common on VMs without
+        #       paravirt clock):
+        # cat /sys/devices/system/clocksource/clocksource0/current_clocksource
+        #    c) RTC battery failed? (clock jumps backwards on reboot)
+        # sudo hwclock --show
+
+        # 6. After step-correction, restart TLS-using services that
+        #    cached pre-correction times (rare; most handle this):
+        # sudo systemctl restart nginx postgresql ...
+      description: |
+        Critical (>=60s) path. Step-correct via chronyc makestep
+        (chrony) or daemon restart (timesyncd), then diagnose root
+        cause. Step correction is potentially disruptive to TLS /
+        cert validation; flag operator awareness in the
+        prerequisites.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: drift_seconds
+        op: lt
+        value: 60
+      command: |
+        # Warning path (5-59s drift). Let the daemon discipline the
+        # clock smoothly (no step); investigate why drift accumulated.
+
+        # 1. Current state
+        timedatectl status
+        chronyc tracking 2>/dev/null || \
+          systemctl status systemd-timesyncd --no-pager 2>/dev/null
+
+        # 2. Daemon active?
+        systemctl is-active chronyd systemd-timesyncd 2>/dev/null
+
+        # 3. Upstream sources reachable?
+        chronyc sources -v 2>/dev/null || \
+          timedatectl show-timesync 2>/dev/null
+
+        # 4. Trigger a faster catch-up (chrony's burst mode):
+        sudo chronyc burst 4/4 2>/dev/null
+
+        # 5. Watch drift trend (should reduce over minutes-hours)
+        chronyc tracking 2>/dev/null || timedatectl status   # one-shot; re-run to monitor
+      description: |
+        Warning (5-59s) path. Disciplined slew, not step. Let chrony
+        burst to converge faster; investigate why drift accumulated
+        (upstream unreachable, daemon hiccup, hypervisor clock).
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: drift_seconds attribute missing. Diagnose
+        # manually.
+        timedatectl status
+        chronyc tracking 2>/dev/null || \
+          systemctl status systemd-timesyncd --no-pager 2>/dev/null
+      description: |
+        Missing-evidence fallback. Run diagnostic to read current
+        drift; classify manually.
+  validation:
+    command: |
+      timedatectl status
+      timedatectl show -p NTPSynchronized
+      chronyc tracking 2>/dev/null | grep -E 'System time|Last offset' || true
+    description: |
+      After fix, confirm:
+      - NTPSynchronized=yes
+      - System time delta from chrony is <5s sustained
+      - timedatectl reports "synchronized: yes"
+      Re-firing the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Clock corrections are not reversible; the clock moved to
+      the corrected value. If a step-correction caused service
+      disruption (TLS sessions reset, scheduled job mistimed),
+      the affected services may need to be restarted; that's not
+      a "rollback" but a forward-fix.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. `chronyc makestep`
+      causes an immediate time jump; TLS sessions in flight may
+      renegotiate, cron jobs scheduled within the jump window may
+      double-fire or skip, log timestamps before vs after will
+      show a discontinuity. Slew correction (warning path) is
+      gradual and non-disruptive.
+    estimated_duration: |
+      Diagnosis: 2-5 minutes. Step correction: <1 second. Slew
+      convergence: 10-60 minutes depending on drift magnitude.
+      Root-cause investigation (hypervisor / network / RTC):
+      hours-days.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from timedatectl(1), chronyc(8),
+      systemd-timesyncd(8). Chrony is recommended over
+      systemd-timesyncd for any host where drift accuracy
+      matters (chrony does PLL-based slew + supports makestep;
+      timesyncd is SNTP-only and lacks fine control). Not
+      deliberately re-triggered on validation fleet for this
+      deepening pass.
+
+      Pattern library 2026-05-18: Category 6 (time). Role-aware thresholds (time_role config field per spec §3.22) deferred until per-host metadata UI is wired; today uses the existing fixed threshold. subordinate_to: ntp_not_synced wired in YAML.

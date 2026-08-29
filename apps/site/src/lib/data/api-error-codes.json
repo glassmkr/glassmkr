@@ -1,0 +1,24 @@
+{
+  "_notes": "Machine error codes the Dashboard API can return. The canonical table is apps/dashboard/src/lib/server/api/errors.ts; scripts/check-openapi-drift.mjs asserts this file lists exactly the codes that module can emit, so the published reference cannot drift from the running server. Add a code in errors.ts first, then here.",
+  "codes": [
+    { "code": "invalid_request", "status": 400, "retryable": false, "meaning": "The request was malformed or a field failed validation. Read details, correct the request, do not retry unchanged." },
+    { "code": "unauthenticated", "status": 401, "retryable": false, "meaning": "No credential was presented, or the one presented was not accepted. Obtain or refresh a credential; retrying the same one will fail identically." },
+    { "code": "payment_required", "status": 402, "retryable": false, "meaning": "The account's billing state blocks this operation." },
+    { "code": "forbidden", "status": 403, "retryable": false, "meaning": "The credential is valid but not permitted this operation, usually a scope or ownership boundary. Do not retry; a different credential is needed." },
+    { "code": "not_found", "status": 404, "retryable": false, "meaning": "The addressed resource does not exist, or is not visible to this credential." },
+    { "code": "unknown_endpoint", "status": 404, "retryable": false, "meaning": "No API route matches this path at all. Check /api/openapi.json for the routes this deployment serves." },
+    { "code": "method_not_allowed", "status": 405, "retryable": false, "meaning": "The route exists but not for this HTTP verb. details carries allowed_methods, and the Allow header repeats it." },
+    { "code": "conflict", "status": 409, "retryable": false, "meaning": "The operation conflicts with current state, for example a stale version or an operation already in progress. Re-read state before deciding." },
+    { "code": "gone", "status": 410, "retryable": false, "meaning": "The resource existed and has been removed permanently." },
+    { "code": "payload_too_large", "status": 413, "retryable": false, "meaning": "The request body exceeded the accepted size." },
+    { "code": "unsupported_media_type", "status": 415, "retryable": false, "meaning": "The Content-Type is not accepted by this route." },
+    { "code": "unprocessable", "status": 422, "retryable": false, "meaning": "The request parsed but could not be acted on as given." },
+    { "code": "rate_limited", "status": 429, "retryable": true, "meaning": "Too many requests. Wait retry_after_seconds, or the Retry-After header, before retrying." },
+    { "code": "pro_required", "status": 403, "retryable": false, "meaning": "Legacy code from the retired Free/Pro split, kept because old clients may still branch on it. Nothing in the API is tier-gated as of August 2026." },
+    { "code": "internal_error", "status": 500, "retryable": true, "meaning": "An unexpected server fault. Safe to retry with backoff; report request_id if it persists." },
+    { "code": "upstream_error", "status": 502, "retryable": true, "meaning": "A dependency failed. Retry with backoff." },
+    { "code": "unavailable", "status": 503, "retryable": true, "meaning": "The service is temporarily unable to handle the request. Retry with backoff." },
+    { "code": "upstream_timeout", "status": 504, "retryable": true, "meaning": "A dependency did not answer in time. Retry with backoff." },
+    { "code": "request_failed", "status": null, "retryable": false, "meaning": "Fallback for a 4xx status with no more specific code. Treat as non-retryable and read message." }
+  ]
+}

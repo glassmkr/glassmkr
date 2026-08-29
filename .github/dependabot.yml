@@ -1,0 +1,37 @@
+# Dependabot — security-only updates (security audit 2026-05-22, §1.11 /
+# catalog T-102 Shai-Hulud-class worm exposure, T-105 typosquat/takeover).
+#
+# Scope: security updates only. We intentionally do NOT enable
+# version-update PRs (open-ended dependency churn is noise for a solo-dev
+# repo); `open-pull-requests-limit: 0` on the version-update side means
+# Dependabot only opens PRs for advisories, not routine version bumps.
+#
+# pnpm workspace: Dependabot reads the root lockfile and the per-app
+# manifests. One npm entry at the root covers the workspace.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    # Security updates are always opened regardless of this limit; this
+    # caps routine version-update PRs. 0 = security-only.
+    open-pull-requests-limit: 0
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # GitHub Actions: catch a compromised/yanked action advisory (T-103).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    labels:
+      - "dependencies"
+      - "ci"
+      - "security"
+    commit-message:
+      prefix: "chore(ci)"

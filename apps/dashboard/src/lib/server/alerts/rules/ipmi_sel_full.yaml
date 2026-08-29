@@ -1,0 +1,110 @@
+# ipmi_sel_full; added 2026-07-14 from the val campaign (box "asrock").
+#
+# A BMC whose System Event Log is full stops recording new events, so
+# ipmi_sel_critical (and the SEL-derived half of ecc_errors) goes
+# structurally deaf to every future hardware fault. The box reads
+# "green" on every SEL-based rule while real DIMM / PSU / fan / thermal
+# faults accumulate unseen. The BMC's own "Event Logging Disabled ...
+# Log full ... Asserted" record classifies as info upstream and is
+# dropped by ipmi_sel_critical, so nothing else surfaces the blind-spot.
+#
+# Remediation is forensic: export the SEL for the record, then clear it
+# so the BMC records again. Clearing is irreversible (hence the export
+# first + rollback.available: false). The next snapshot confirms the
+# cleared state and auto-resolves the alert.
+id: ipmi_sel_full
+priority: P3
+manual_resolve: false
+title: IPMI SEL full or near-full
+summary: The BMC System Event Log is full or near-full. A full SEL silently stops recording new events, so ipmi_sel_critical and the SEL-derived ECC counts go deaf to every future hardware fault. Export the SEL, then clear it so the BMC records again.
+fix:
+  quick_check:
+    command: |
+      # `sel info` prints the entry count against the log capacity and an
+      # explicit "Overflow" flag; that one line tells you whether the SEL
+      # is full or near-full.
+      sudo ipmitool sel info 2>/dev/null
+    description: "`ipmitool sel info` shows the current SEL entry count versus the BMC's log capacity, plus an Overflow flag. A full or near-full count (typically approaching 3000-4000 entries) is the blind-spot: the BMC drops new events once the log fills."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access with sudo (SEL read + clear are non-disruptive to the running OS)
+    - "ipmitool present, or the vendor BMC CLI (racadm / ilorest / SUM / OneCli) as an equivalent"
+    - Awareness that clearing the SEL is irreversible; export it first if the event history matters for compliance or an open investigation
+  safe_mode:
+    command: |
+      # Read-only inspection. Confirm the log is actually full/near-full
+      # and capture the current events before any clear.
+      sudo ipmitool sel info 2>/dev/null
+      sudo ipmitool sel elist 2>/dev/null | tail -40
+      # Look for the BMC's own log-full assertion. A standalone
+      # "Log area reset/cleared" event is the expected post-clear record.
+      sudo ipmitool sel elist 2>/dev/null | grep -iE 'log( area)? full|logging disabled.*(disabled|full)'
+    description: |
+      Read-only SEL inspection. `sel info` reports the entry count,
+      capacity, and Overflow flag; `sel elist` lists the events; the
+      grep surfaces the BMC's own log-full assertion if it emitted one,
+      while excluding the benign post-clear reset event. Nothing here
+      mutates the SEL.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Vendor-agnostic path. Export the SEL, then clear it so the BMC
+        # starts recording again.
+
+        # 1. Export the full SEL to a dated file BEFORE clearing (the clear
+        #    is irreversible; this file is the only local record afterward).
+        sudo ipmitool sel elist > /root/sel-$(date +%F).txt
+
+        # 2. Clear the SEL. Safe for the OS: only the BMC log is reset.
+        sudo ipmitool sel clear
+
+        # 3. Verify the log is recording again: the entry count drops and
+        #    the Overflow flag clears.
+        sudo ipmitool sel info
+      description: |
+        Export the SEL to /root/sel-$(date +%F).txt, then clear it with
+        `ipmitool sel clear`. Re-run `ipmitool sel info` and confirm the
+        entry count dropped and the log is recording again. On Dell/HPE/
+        Supermicro the events are also retained in the vendor log (iDRAC
+        Lifecycle Log, iLO IML, SUM event log), so preserve those too if
+        you need a durable history.
+  validation:
+    command: |
+      sudo ipmitool sel info
+    description: |
+      After clearing, `sel info` should show a low entry count and no
+      Overflow flag, confirming the BMC is recording new events again.
+      The negative validation is the alert auto-resolving on the next
+      snapshot once the count is low.
+  rollback:
+    available: false
+    command: null
+    note: |
+      `ipmitool sel clear` is not reversible; the cleared SEL entries are
+      gone. This is why the fix exports the SEL to a dated file first. The
+      events are typically also retained in the BMC vendor's own log
+      (iDRAC Lifecycle Log, iLO IML, Supermicro SUM log); preserve those
+      before clearing if compliance requires a durable record.
+  impact:
+    blast_radius: |
+      SEL read + export: non-disruptive. SEL clear: OS-side and kernel-side
+      unaffected; only the BMC event log is reset. No workload impact.
+    estimated_duration: |
+      Under 5 minutes: read, export, clear, verify.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-07-14"
+    tested_on:
+      - asrock ASRockRack (val fleet)
+    tester: Glassmkr ops (val campaign)
+    source_note: |
+      Found on the validation fleet box "asrock" (2026-07-14): the
+      ASRockRack BMC SEL was full, so ipmi_sel_critical had gone
+      structurally deaf to new events. Threshold basis: BMC SEL capacity
+      is typically ~3000-4000 entries and is not exposed in the snapshot,
+      so the rule fires either on the BMC's own log-full assertion
+      (authoritative) or on a near-full absolute count of 3000
+      (conservative heuristic). Desk-referenced against ipmitool(1) sel
+      subcommands and the IPMI 2.0 spec SEL semantics.
+    research_basis: fleet-tested

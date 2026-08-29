@@ -1,0 +1,4063 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Glassmkr Dashboard API",
+    "version": "1.0.0",
+    "description": "Programmatic access to Glassmkr Dashboard for fleet management. Authentication is via Bearer token: gmk_acct_live_* for account API keys, gmk_cru_live_* for collector keys (telemetry only).\n\nSee https://glassmkr.com/docs for the full reference. This document covers the v1 stable surface.\n\nThis document is the machine contract for the routes it lists. It does not yet cover every route the product serves; scripts/check-openapi-drift.mjs enforces that everything listed here exists, and tracks what is still undocumented so the gap cannot grow silently.\n\nErrors: every response under /api/ with a status of 400 or above returns the ApiError schema below. Branch on `error`, never on `message`.\n\nContract notes an agent should not have to infer. Cursor pagination exists on GET /servers and GET /account/audit only; other list endpoints return a complete result. Idempotency-Key is honoured on POST /servers only. GET /servers/{id}/health carries an explicit freshness block; other reads do not yet, so judge their age from the data itself.",
+    "contact": {
+      "email": "hello@glassmkr.com"
+    },
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://app.glassmkr.com/api/v1",
+      "description": "Glassmkr hosted"
+    },
+    {
+      "url": "{origin}/api/v1",
+      "description": "Self-hosted: set origin to your dashboard's base URL",
+      "variables": {
+        "origin": {
+          "default": "http://localhost:3000",
+          "description": "Scheme and host of your dashboard"
+        }
+      }
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "AccountApiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "gmk_acct_live_<43>_<4>",
+        "description": "Account-level API key for management endpoints. Created at /api/v1/account/keys (requires recent re-authentication via /api/v1/account/verify-password)."
+      },
+      "CollectorKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "gmk_cru_live_<43>_<4>",
+        "description": "Server-scoped collector key for /api/v1/ingest only. Cannot read or write any other resource."
+      },
+      "SessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "guardian_token",
+        "description": "Browser session cookie, issued by the sign-in flow at /api/v1/auth/login. An API client cannot obtain one: there is no programmatic exchange from an account key to a session. An operation that lists ONLY this scheme is therefore not callable with any API key, by design. Creating, rotating and revoking account keys are the operations in that category, because in v1 an account key may not mint or replace another account key."
+      }
+    },
+    "schemas": {
+      "Server": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "srv_a1b2c3d4e5f6"
+          },
+          "name": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "os_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "os_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended",
+              "deleted"
+            ]
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "collector_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active_alerts": {
+            "type": "integer"
+          },
+          "disk_health_rollup": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "declining",
+              "failing",
+              "broken"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AccountApiKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string",
+            "example": "gmk_acct_live_"
+          },
+          "last_4": {
+            "type": "string",
+            "example": "a1b2"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "documentation_url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "RateLimitedError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "rate_limit_exceeded"
+            ]
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "ip",
+              "key",
+              "acct",
+              "ep:servers:create",
+              "ep:servers:delete",
+              "ep:rotate-key"
+            ]
+          },
+          "retry_after_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "error",
+          "message",
+          "retryable"
+        ],
+        "description": "Returned by every /api/ response with status >= 400.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Stable machine code. Branch on this.",
+            "examples": [
+              "unauthenticated",
+              "not_found",
+              "method_not_allowed",
+              "rate_limited"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Human explanation. Wording may change at any time; do not parse."
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Matches the X-Request-Id response header."
+          },
+          "documentation_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether an identical retry could plausibly succeed."
+          },
+          "retry_after_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "details": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      }
+    },
+    "parameters": {
+      "ServerId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^srv_[0-9a-f]{16}$"
+        }
+      },
+      "ApiKeyId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "description": "Stripe-style idempotency token. If a request retries within 24h, the cached response is returned."
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/account/audit": {
+      "get": {
+        "operationId": "getAccountAudit",
+        "tags": [
+          "Account"
+        ],
+        "summary": "List audit log entries",
+        "description": "Customer-facing view of api_audit_log. Filterable. Entries are append-only: the schema blocks UPDATE and DELETE (migrations/postgres/009), and no retention job removes them. Cursor-paginated, newest first, via `next_cursor`.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "server",
+                "api_key"
+              ]
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "auth_failed",
+                "forbidden",
+                "not_found",
+                "rate_limited",
+                "invalid",
+                "error"
+              ]
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit entries, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "admin",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/account/keys": {
+      "get": {
+        "operationId": "getAccountKeys",
+        "tags": [
+          "Account"
+        ],
+        "summary": "List account API keys",
+        "description": "Metadata for this account's keys: name, prefix, last four, scope, capabilities, expiry, last use. Key material is never returned; it is shown once at creation and never again.",
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Key metadata. Key material is never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "last_4": {
+                            "type": "string"
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "read",
+                              "write",
+                              "admin"
+                            ]
+                          },
+                          "capabilities": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "created_at": {
+                            "type": "string"
+                          },
+                          "last_used_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "expires_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "revoked_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "replaces_key_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "post": {
+        "operationId": "createAccountKeys",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Create account API key",
+        "description": "Requires recent re-authentication (POST /api/v1/account/verify-password within last 5 min). Returns plaintext once; not shown again.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "expires_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time",
+                    "description": "Optional future timestamp. Key auto-revokes after."
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "write",
+                      "admin"
+                    ],
+                    "default": "write",
+                    "description": "Hierarchical access level, fixed at creation. read < write < admin. A `scopes` array was accepted in early v1 and its column was dropped by migration 020; sending it now has no effect."
+                  },
+                  "capabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "servers:purge"
+                      ]
+                    },
+                    "default": [],
+                    "description": "Opt-in capabilities, additive to `scope` and never implied by it. Empty by default. servers:purge permits DELETE /trashed-servers/{id}. Requires write or admin scope."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created. `key` is shown once and never again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "id"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "The full credential. Store it now; it cannot be retrieved later."
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": null,
+        "x-glassmkr-scope-note": "session-only; not reachable with an account key",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session"
+        ]
+      }
+    },
+    "/account/keys/{id}": {
+      "delete": {
+        "operationId": "deleteAccountKeysById",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Revoke an API key",
+        "description": "Revokes a key immediately. A rotated key's predecessor carries a grace period instead; this does not.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "admin",
+        "x-glassmkr-route-scope": "admin",
+        "x-glassmkr-auth": [
+          "session"
+        ]
+      }
+    },
+    "/account/keys/{id}/rotate": {
+      "post": {
+        "operationId": "createAccountKeysByIdRotate",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Rotate account API key",
+        "description": "Atomically revokes the old key and mints a new one with the same name + scopes + expires_at. Requires recent re-authentication. Per-endpoint rate limit: 10/hour/account. Side effect: the previous credential keeps working for a grace period rather than dying immediately, so a rotation does not break a running agent mid-collection.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rotated. The previous credential keeps working for a grace period.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "grace_period_ends_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "admin",
+        "x-glassmkr-route-scope": "admin",
+        "x-glassmkr-auth": [
+          "session"
+        ]
+      }
+    },
+    "/alerts/{id}/acknowledge": {
+      "post": {
+        "operationId": "createAlertsByIdAcknowledge",
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Acknowledge an alert",
+        "description": "Marks an alert acknowledged. It stays visible and does not stop the underlying condition; acknowledgement records that a human has seen it.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acknowledged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "alert": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/alerts/{id}/resolve": {
+      "post": {
+        "operationId": "createAlertsByIdResolve",
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Manually resolve an alert",
+        "description": "Marks an alert resolved. Alerts normally auto-resolve when the condition clears; use this when the state cannot clear itself.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "description": "Optional reason recorded in the audit log."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "alert": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "getAuthMe",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Current principal",
+        "description": "Who this credential belongs to.",
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The principal behind this credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "plan": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/billing/status": {
+      "get": {
+        "operationId": "getBillingStatus",
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Account status",
+        "description": "Plan, node usage against the cap, and retention window. Self-hosted instances have no plan gates, so this reports the deployment's configuration rather than a tier.",
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/channels": {
+      "get": {
+        "operationId": "getChannels",
+        "tags": [
+          "Channels"
+        ],
+        "summary": "List notification channels",
+        "description": "Configured alert destinations. Six types: slack, discord, pagerduty, telegram, email, webhook.",
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "post": {
+        "operationId": "createChannels",
+        "tags": [
+          "Channels"
+        ],
+        "summary": "Create a notification channel",
+        "description": "Adds an alert destination.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "channel_type",
+                  "config"
+                ],
+                "properties": {
+                  "channel_type": {
+                    "type": "string",
+                    "enum": [
+                      "slack",
+                      "discord",
+                      "pagerduty",
+                      "telegram",
+                      "email",
+                      "webhook"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "description": "Type-specific destination. slack and discord take webhook_url; telegram a chat_id; email an address; pagerduty a routing_key; webhook a url."
+                  },
+                  "priorities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "P1",
+                        "P2",
+                        "P3"
+                      ]
+                    },
+                    "description": "Which alert priorities route here. Omitted means all."
+                  },
+                  "notify_minor_update": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channel": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/channels/{id}": {
+      "put": {
+        "operationId": "replaceChannelsById",
+        "tags": [
+          "Channels"
+        ],
+        "summary": "Replace a channel",
+        "description": "Full replacement. PATCH updates individual fields.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object"
+                  },
+                  "priorities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "P1",
+                        "P2",
+                        "P3"
+                      ]
+                    }
+                  },
+                  "notify_minor_update": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Replaced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channel": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "delete": {
+        "operationId": "deleteChannelsById",
+        "tags": [
+          "Channels"
+        ],
+        "summary": "Delete a channel",
+        "description": "Removes a channel. Alerts stop routing to it.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/channels/{id}/test": {
+      "post": {
+        "operationId": "createChannelsByIdTest",
+        "tags": [
+          "Channels"
+        ],
+        "summary": "Send a test notification",
+        "description": "ALWAYS returns 200. A delivery failure is a result, not an API error: the test ran and found out the channel did not accept the message. Read `success`; when false, `error` carries the upstream reason. Side effect: this actually delivers a message to the configured destination. It is a real notification, not a simulation.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Service health",
+        "description": "Liveness and dependency checks. Public: no credential needed, so an uptime monitor can call it.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Health report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "overall": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded",
+                        "down"
+                      ]
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "public",
+        "x-glassmkr-route-scope": "public"
+      }
+    },
+    "/host-profiles": {
+      "get": {
+        "operationId": "getHostProfiles",
+        "tags": [
+          "Reference"
+        ],
+        "summary": "List host profiles",
+        "description": "The host-profile catalogue. A profile suppresses alerts that are expected by design for a kind of host; real faults still fire. Static product metadata, identical for every account.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Profiles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "profiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "public",
+        "x-glassmkr-route-scope": "public"
+      }
+    },
+    "/ingest": {
+      "post": {
+        "operationId": "createIngest",
+        "tags": [
+          "Ingest"
+        ],
+        "summary": "Submit a Crucible snapshot",
+        "description": "Telemetry-only endpoint. Auth: collector key (gmk_cru_live_* or legacy col_*). Rate limit: 1 request per minute per server.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "hostname"
+                ],
+                "properties": {
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "collector_version": {
+                    "type": "string"
+                  },
+                  "system": {
+                    "type": "object",
+                    "description": "Host identity, uptime, OS."
+                  },
+                  "storage": {
+                    "type": "object",
+                    "description": "Disks, SMART attributes, filesystems, RAID and ZFS state."
+                  },
+                  "network": {
+                    "type": "object",
+                    "description": "Interfaces, errors, bonds."
+                  },
+                  "ipmi": {
+                    "type": "object",
+                    "description": "BMC sensors and SEL, when a BMC is present."
+                  },
+                  "gpu": {
+                    "type": "object",
+                    "description": "GPU state, when present."
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CollectorKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot accepted and evaluated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "received_at": {
+                      "type": "string"
+                    },
+                    "new_alerts": {
+                      "type": "integer"
+                    },
+                    "active_alerts": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "cru-key-only",
+        "x-glassmkr-route-scope": "cru-key-only"
+      }
+    },
+    "/servers": {
+      "get": {
+        "operationId": "getServers",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "List servers",
+        "description": "Returns all servers owned by the authenticated customer. Paginated by `cursor`. Cursor-paginated: pass `cursor` from a previous response's `next_cursor`. An absent `next_cursor` means the last page.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "explode": true
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Server"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "post": {
+        "operationId": "createServers",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Create a server",
+        "description": "Registers a new server, returns the collector key (gmk_cru_live_*) once. The plaintext key cannot be retrieved later; rotate via /api/v1/servers/{id}/rotate-key to issue a new one. Accepts an `Idempotency-Key` header. A retry within 24 hours carrying the same key returns the original response rather than creating a second server. This is the only mutation that supports it today; assume the others are not safe to retry blindly.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "hostname": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253,
+                    "description": "RFC 1035 hostname; opaque label, never resolved server-side. Defaults to name."
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 50
+                    },
+                    "maxItems": 20
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Server created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "server": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "hostname": {
+                          "type": "string"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "api_key": {
+                          "type": "string",
+                          "description": "Plaintext collector key. Save it now; not shown again."
+                        }
+                      }
+                    },
+                    "ingest_url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}": {
+      "get": {
+        "operationId": "getServersById",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Get one server",
+        "description": "Management-plane detail for one server: identity, OS, hardware, agent version, last seen. Telemetry lives on /servers/{id}/health and /servers/{id}/metrics.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Management-plane detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "server": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "patch": {
+        "operationId": "updateServersById",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Update server",
+        "description": "Update name and/or tags. Hostname is intentionally NOT updatable — operations relies on it as a stable identifier.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 50
+                    },
+                    "maxItems": 20
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "server": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "delete": {
+        "operationId": "deleteServer",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Delete a server (moves it to trash)",
+        "description": "Moves the server to trash. It stops collecting and drops out of your node count, and it is restorable with POST /servers/{id}/restore. Requires ?confirm=true. This is the same behaviour as the MCP tool glassmkr.admin.delete_server; every interface agrees. To destroy a server permanently, delete it here first and then call DELETE /trashed-servers/{id}, which is a separate operation with its own capability. Side effects: the server stops collecting and drops out of the billed node count. Both reverse on restore.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Moved to trash. Restorable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "permanent",
+                    "restorable"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "deleted": {
+                      "type": "string"
+                    },
+                    "permanent": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "restorable": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "restore_with": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/alerts": {
+      "get": {
+        "operationId": "getServersByIdAlerts",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "List a server's alerts",
+        "description": "Alerts for one server. Use ?status=active for what is currently firing; the default returns the fuller set, which includes history.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alerts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alerts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/alerts/{alertId}/ticket-draft": {
+      "post": {
+        "operationId": "createServersByIdAlertsByAlertIdTicketDraft",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Draft a provider ticket",
+        "description": "Builds a plain-text ticket from an alert using a deterministic template: no model call and no third-party network. POST by REST convention only; it changes no customer state.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "alertId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Draft ticket text. Nothing is sent anywhere.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "draft"
+                  ],
+                  "properties": {
+                    "draft": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/analyses": {
+      "get": {
+        "operationId": "getServersByIdAnalyses",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Past AI analyses",
+        "description": "Previously generated AI analyses for one server. Reading costs nothing; generating a new one is POST /servers/{id}/analyze.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analyses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "analyses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/analyze": {
+      "get": {
+        "operationId": "getServersByIdAnalyze",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Poll a running analysis",
+        "description": "Status of an analysis started with POST on the same path.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status of a running analysis.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "job_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "post": {
+        "operationId": "createServersByIdAnalyze",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Run an AI analysis",
+        "description": "Generates a new AI analysis of this server's recent snapshots. Self-hosted instances point LLM_API_URL at any OpenAI-compatible endpoint; with none configured the feature is off and everything else still works.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analysis queued or completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "job_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "analysis": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/disk-health": {
+      "get": {
+        "operationId": "getServersByIdDiskHealth",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Per-drive health",
+        "description": "SMART-derived health per drive, including the reallocated and pending counters that drive the storage rules.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-drive health.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "disks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/health": {
+      "get": {
+        "operationId": "getServersByIdHealth",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Latest health summary",
+        "description": "The most recent health rollup for one server: current alert state and the domain summaries behind it. This is the endpoint to poll for current state; /servers/{id}/alerts is the alert list itself. The response carries a `freshness` block: `observed_at`, `age_seconds`, `stale`, and the `stale_after_seconds` threshold it used, so a caller can apply its own. `stale` is true beyond fifteen minutes, which is three missed collections at the five-minute cadence. Treat a stale reading as evidence the host stopped reporting, not as current state.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest health rollup.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "health": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/history": {
+      "get": {
+        "operationId": "getServersByIdHistory",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Snapshot history",
+        "description": "Historical snapshots for one server, bounded. Exceeding the maximum window returns 400 with the limit and what was requested, so a client can retry with a smaller range rather than guessing.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded snapshot history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "snapshots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/metrics": {
+      "get": {
+        "operationId": "getServersByIdMetrics",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Time-series metrics",
+        "description": "Metric series for one server over a bounded window.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metric series over a bounded window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "metrics": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/mutes": {
+      "get": {
+        "operationId": "getServersByIdMutes",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "List rule mutes",
+        "description": "Rules muted on this server.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mutes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mutes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "post": {
+        "operationId": "createServersByIdMutes",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Mute a rule on a server",
+        "description": "Stops one rule firing for this server. A mute can resolve an alert that is currently active for that rule, so the effect is not confined to the future. Side effect: muting a rule can resolve an alert that is currently active for it, so this is not confined to future evaluations.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "alert_type"
+                ],
+                "properties": {
+                  "alert_type": {
+                    "type": "string",
+                    "description": "Rule id to mute on this server."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Muted. May also resolve an alert currently active for that rule.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "muted_rules"
+                  ],
+                  "properties": {
+                    "muted_rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "delete": {
+        "operationId": "deleteServersByIdMutes",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Unmute a rule",
+        "description": "The rule can fire again on the next evaluation.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unmuted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "muted_rules"
+                  ],
+                  "properties": {
+                    "muted_rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/restore": {
+      "post": {
+        "operationId": "createServersByIdRestore",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Restore a trashed server",
+        "description": "Returns a soft-deleted server to active. Subject to the account's node cap, so a restore can be refused when the fleet is already at the limit. Side effect: re-activating a server counts against the account's node cap, so a restore can be refused when the fleet is already at the limit.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored to active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "server": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/rotate-key": {
+      "post": {
+        "operationId": "createServersByIdRotateKey",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Rotate collector key",
+        "description": "Atomically revokes the current collector key for this server and returns a new gmk_cru_live_* key. Old key returns 401 immediately. Per-endpoint rate limit: 10/hour/account.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "server": {
+                      "type": "object"
+                    },
+                    "collector_key": {
+                      "type": "string",
+                      "description": "New plaintext key, gmk_cru_live_*. Not shown again."
+                    },
+                    "rotated_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "admin",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/{id}/trend-warnings": {
+      "get": {
+        "operationId": "getServersByIdTrendWarnings",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Trend warnings for a server",
+        "description": "Active trend warnings for one server. Urgency tiers and what they mean are documented at https://glassmkr.com/docs.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trend warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/servers/restore-all": {
+      "post": {
+        "operationId": "createServersRestoreAll",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Restore every trashed server",
+        "description": "Bulk form of the above, same node-cap rules.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "restored": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/trashed-servers/{id}": {
+      "delete": {
+        "operationId": "purgeTrashedServer",
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Permanently destroy a trashed server",
+        "description": "PERMANENT and irreversible: destroys the server row and its stored metrics. Four conditions, all required. (1) The server must ALREADY be in the trash, so DELETE /servers/{id} is an unavoidable first step. (2) ?confirm=true. (3) Recent re-authentication via POST /account/verify-password, so a leaked key alone is not enough. (4) An account key holding the servers:purge capability, which is opt-in at key creation and is NOT granted by admin scope, so keys created before it existed cannot purge. Deliberately absent from the MCP surface: an agent has no path to permanent destruction.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Purged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "purged": {
+                      "type": "string"
+                    },
+                    "permanent": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "restorable": {
+                      "type": "boolean",
+                      "const": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "admin",
+        "x-glassmkr-route-scope": "admin",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/trend-warnings/{id}/feedback": {
+      "post": {
+        "operationId": "createTrendWarningsByIdFeedback",
+        "tags": [
+          "Trend warnings"
+        ],
+        "summary": "Rate a trend warning",
+        "description": "Records a warning as valuable or a false positive. Feeds the precision estimate above.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "feedback"
+                ],
+                "properties": {
+                  "feedback": {
+                    "type": "string",
+                    "enum": [
+                      "valuable",
+                      "false_positive"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      },
+      "delete": {
+        "operationId": "deleteTrendWarningsByIdFeedback",
+        "tags": [
+          "Trend warnings"
+        ],
+        "summary": "Withdraw feedback",
+        "description": "Removes a previously recorded rating, which also removes it from the precision estimate.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Withdrawn.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "write",
+        "x-glassmkr-route-scope": "write",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/trend-warnings/active": {
+      "get": {
+        "operationId": "getTrendWarningsActive",
+        "tags": [
+          "Trend warnings"
+        ],
+        "summary": "Active trend warnings",
+        "description": "Across the whole account.",
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/trend-warnings/evaluations": {
+      "get": {
+        "operationId": "getTrendWarningsEvaluations",
+        "tags": [
+          "Trend warnings"
+        ],
+        "summary": "Trend evaluation batches",
+        "description": "When the trend engine last ran and what it covered. Batches run every six hours.",
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch history. Batches run every six hours.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "evaluations": {
+                      "type": "object"
+                    },
+                    "last_evaluated_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/trend-warnings/track-record": {
+      "get": {
+        "operationId": "getTrendWarningsTrackRecord",
+        "tags": [
+          "Trend warnings"
+        ],
+        "summary": "Trend warning track record",
+        "description": "Confirmed and dismissed counts, and a precision estimate. Below ten ratings the estimate is a tally rather than a measurement, and the dashboard says so.",
+        "security": [
+          {
+            "AccountApiKey": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts and a precision estimate. Below ten ratings the estimate is a tally, not a measurement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "window_days": {
+                      "type": "integer"
+                    },
+                    "warnings_sent": {
+                      "type": "integer"
+                    },
+                    "warnings_confirmed": {
+                      "type": "integer"
+                    },
+                    "warnings_dismissed": {
+                      "type": "integer"
+                    },
+                    "warnings_pending": {
+                      "type": "integer"
+                    },
+                    "warnings_pending_live": {
+                      "type": "integer"
+                    },
+                    "warnings_pending_stale": {
+                      "type": "integer"
+                    },
+                    "precision_estimate": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "warnings_that_preceded_alert": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "read",
+        "x-glassmkr-route-scope": "read",
+        "x-glassmkr-auth": [
+          "session",
+          "acct_key"
+        ]
+      }
+    },
+    "/version": {
+      "get": {
+        "operationId": "getVersion",
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Current agent version",
+        "description": "The Crucible version this deployment considers current, and the minimum it supports. Read by the agent's own update check.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Version information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "crucible": {
+                      "type": "object",
+                      "properties": {
+                        "latest": {
+                          "type": "string"
+                        },
+                        "min_supported": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-glassmkr-scope": "public",
+        "x-glassmkr-route-scope": "public"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Account"
+    },
+    {
+      "name": "Alerts"
+    },
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Billing"
+    },
+    {
+      "name": "Channels"
+    },
+    {
+      "name": "Ingest"
+    },
+    {
+      "name": "Reference"
+    },
+    {
+      "name": "Servers"
+    },
+    {
+      "name": "Trend warnings"
+    }
+  ]
+}

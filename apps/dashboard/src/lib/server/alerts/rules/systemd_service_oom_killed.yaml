@@ -1,0 +1,116 @@
+# systemd_service_oom_killed; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C11_C18_ACTIVATION_2026-05-19.md §1.3.
+#
+# Fires when systemd reports a failed unit with Result=oom-kill.
+# Distinct from host-level oom_kills (which counts kernel OOM events);
+# this rule names the specific service that died, so the alert card
+# can render "myapp.service was the casualty" alongside the host-
+# level "5 OOM kills in last hour" rule.
+#
+# Subordinate to oom_kills: when both fire on the same host within
+# the correlation window, runtime subordination collapses this under
+# oom_kills as evidence. The parent rule names the host; this rule
+# names the unit.
+#
+# Capability gate: snap.systemd.failed_unit_details (Crucible
+# v0.12.0+). Pre-0.12.0 agents see no emission.
+id: systemd_service_oom_killed
+priority: P1
+# Forensic rule: the OOM event that killed the unit already happened.
+# The systemd state may still show failed/oom-kill until restart, but
+# operator closure is the canonical path so the resolution note
+# captures the investigation outcome.
+manual_resolve: true
+subordinate_to: oom_kills
+title: systemd service killed by OOM
+summary: "systemd reports a failed unit with Result=oom-kill. The kernel OOM killer terminated the service; pair with the host-level oom_kills emission to find the underlying memory pressure source."
+fix:
+  quick_check:
+    command: |
+      # Recent OOM-killed services (Result=oom-kill):
+      for u in $(systemctl list-units --type=service --state=failed --no-legend | awk '{print $1}'); do
+        res=$(systemctl show "$u" -p Result --value 2>/dev/null)
+        [ "$res" = "oom-kill" ] && echo "$u  result=$res" && systemctl status "$u" --no-pager -l | head -15
+      done
+      # Recent OOM events from the kernel:
+      sudo journalctl -k --since "6 hours ago" | grep -iE 'oom-killer|killed process' | tail -20
+    description: "Every failed unit whose Result is oom-kill (systemd attributes the OOM directly to the unit) + the kernel's OOM log for the recent window so you see what was actually killed."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the affected host
+    - Awareness of the service's memory configuration (systemd MemoryHigh / MemoryMax / LimitNOFILE)
+    - Authority to edit the unit file and run daemon-reload + restart
+  safe_mode:
+    command: |
+      systemctl status <UNIT>
+      systemctl cat <UNIT> | grep -i memory
+      cat /proc/pressure/memory
+      journalctl -k --since='-1h' --no-pager | grep -i 'oom\|killed process'
+    description: |
+      Read-only inspection. systemctl status shows the failure state;
+      systemctl cat shows the unit's memory limits; /proc/pressure/
+      memory shows PSI memory stall history; journalctl -k surfaces
+      the OOM-killer's victim selection.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Decide first: was this host-level OOM (raise host RAM or
+        # reduce overall workload) or service-tier OOM (this service's
+        # MemoryHigh / MemoryMax was too tight for its real workload)?
+        #
+        # Host-level signal: many distinct units in OOM history, high
+        # avg300 memory pressure, low MemAvailable.
+        # Service-tier signal: this unit alone keeps hitting OOM under
+        # normal host load.
+        #
+        # If service-tier, raise the unit's memory limits:
+        sudo systemctl edit <UNIT>
+        # [Service]
+        # MemoryHigh=4G
+        # MemoryMax=6G
+        sudo systemctl daemon-reload
+        sudo systemctl restart <UNIT>
+      description: |
+        MemoryHigh is a soft limit (kernel throttles allocation past
+        it; service slows down but doesn't die); MemoryMax is the
+        hard cap (service is OOM-killed past it). Setting MemoryHigh
+        a step below MemoryMax gives early warning via PSI without
+        the abrupt kill.
+  validation:
+    command: |
+      systemctl status <UNIT>
+    description: |
+      Service should report active (running). Re-check on the next
+      snapshot cycle; the rule auto-resolves when systemd no longer
+      reports the unit in failed state with Result=oom-kill.
+  rollback:
+    available: true
+    command: |
+      sudo systemctl revert <UNIT>
+      sudo systemctl daemon-reload
+      sudo systemctl restart <UNIT>
+    note: |
+      systemctl revert undoes drop-in edits. The unit goes back to
+      its packaged configuration; pre-edit memory limits restore.
+  impact:
+    blast_radius: |
+      Alert has no service impact. Remediation (raising memory
+      limits) is a one-line edit + daemon-reload + restart; brief
+      service interruption during the restart.
+    estimated_duration: |
+      Triage 5-15 min; restart-with-new-limits typically 1-3 min.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic failed_unit_details fixture (Crucible C12 systemctl show)
+    tester: Glassmkr ops
+    research_basis: operator-pattern
+    source_note: |
+      Pattern library 2026-05-18 Category 7 (Services). systemd's
+      Result=oom-kill is the canonical signal that the kernel OOM
+      killer terminated this specific unit. Distinct from
+      host-level oom_kills (kernel counts of OOM events); when
+      both fire, runtime subordination consolidates and this rule
+      attaches as evidence under oom_kills.

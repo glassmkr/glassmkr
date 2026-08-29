@@ -1,0 +1,140 @@
+# gpu_driver_unsafe_reboot; new rule from the 20-box GPU fleet remediation
+# report (rec #1, "the big one").
+#
+# Fires off snap.gpu.driver_resilience (Crucible collects it even when
+# nvidia-smi is dead, which is exactly the dangerous case):
+#   - nvidia_pci_present === true AND nvidia_module_loaded === false
+#       -> critical: the GPU is unusable now and a reboot will not recover it.
+#   - nvidia_pci_present === true AND nouveau_blacklisted === false
+#       -> warning: nouveau will bind the GPU on the next reboot before the
+#         nvidia driver, so the GPU will not come back and a Vast host de-lists.
+#
+# Severity is set per-host by the evaluator (critical when the driver is
+# already down, warning for the latent at-risk case). No incident group: this
+# is a standalone reboot-safety check, not part of a hardware-fault cluster.
+id: gpu_driver_unsafe_reboot
+priority: P1
+title: GPU will not survive a reboot
+summary: "This host has an NVIDIA GPU, but either the nvidia kernel module is not loaded (the GPU is unusable now) or nouveau is not blacklisted. If nouveau is not blacklisted it binds the GPU first on the next boot, the nvidia driver cannot load, nvidia-smi fails, and a marketplace (Vast) host silently de-lists itself. The fix is non-disruptive and only affects the next boot."
+fix:
+  quick_check:
+    command: |
+      lspci -d 10de: -k | grep -iA3 -e VGA -e 3D
+      lsmod | grep -e nvidia -e nouveau
+      grep -rsi "blacklist nouveau" /etc/modprobe.d/ || echo "nouveau is NOT blacklisted"
+    description: "Shows the kernel driver bound to the NVIDIA GPU, which modules are loaded (nvidia vs nouveau), and whether a blacklist directive exists. A reboot-safe host has the nvidia module loaded and a blacklist nouveau line present."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access on the host
+    - "A planned maintenance window for the reboot (do NOT reboot unplanned; on a marketplace host announce it, e.g. vastai schedule maint)"
+    - Root or sudo to write /etc/modprobe.d and rebuild the initramfs
+  safe_mode:
+    command: |
+      # Read-only: confirm the hardware, the bound driver, and the blacklist state.
+      lspci -d 10de: -k
+      cat /proc/modules | grep -e '^nvidia ' -e '^nouveau '
+      grep -rsi "blacklist nouveau" /etc/modprobe.d/
+    description: |
+      Pure inspection. If you see an NVIDIA VGA/3D device with no
+      "Kernel driver in use: nvidia" line, or nouveau loaded, or no
+      blacklist directive, the host is at risk on its next reboot.
+  variants:
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        # Blacklist nouveau and rebuild the initramfs. Idempotent and
+        # non-disruptive: it changes nothing about the running system and
+        # only affects the NEXT boot, which is the point.
+        # Namespaced filename on purpose: a GPU host often already has a
+        # blacklist-nouveau.conf, and writing to that name would overwrite the
+        # operator's file, with the rollback then deleting it outright.
+        echo "blacklist nouveau" | sudo tee /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
+        echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
+        sudo update-initramfs -u
+        # If the nvidia module is not currently loaded, install/repair the
+        # driver before the maintenance reboot (package name varies by setup):
+        #   sudo apt-get install --reinstall nvidia-driver-<version>
+        # Then, in your maintenance window:
+        #   sudo reboot
+        # After reboot, confirm the GPU came back:
+        nvidia-smi
+        lsmod | grep -e nvidia -e nouveau
+      description: |
+        Debian/Ubuntu path. The blacklist + update-initramfs makes the box
+        reboot-safe before the reboot happens. Reboot only in a planned
+        window; on Vast, announce maintenance first so a rented job is not
+        interrupted (unplanned downtime hurts the host's reliability score).
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        # RHEL family: blacklist nouveau and rebuild the initramfs with dracut.
+        echo "blacklist nouveau" | sudo tee /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
+        echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
+        sudo dracut --force
+        # Repair the driver first if the nvidia module is not loaded, then
+        # reboot in a planned window:
+        #   sudo reboot
+        nvidia-smi
+        lsmod | grep -e nvidia -e nouveau
+      description: |
+        RHEL-family path (dracut instead of update-initramfs). Same logic:
+        make the host reboot-safe first, then reboot in a planned window.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Distro-agnostic fallback. Blacklist nouveau, then rebuild the
+        # initramfs with whichever tool this distro ships. Only affects the
+        # NEXT boot; nothing about the running system changes.
+        echo "blacklist nouveau" | sudo tee /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
+        echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
+        # Rebuild the initramfs (use the one your distro has):
+        #   Debian/Ubuntu: sudo update-initramfs -u
+        #   RHEL family:    sudo dracut --force
+        #   Arch:           sudo mkinitcpio -P
+        # If the nvidia module is not loaded, repair the driver before the
+        # reboot, then reboot only in a planned maintenance window:
+        #   sudo reboot
+        # After reboot, confirm the GPU came back:
+        nvidia-smi
+        lsmod | grep -e nvidia -e nouveau
+      description: |
+        Generic path for any distro not matched above. Blacklist nouveau and
+        rebuild the initramfs with the distro's own tool, then reboot in a
+        planned window (on a marketplace, announce maintenance first).
+  validation:
+    command: |
+      lsmod | grep -e '^nvidia ' && grep -rsi "blacklist nouveau" /etc/modprobe.d/ && nvidia-smi
+    description: |
+      After the fix and the planned reboot, the nvidia module is loaded,
+      a blacklist nouveau directive exists, and nvidia-smi succeeds. The
+      rule auto-resolves on the next snapshot.
+  rollback:
+    available: true
+    command: |
+      sudo rm -f /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
+      sudo update-initramfs -u   # or: sudo dracut --force
+    note: |
+      Removing the blacklist restores nouveau on the next boot. There is
+      rarely a reason to do this on a GPU compute host; nouveau is the
+      problem this rule warns about.
+  impact:
+    blast_radius: |
+      If the host is rebooted while at risk, the NVIDIA driver fails to
+      load, the GPU is unavailable, and on a marketplace the machine
+      de-lists and stops earning until the driver is repaired by hand.
+    estimated_duration: |
+      Fix is under 5 minutes. The reboot is scheduled into a maintenance
+      window of the operator's choosing.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-06-27"
+    tested_on:
+      - 20-box GPU fleet on Vast (A16 / L4 / A4000 / A6000)
+    tester: Glassmkr ops
+    research_basis: fleet-tested
+    source_note: |
+      Found operating a real 20-box GPU fleet: three boxes had already
+      de-listed from Vast after a reboot because nouveau was not
+      blacklisted, and the rest were one reboot away. Crucible's
+      driver_resilience block reports the hardware + module + blacklist
+      state so this is caught while the box is still up.

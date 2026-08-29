@@ -1,0 +1,14 @@
+// scope: public
+import { json } from "@sveltejs/kit";
+import type { RequestHandler } from "./$types";
+
+// GET /api/health - Simple health check
+export const GET: RequestHandler = async () => {
+  return json({
+    overall: "ok",
+    checks: [{ name: "dashboard_alive", status: "ok", message: "Dashboard is running", timestamp: Date.now() }],
+    lastRun: Date.now(),
+    uptimeSince: Date.now(),
+    consecutiveFailures: 0,
+  });
+};

@@ -1,0 +1,227 @@
+/* Shared styling for the /for-<audience> vertical landing pages
+ * (CONTENT_TRANCHE_1 spec, 2026-05-17). Imported by each page's
+ * +page.svelte so the visual rhythm is consistent across the
+ * vertical pages (/for-storage, /for-compute, /for-gpu, /for-providers) without
+ * per-page CSS duplication. Mirrors the vs/comparison.css pattern.
+ *
+ * Page-specific overrides stay inline in the relevant page
+ * (e.g. for-gpu's .pricing-note and its tighter .pricing-examples
+ * bottom margin); this file holds the structural defaults.
+ */
+
+.vertical {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Hero */
+.hero {
+  padding: 80px 0 64px;
+  text-align: center;
+}
+.eyebrow {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  opacity: 0.75;
+  margin: 0 0 24px;
+}
+h1 {
+  font-size: clamp(34px, 5.4vw, 56px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  color: var(--text-primary);
+  margin: 0 0 24px;
+}
+.subhead {
+  max-width: 680px;
+  margin: 0 auto 32px;
+  font-size: clamp(15px, 1.6vw, 17px);
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+.cta-row {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+.cta-caption {
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  margin: 0 0 40px;
+}
+.btn-lg {
+  padding: 14px 26px;
+  font-size: 15px;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border);
+}
+.btn-ghost:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.mit-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: var(--radius-md);
+  background: rgba(245, 166, 35, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+}
+
+.install-block {
+  margin: 0 auto;
+  max-width: 640px;
+  background: #0d0d0d;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  padding: 18px 22px;
+  text-align: left;
+}
+.install-block code {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: var(--accent);
+  display: block;
+}
+.install-version {
+  margin: 12px 0 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* Section blocks */
+.section {
+  padding: 56px 0;
+  border-top: 1px solid var(--surface-border);
+}
+.section h2 {
+  font-size: clamp(24px, 3.2vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+  margin: 0 0 20px;
+}
+.section p {
+  font-size: 15.5px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  margin: 0 0 18px;
+}
+.section p:last-child { margin-bottom: 0; }
+.section a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.section code {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  background: rgba(245, 166, 35, 0.06);
+  color: var(--accent);
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+}
+
+/* Fit grid */
+.fit-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+  margin-top: 24px;
+}
+.fit-item h3 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+.fit-item p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+/* Rule categories list */
+.rule-categories {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 24px;
+}
+.rule-categories li {
+  padding: 10px 0;
+  border-top: 1px solid var(--surface-border);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.rule-categories li:last-child {
+  border-bottom: 1px solid var(--surface-border);
+}
+.rule-categories strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.rule-footer {
+  font-size: 14.5px;
+  color: var(--text-tertiary);
+}
+
+/* Pricing reminder */
+.pricing-examples {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 28px;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.pricing-examples li {
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+.pricing-examples strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.pricing-reminder .cta-row { justify-content: flex-start; margin-top: 24px; }
+.cta-section .cta-row { justify-content: flex-start; margin-top: 24px; }
+.cta-section .install-block { margin: 0 0 24px; }
+
+.contact {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  margin-top: 24px;
+}
+
+@media (max-width: 720px) {
+  .hero { padding: 56px 0 48px; }
+  .section { padding: 44px 0; }
+  .cta-row { flex-direction: column; align-items: stretch; }
+  .cta-row .btn-lg { justify-content: center; }
+  .pricing-examples { flex-direction: column; gap: 8px; }
+}

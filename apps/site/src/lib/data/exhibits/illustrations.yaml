@@ -1,0 +1,58 @@
+# Public image assets that are ILLUSTRATIONS, not evidence.
+#
+# The evidence rule is that a public exhibit is a genuine capture or a
+# recorded-data render carrying provenance (see manifest.yaml). Some public
+# images are not that: they are hand-composed component renders used to show
+# what the product looks like. They are legitimate, but only when a viewer can
+# tell which kind they are looking at.
+#
+# Every file under apps/site/static/screenshots/ must appear either in
+# manifest.yaml as evidence or here as an illustration. scripts/check-exhibits.mjs
+# fails on anything in neither, so a new synthetic asset cannot be published
+# without someone classifying it.
+#
+# `labelled_at` records WHERE the viewer is told it is illustrative. An entry
+# with an empty labelled_at is an open item, not a resolved one: the gate exits
+# 2 (INCOMPLETE) rather than 0, so a run cannot be read as a clean pass while a
+# public image is displayed unlabelled.
+#
+# A previous version of this file also listed seven files under
+# screenshots/redesign/ as hand-composed renders. That was my mistake twice
+# over: the archived homepage spec describes them as real captures of the old
+# Forge dashboard, and nothing in the repository or the Crucible README
+# displayed them. They were publicly served with no page showing them, so they
+# were deleted rather than classified. They remain in git history.
+
+illustrations:
+  - path: static/screenshots/alerts.png
+    what: >-
+      A hand-composed render of ShowcaseAlert. The alert, its evidence, the
+      remediation commands and the timestamp are all written into the component;
+      no host produced them.
+    used_by:
+      - crucible README (public, MIT repo), alt text
+        "Dashboard alert with copy-pasteable fix commands"
+    labelled_at:
+      - crucible README caption, "Illustration composed for this README, not a
+        capture" (PR glassmkr/crucible#129, merged 2026-08-29)
+
+  - path: static/screenshots/hardware.png
+    what: >-
+      A hand-composed render of ShowcaseStorage. Drive models, capacities and
+      SMART attribute values are written into the component.
+    used_by:
+      - crucible README (public, MIT repo), alt text
+        "Storage and SMART drive health"
+    labelled_at:
+      - crucible README caption, "Illustration composed for this README, not a
+        capture" (PR glassmkr/crucible#129, merged 2026-08-29)
+
+  - path: static/screenshots/overview.png
+    what: >-
+      A hand-composed render of ShowcaseOverview. Hostnames are invented and IPs
+      come from the RFC 5737 documentation block.
+    used_by:
+      - crucible README (public, MIT repo), alt text "Server fleet overview"
+    labelled_at:
+      - crucible README caption, "Illustration composed for this README, not a
+        capture" (PR glassmkr/crucible#129, merged 2026-08-29)

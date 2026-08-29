@@ -1,0 +1,175 @@
+# bond_slave_down; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B5.
+#
+# Single-severity rule (always critical; the bond is running with
+# reduced redundancy and a second failure means full network loss).
+# No condition_match split. Main variant covers the diagnose +
+# bring-back-up path; fallback covers missing-evidence. The
+# evaluator already ships `fix_commands` in the evidence payload;
+# this YAML extracts those into a proper variant.
+id: bond_slave_down
+priority: P1
+title: Bond slave interface down
+summary: A slave NIC in a bonded interface has MII status down. The bond is running with reduced redundancy; one more failure breaks the bond entirely.
+fix:
+  quick_check:
+    command: |
+      for b in /proc/net/bonding/*; do
+        [ -f "$b" ] || continue
+        echo "=== $(basename "$b") ==="
+        cat "$b"
+      done
+    description: "Per-bond status from /proc/net/bonding/. Look for Slave Interface entries with `MII Status: down` or `Speed: Unknown`. The active slave for active-backup, and aggregator state for LACP, are also in this output."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access via the still-functional bond slave (the bond is up; SSH continues to work over the surviving slave)
+    - Physical access on standby (cable / SFP replacement may be needed)
+    - Replacement transceiver / cable on hand if the failure pattern points at hardware
+    - "Awareness of the switch-side configuration (bond mode must match: LACP / active-backup / balance-rr)"
+  safe_mode:
+    command: |
+      cat /proc/net/bonding/<BOND>
+      ip link show <INTERFACE>
+      sudo ethtool <INTERFACE>
+      sudo dmesg -T | grep -iE '<INTERFACE>|<BOND>|link|carrier' | tail -30
+    description: |
+      Read-only bond inspection. /proc/net/bonding shows per-slave
+      MII status, link count, and the bonding mode. `ip link` +
+      `ethtool` show kernel state + cable detection. dmesg
+      surfaces driver-level link flap events. Replace <BOND> and
+      <INTERFACE> from the alert evidence.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: slave is MII-down. Bring it back up.
+
+        # 1. Confirm bond state
+        cat /proc/net/bonding/<BOND>
+        # Look for: "Currently Active Slave", "MII Status: down" on <INTERFACE>
+
+        # 2. Check the slave directly
+        ip link show <INTERFACE>
+        sudo ethtool <INTERFACE>
+        # If `Link detected: no` -> cable / SFP / switch port issue
+        # If `Speed: Unknown!` + admin up -> NIC not negotiating
+
+        # 3. Driver-level signals
+        sudo dmesg -T | grep -iE '<INTERFACE>|link|carrier' | tail -30
+
+        # 4. Try bringing it up (often the bond brings it back
+        #    automatically once link returns; this is the
+        #    explicit kick)
+        sudo ip link set <INTERFACE> up
+
+        # 5. If still down -> physical layer:
+        #    a) reseat / replace cable
+        #    b) reseat / replace SFP transceiver
+        #    c) try a different switch port
+        #    d) run NIC self-test
+        sudo ethtool -t <INTERFACE>
+
+        # 6. Watch for re-attachment
+        cat /proc/net/bonding/<BOND>   # one-shot; re-run to monitor
+
+        # 7. If interface flaps repeatedly -> NIC or transceiver
+        #    likely failing; schedule replacement at maintenance window.
+      description: |
+        Main path: confirm MII status, check link + driver, try
+        bringing the slave back administratively, then escalate
+        to physical layer (cable / SFP / port). NIC replacement
+        is the last resort if the slave flaps repeatedly.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence (interface / bond) missing. Run
+        # diagnostic; classify manually.
+        ip -br link
+        for b in /proc/net/bonding/*; do
+          echo "=== $(basename $b) ==="
+          cat "$b"
+        done
+      description: |
+        Missing-evidence fallback. Walks all bonds; finds the
+        one with a down slave manually before proceeding.
+
+  # ====== LACP-specific deep diagnosis (mode 4 only) ======
+  #
+  # For mode=4 (802.3ad / LACP) bonds, MII down is one signal;
+  # the deeper diagnostic is the LACP partner state.
+  #
+  # Active vs partial aggregation:
+  #   cat /proc/net/bonding/<BOND> | grep -A2 "Aggregator"
+  #   # Look for "Aggregator ID:" and "Number of ports:"
+  #   # Number of ports in the active aggregator should equal the
+  #   # number of slaves. Fewer means the switch isn't agreeing on
+  #   # LACP with one of our slaves.
+  #
+  # LACP partner state per slave:
+  #   cat /proc/net/bonding/<BOND> | grep -A1 "partner mac"
+  #   # partner mac = all zeroes -> no LACP exchange happening; switch
+  #   # port likely configured for static link aggregation or no LAG.
+  #
+  # LACP rate (fast vs slow):
+  #   cat /sys/class/net/<BOND>/bonding/lacp_rate
+  #   # 'fast' = 1s LACPDU interval, partner-loss in 3s.
+  #   # 'slow' (default) = 30s interval, partner-loss in 90s.
+  #   # Fast detection costs minimal switch CPU; almost always worth it
+  #   # for data-plane bonds. Mismatch with switch causes flapping.
+  #
+  # Switch-side troubleshoot:
+  #   # Cisco: show etherchannel <N> summary; show lacp neighbor
+  #   # Arista: show port-channel <N>; show lacp neighbor
+  #   # Juniper: show lacp interfaces
+  #   # Compare ports-in-aggregator vs ports-configured.
+  #
+  # If MII is up but LACP is bad, the bond_slave_down alert is
+  # the wrong signal; the underlying issue surfaces via the
+  # lacp_partner_lost rule. Cross-reference and prefer that rule's
+  # FIX content for LACP-specific work.
+
+  validation:
+    command: |
+      cat /proc/net/bonding/<BOND> | grep -E 'MII Status|Slave Interface'
+    description: |
+      After fix, confirm all slaves report `MII Status: up`.
+      The bond's `Currently Active Slave` field tells you which
+      slave is in use (active-backup mode); in LACP both should
+      be up. Re-firing the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Bringing a slave up isn't reversible per se; the slave
+      is up; if you wanted it down (e.g., for cable testing) you
+      would `ip link set <INTERFACE> down`. Hardware replacement
+      (cable / SFP / NIC) is irreversible. No persistent state
+      changes from this workflow.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. `ip link set up`
+      adds a slave back to the bond; in active-backup mode this
+      is no-op for traffic; in LACP it causes a brief renegotiation
+      (sub-second). Hardware swap requires the slave to be down
+      throughout, which is already the case; the bond keeps
+      running on the surviving slave.
+    estimated_duration: |
+      Diagnosis: 5-10 minutes. ip link set up: <5 seconds. Cable
+      / SFP swap: 1-2 minutes. NIC swap (rare): requires power-
+      down on most chassis, 5-15 minutes.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: research-derived
+    source_note: |
+      Desk-researched from kernel bonding docs (kernel.org
+      Documentation/networking/bonding.txt), ip-link(8),
+      ethtool(8). The active-backup vs LACP mode distinction is
+      from Glassmkr ops experience with services-1 bond pair.
+      Not deliberately re-triggered on validation fleet for this
+      deepening pass (would require unplugging a live cable).
+
+      Pattern library 2026-05-18: Category 4 (network). LACP partner state + aggregator port count triggers (per spec §3.15) deferred until Crucible C8 ships /proc/net/bonding/bondN full parsing. Today the MII-down trigger path runs.

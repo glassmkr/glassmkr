@@ -1,0 +1,124 @@
+# drive_smart_unreadable; drive-health follow-up 2026-07-18 (Scope 3 of
+# CC_SPEC_HWRAID_CONTROLLER_HEALTH). NOT a drive fault: a MONITORING BLIND SPOT.
+#
+# Crucible reports fixed disks present in /sys/block whose SMART it could not
+# read: smartctl (smartmontools) not installed, or a controller that needs a
+# `-d` device type the collector does not try. A host in this state reports zero
+# drives and is indistinguishable from a diskless host, so a genuine drive
+# failure would go unmonitored. This bit us live on the reprovisioned
+# val-hdd-destroy-1, which shipped without smartmontools.
+#
+# Severity is warning with a P2 ceiling (never pages). The remediation is
+# operational, not hardware: install smartmontools, or determine the controller
+# device type. Ack-able when a device genuinely exposes no SMART. Crucible
+# suppresses the marker on a healthy HW-RAID box (its own virtual disk reports
+# no SMART while the physical drives report via passthrough), so this rule does
+# not fire on a working MegaRAID/HBA host.
+id: drive_smart_unreadable
+priority: P2
+title: Disks present but SMART is unreadable
+summary: |
+  One or more fixed disks are present but their SMART health cannot be read, so their health is invisible to monitoring. This is NOT a drive fault: it is a coverage gap. The usual cause is that smartmontools (the `smartctl` binary) is not installed, or a disk sits behind a RAID/HBA controller that needs a specific `smartctl -d` device type. While SMART is unreadable, a real failure on the affected disks would not raise smart_failing or wear alerts.
+
+  Fix by installing smartmontools and confirming each disk reads with `smartctl -H`, or by determining the controller's device type (`smartctl --scan-open`). Acknowledge this advisory if a listed device genuinely exposes no SMART (some virtual or enclosure devices).
+fix:
+  quick_check:
+    command: |
+      # Is smartctl installed, and can it read the disks?
+      which smartctl || echo "smartctl NOT found (install smartmontools)"
+      for d in /dev/sd? /dev/nvme?n?; do
+        [ -e "$d" ] || continue
+        echo "=== $d ==="
+        sudo smartctl -H "$d" 2>&1 | grep -iE 'SMART overall|SMART Health|Unknown|Unable|Please specify|command not found' || echo "  (no health line)"
+      done
+    description: "Confirms whether smartctl is present and which disks it can interrogate. A missing binary, or 'Unknown USB bridge' / 'Please specify device type' lines, is the blind spot this alert reports. Disks that print a SMART overall-health line are already covered."
+  verdict_prior: recoverable
+  prerequisites:
+    - Root/sudo on the host (installing a package and reading SMART both need it)
+    - Package-manager access (a working apt/dnf repo, or the smartmontools package on hand for an air-gapped host)
+    - "For a disk behind a RAID/HBA: the controller model, so you can pick the right `smartctl -d` type"
+  safe_mode:
+    command: |
+      # Read-only: enumerate block devices and probe SMART readability.
+      lsblk -d -o NAME,SIZE,TYPE,TRAN,MODEL
+      which smartctl && smartctl --version | head -1 || echo "smartctl not installed"
+      sudo smartctl --scan-open
+    description: |
+      Read-only inventory. Lists the physical disks, shows whether
+      smartctl is installed, and asks smartctl to self-enumerate the
+      device types it can open (including RAID/HBA passthrough). Nothing
+      here changes the system.
+  variants:
+    - distro_match: ["ubuntu", "debian"]
+      vendor_match: ["*"]
+      command: |
+        # Debian/Ubuntu: install smartmontools, then confirm each disk reads.
+        sudo apt-get update && sudo apt-get install -y smartmontools
+        for d in /dev/sd? /dev/nvme?n?; do [ -e "$d" ] && sudo smartctl -H "$d"; done
+        # If a disk is behind a RAID/HBA, discover the device type and read it:
+        sudo smartctl --scan-open
+        # e.g. sudo smartctl -H -d sat+megaraid,0 /dev/bus/0
+      description: "Install smartmontools via apt, then verify each disk now returns a SMART health line. For controller-backed disks, use smartctl --scan-open to find the -d type."
+    - distro_match: ["rhel", "rocky", "almalinux", "centos", "fedora"]
+      vendor_match: ["*"]
+      command: |
+        # RHEL family: install smartmontools, then confirm each disk reads.
+        sudo dnf install -y smartmontools
+        for d in /dev/sd? /dev/nvme?n?; do [ -e "$d" ] && sudo smartctl -H "$d"; done
+        sudo smartctl --scan-open
+        # e.g. sudo smartctl -H -d sat+megaraid,0 /dev/bus/0
+      description: "Install smartmontools via dnf, then verify each disk now returns a SMART health line. For controller-backed disks, use smartctl --scan-open to find the -d type."
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Generic fallback: install smartmontools with the host's package
+        # manager (apt/dnf/yum/zypper/apk), then confirm readability.
+        which smartctl || echo "Install the 'smartmontools' package for this distro."
+        for d in /dev/sd? /dev/nvme?n?; do [ -e "$d" ] && sudo smartctl -H "$d"; done
+        sudo smartctl --scan-open
+      description: "Distro-agnostic path: install the smartmontools package however this host does it, then verify each disk returns a SMART health line. If a device is genuinely SMART-less (some virtual/enclosure devices), acknowledge the advisory."
+  validation:
+    command: |
+      # Every fixed disk should now print a SMART overall-health line.
+      for d in /dev/sd? /dev/nvme?n?; do
+        [ -e "$d" ] || continue
+        sudo smartctl -H "$d" | grep -iE 'SMART overall-health|SMART Health Status' || echo "$d still unreadable"
+      done
+    description: |
+      The alert auto-resolves once Crucible can read SMART for the
+      previously-unreadable disks (the smart_unreadable marker clears on
+      the next snapshot). If a disk is still unreadable it likely needs a
+      specific -d device type, or genuinely has no SMART: acknowledge in
+      that case.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Nothing to roll back from the alert itself: it reads state, it does
+      not change the host. Installing smartmontools is the fix and is
+      additive/safe to keep; removing it simply reopens the blind spot.
+  impact:
+    blast_radius: |
+      None from the alert or the fix. Installing smartmontools and running
+      smartctl are read-only with respect to the drives; no data or service
+      is touched. The value is restored monitoring coverage.
+    estimated_duration: |
+      Package install plus verification: 2-5 minutes. Determining a
+      controller -d type on an exotic HBA: 10-20 minutes.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-07-18"
+    tested_on:
+      - "val-hdd-destroy-1 (reprovisioned without smartmontools): reproduced the zero-drives blind spot that motivated this rule"
+      - "Crucible collect/smart.ts unit tests: smartctl-missing, unsupported-controller, and HW-RAID-passthrough-suppression fixtures"
+    tester: Glassmkr ops (drive-health campaign)
+    research_basis: operator-pattern
+    source_note: |
+      Scope 3 of CC_SPEC_HWRAID_CONTROLLER_HEALTH_2026-07-18. Crucible
+      0.14.4 emits snap.smart_unreadable for fixed (non-removable),
+      non-zero-size /sys/block disks that yield no readable SMART, excluding
+      0-byte BMC virtual media and removable USB/SD media by construction,
+      and suppressing the marker entirely when the --scan-open passthrough
+      path returned drives (the unreadable /sys/block entry is then the
+      controller's own virtual disk). This rule surfaces that marker as a P2
+      warning-ceiling advisory.

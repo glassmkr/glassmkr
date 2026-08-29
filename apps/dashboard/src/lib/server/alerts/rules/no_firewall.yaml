@@ -1,0 +1,350 @@
+# no_firewall; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B8, using the condition_match
+# dimension on the `source` evidence attribute (which backend Crucible
+# probed: UFW / firewalld / nftables / iptables).
+#
+# Single-severity rule (always warning). condition_match split is
+# operationally meaningful (not severity-based): the fix command set
+# differs entirely depending on which firewall backend is intended.
+# Crucible reports the source string when it detected the backend
+# is installed but inactive; the fallback variant covers the case
+# where Crucible found nothing (no backend installed, or unknown
+# source) and the operator needs to choose one.
+id: no_firewall
+priority: P1
+title: No host firewall active
+summary: No active firewall rules detected. All listening ports are reachable from any network the host is connected to, unless protected by network-level ACLs (VPC, cloud SG, on-prem ACL).
+fix:
+  quick_check:
+    command: |
+      sudo nft list ruleset 2>/dev/null | head -30
+      sudo iptables -L INPUT -n 2>/dev/null | head -20
+      sudo ufw status 2>/dev/null
+      sudo firewall-cmd --state 2>/dev/null && sudo firewall-cmd --list-all 2>/dev/null
+      # Are any of the common firewall daemons active?
+      for s in nftables firewalld ufw iptables; do echo -n "$s: "; systemctl is-active $s 2>/dev/null || echo inactive; done
+    description: "Walks every common firewall surface (nftables, iptables, ufw, firewalld). One should print a ruleset and an active state; if all are empty/inactive, the host has no host-level firewall."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (firewall changes can lock you out if rules are wrong; have a fallback recovery method)
+    - "Awareness of which ports MUST stay open before enabling default-deny: SSH (22), the agent's outbound HTTPS, app-specific listeners (web, DB, etc.)"
+    - "For cloud-hosted servers: confirm cloud SG is NOT your only firewall layer (defense in depth; host firewall protects against intra-tenant lateral movement that SG doesn't see)"
+    - "Console access via hosting panel / IPMI / KVM as a recovery option if the firewall rules lock you out"
+  safe_mode:
+    command: |
+      sudo systemctl list-unit-files | grep -iE 'ufw|firewalld|nftables|iptables'
+      sudo ufw status verbose 2>/dev/null || echo "(ufw not installed or not enabled)"
+      sudo firewall-cmd --state 2>/dev/null && sudo firewall-cmd --list-all 2>/dev/null
+      sudo nft list ruleset 2>/dev/null | head -20
+      sudo iptables -L -n -v 2>/dev/null | head -30
+      sudo ss -tlnp 2>/dev/null | head -20
+    description: |
+      Read-only inspection. Walk each backend; one (or more) will
+      report state. Last line is critical: ss -tlnp lists every
+      port currently exposed; that's exactly the surface that
+      will be reachable until a firewall is brought up.
+  variants:
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: source
+        op: eq
+        value: ufw
+      suggested_action: |
+        sudo ufw allow OpenSSH && sudo ufw --force enable
+      command: |
+        # UFW path (Debian/Ubuntu default-ish; Crucible saw UFW
+        # installed but not active).
+
+        # 1. Current state
+        sudo ufw status verbose
+
+        # 2. Open SSH FIRST; losing SSH is the most common
+        # firewall-misconfig outcome
+        sudo ufw allow 22/tcp
+        sudo ufw allow OpenSSH 2>/dev/null
+
+        # 3. Open other ports the host actually serves
+        # (replace with what `ss -tlnp` showed)
+        # sudo ufw allow 80/tcp
+        # sudo ufw allow 443/tcp
+
+        # 4. Set default-deny on incoming
+        sudo ufw default deny incoming
+        sudo ufw default allow outgoing
+
+        # 5. Enable (idempotent; --force skips prompt)
+        sudo ufw --force enable
+
+        # 6. Verify from a NEW terminal; don't close current
+        # session until confirmed
+        sudo ufw status numbered
+      description: |
+        UFW path. SSH ALLOW MUST happen before enable, or the
+        next reconnect locks you out. ufw default-allow-outgoing
+        is the standard server policy; tighten if PCI / similar
+        compliance requires egress filtering.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: source
+        op: eq
+        value: firewalld
+      command: |
+        # firewalld path (RHEL family default; Crucible saw
+        # firewalld installed but not running).
+
+        # 1. Start + enable
+        sudo systemctl enable --now firewalld
+        sudo firewall-cmd --state
+
+        # 2. Confirm which zone is active
+        sudo firewall-cmd --get-default-zone
+        sudo firewall-cmd --list-services --zone=public
+
+        # 3. Ensure SSH before relying on the firewall. firewalld
+        # keeps your current ESTABLISHED session alive, but a NEW
+        # reconnect is refused if ssh is missing from the active
+        # zone (some hardened images strip it). Add it unconditionally
+        # (idempotent) and reload so it is live, not just persisted:
+        sudo firewall-cmd --permanent --zone=public --add-service=ssh
+        sudo firewall-cmd --reload
+
+        # 4. Add other services the host needs
+        # sudo firewall-cmd --permanent --zone=public --add-service=http
+        # sudo firewall-cmd --permanent --zone=public --add-service=https
+        # sudo firewall-cmd --permanent --zone=public --add-port=8443/tcp
+        # (re-run --reload after adding)
+
+        # 5. Verify, then confirm SSH from a NEW terminal before
+        # closing this session
+        sudo firewall-cmd --list-all --zone=public
+      description: |
+        firewalld path. Default zone is `public` on RHEL; SSH is
+        in `public` by default after install, so the only step
+        is usually just "enable + start". firewalld preserves
+        ESTABLISHED connections, so your live session survives, but
+        ensure ssh is in the active zone + reload before relying on
+        it (a new reconnect is refused otherwise) and verify from a
+        new terminal. Add app-specific services / ports with the
+        --permanent + --reload pattern.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: source
+        op: eq
+        value: nftables
+      command: |
+        # nftables path. Crucible saw the nftables systemd unit
+        # exists but the ruleset is empty / inactive.
+
+        # 1. Inspect current ruleset (should be empty if alert fired)
+        sudo nft list ruleset
+
+        # 2. Write a minimal sane ruleset (replace with your
+        #    actual policy; this is a default-deny SSH-only example)
+        # Back up any existing ruleset first. This file is often already
+        # populated on a host that has nftables installed, and overwriting it
+        # without a copy loses whatever policy was there, with nothing to
+        # roll back to. The rollback step expects this backup to exist.
+        [ -f /etc/nftables.conf ] && sudo cp -n /etc/nftables.conf /etc/nftables.conf.gmk-backup
+        sudo tee /etc/nftables.conf <<'EOF'
+        #!/usr/sbin/nft -f
+        flush ruleset
+        table inet filter {
+          chain input {
+            type filter hook input priority 0; policy drop;
+            ct state established,related accept
+            iif lo accept
+            tcp dport 22 accept
+            # Add app-specific allows here:
+            # tcp dport { 80, 443 } accept
+            icmp type echo-request accept
+          }
+          chain forward { type filter hook forward priority 0; policy drop; }
+          chain output  { type filter hook output  priority 0; policy accept; }
+        }
+        EOF
+
+        # 3. Validate syntax before activation
+        sudo nft -c -f /etc/nftables.conf
+
+        # 4. Activate
+        sudo systemctl enable --now nftables
+        sudo systemctl reload nftables
+
+        # 5. Verify
+        sudo nft list ruleset
+      description: |
+        nftables path. Manual ruleset authoring is required (no
+        high-level frontend like UFW). The example is a minimal
+        default-deny with SSH; tune for the host's actual app
+        listeners. `nft -c -f` validates syntax without applying.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: source
+        op: eq
+        value: iptables
+      command: |
+        # iptables path (legacy; usually only seen on older RHEL or
+        # explicitly de-modernised hosts).
+        #
+        # LOCKOUT WARNING: add the ACCEPT rules (lo, ESTABLISHED,
+        # SSH) BEFORE flipping the default policy to DROP, and verify
+        # SSH access from a NEW terminal before closing this session.
+        # Flipping the policy first drops your own inbound packets
+        # before the SSH accept rule lands, with no established-state
+        # grace, which locks you out.
+
+        # 1. Current ruleset (should be empty / accept-all)
+        sudo iptables -L -n -v
+
+        # 2. Recommendation: migrate to nftables if possible. On
+        # modern distros iptables is just an nftables compat
+        # frontend. If a true migration isn't feasible, write a
+        # minimal ruleset; add the ACCEPT rules FIRST, while the
+        # default policy is still ACCEPT, so the live SSH session is
+        # never dropped:
+        sudo iptables -A INPUT -i lo -j ACCEPT
+        sudo iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+        sudo iptables -A INPUT -p icmp -j ACCEPT
+        # Add app ports BEFORE the policy flip too:
+        # sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+
+        # 3. ONLY NOW flip the default policy to DROP (SSH is already
+        # allowed by the rules above):
+        sudo iptables -P INPUT DROP
+        sudo iptables -P FORWARD DROP
+
+        # 4. Verify from a NEW terminal before closing this session
+        sudo iptables -L INPUT -n -v
+
+        # 5. Persist (distro-specific; iptables-save + persistent
+        # service or netfilter-persistent on Debian)
+        # Preserve any existing saved ruleset before overwriting it.
+        [ -f /etc/iptables/rules.v4 ] && sudo cp -n /etc/iptables/rules.v4 /etc/iptables/rules.v4.gmk-backup
+        sudo iptables-save | sudo tee /etc/iptables/rules.v4
+        sudo systemctl enable iptables 2>/dev/null || \
+          sudo systemctl enable netfilter-persistent 2>/dev/null
+      description: |
+        iptables path. Generally a sign the host hasn't been
+        modernised; recommend migration to nftables. If keeping
+        iptables, the example rules cover the minimum default-deny
+        SSH + ICMP shape. Accept rules MUST precede the
+        `-P INPUT DROP` policy flip, or the current SSH session is
+        dropped before the accept rules land (no established-state
+        grace, unlike firewalld); verify from a new terminal before
+        closing the session.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: no backend detected, or source attribute absent.
+        # Operator needs to pick + install one. Recommendations by
+        # distro family in the description.
+
+        # 1. Check what's installed
+        sudo systemctl list-unit-files | grep -iE 'ufw|firewalld|nftables|iptables'
+
+        # 2. Install the recommended backend:
+        # Debian/Ubuntu: sudo apt install -y ufw
+        # RHEL family:   sudo dnf install -y firewalld
+        # Then re-run the matching variant above.
+      description: |
+        Missing-evidence fallback. No backend detected by Crucible
+        (or `source` attribute is absent). Operator picks based on
+        distro: UFW for Debian/Ubuntu, firewalld for RHEL family,
+        nftables as the universal modern fallback.
+
+        ====== Context for when this alert is INTENTIONAL ======
+
+        Some real architectures legitimately run with no host
+        firewall:
+
+        - **Network-level firewalls only**: cloud security groups
+          (AWS SG / GCP firewall-rules / Azure NSG), provider WAF,
+          or upstream pfSense/OPNsense filter inbound traffic
+          before it reaches the host. Host firewall would be
+          defence-in-depth, not the only layer.
+        - **Service-mesh enforcement** (Cilium / Istio / Linkerd):
+          eBPF or sidecar enforces policy at the pod/container
+          level; host firewall is bypassed by design.
+        - **Kubernetes nodes** running NetworkPolicy via CNI:
+          inbound is gated by the CNI (Calico, Cilium, etc.); the
+          host firewall is often empty or permissive.
+
+        In those cases the alert is informational. To suppress
+        without disabling, ack it from the dashboard with a
+        documented reason ("cloud SG enforces ingress" / "Cilium
+        NetworkPolicy is the policy plane"). Don't enable a host
+        firewall that conflicts with the existing policy plane;
+        that's a real outage shape.
+  validation:
+    command: |
+      sudo ufw status 2>/dev/null | grep -qi '^Status: active' || sudo systemctl is-active --quiet firewalld || sudo nft list ruleset 2>/dev/null | grep -q 'chain '
+    expected_exit: 0
+    description: |
+      Definition of done: exit 0 means a host firewall (ufw, firewalld,
+      or nftables) is now active. Re-run after enabling the firewall and
+      do not treat the alert as resolved until it passes. Confirm SSH is
+      still reachable from a second session first.
+  rollback:
+    available: true
+    command: |
+      # Undo ONLY the path actually applied. This previously ran all four
+      # unconditionally: a rollback on a ufw host also stopped firewalld,
+      # flushed the whole nftables ruleset and flushed iptables. Those last
+      # two destroy rules this fix never created (Docker's NAT and forward
+      # chains live there, as does anything the operator wrote). That is not
+      # a rollback, it is an outage, and on a remote host with a default DROP
+      # policy it is a lockout. Pick the one line matching your variant.
+      #
+      # UFW path:
+      #   sudo ufw disable
+      # firewalld path:
+      #   sudo systemctl disable --now firewalld
+      # nftables path: restore what was replaced, do NOT flush.
+      #   sudo cp /etc/nftables.conf.gmk-backup /etc/nftables.conf
+      #   sudo systemctl reload nftables
+      # iptables path: restore the saved ruleset, do NOT flush.
+      #   sudo iptables-restore < /etc/iptables/rules.v4.gmk-backup
+    note: |
+      Any single command above disables the backend it targets.
+      Rolling back leaves the host with NO firewall; i.e. back to
+      the pre-fix state which is exactly what triggered the alert.
+      Only roll back if the rules you applied caused a real
+      service outage; otherwise, fix the rules, don't disable
+      the firewall.
+  impact:
+    blast_radius: |
+      Enabling a firewall WITH the wrong rules locks you out of
+      SSH and breaks app traffic. Enabling WITH correct rules
+      causes no service impact for already-established connections
+      (TCP keepalive + ESTABLISHED state preserved). Newly-blocked
+      ports return ICMP unreachable or drop silently depending on
+      policy.
+    estimated_duration: |
+      Inspection: 5 minutes. Rule authoring + apply: 5-15 minutes
+      (UFW is fastest, nftables is slowest for an empty ruleset).
+      Verification from new SSH session: 1 minute.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from ufw(8), firewalld.conf(5), nft(8),
+      iptables(8). The four backends + their evidence.source
+      values mirror Crucible's firewall detection in
+      apps/dashboard/src/lib/server/snapshot/security.ts (the
+      evaluator reports whichever backend was installed but
+      inactive). Vendor-specific variants are desk-research; the
+      validation fleet has not had its firewalls deliberately
+      disabled for re-testing per validation-fleet.md (disabling
+      a firewall on a live box is the alert trigger but also a
+      security regression).
+
+      Pattern library 2026-05-18: Category 7 (system state). firewall_not_required per-host metadata flag (acknowledge-once mute per spec §3.25) deferred until Dashboard ships the UI action. Today the rule fires P1 by default when no firewall detected; pve-firewall detection landed today via Crucible v0.10.3.

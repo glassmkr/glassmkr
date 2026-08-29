@@ -1,0 +1,166 @@
+# os_end_of_life; currency-monitoring milestone 2026-07-15.
+#
+# Two-field advisory (CC_CURRENCY_BUILD_DECISION_2026-07-15): the release EOL
+# date comes from the synced endoflife.date dataset; whether a past-EOL host is
+# still covered comes from the agent's extended-support enrollment signal
+# (snap.support_status). Both currency deep-research passes stressed that a
+# past-standard-support release enrolled in Ubuntu Pro/ESM or RHEL EUS/ELS is
+# STILL supported, so calling it "unsupported" from a date table alone is a
+# false claim. When the enrollment signal is absent (older agent, or a host
+# with no unprivileged signal), the alert says "enrollment not verified" rather
+# than asserting the host is unsupported.
+#
+# Severity ceiling is warning (never pages): approaching EOL is info; past
+# standard support and unenrolled/unknown is warning; a host proven on extended
+# support is info (dashboard-only awareness).
+id: os_end_of_life
+priority: P2
+title: OS release past (or nearing) end of life
+summary: |
+  This host's operating-system release is at, past, or within 180 days of the end of its standard security support, per the endoflife.date lifecycle dataset.
+
+  This is NOT automatically "unsupported": many releases keep receiving security fixes past standard support if enrolled in an extended-support programme (Ubuntu Pro/ESM, RHEL EUS/ELS). The alert reconciles the release EOL date with this host's actual enrollment where the agent can read it. Where enrollment cannot be verified, the wording says so rather than assuming the worst.
+
+  Resolve by upgrading to a supported release, or by confirming/entering extended support. Acknowledge once you have a plan.
+fix:
+  quick_check:
+    command: |
+      cat /etc/os-release | grep -E '^(NAME|VERSION|VERSION_ID)='
+    description: "Shows the installed OS release. Cross-reference its end-of-life date on https://endoflife.date. A release past its standard EOL keeps getting security updates only under an extended-support programme (Ubuntu Pro/ESM, RHEL EUS/ELS); confirm enrollment before assuming it is either safe or unsupported."
+  verdict_prior: recoverable
+  prerequisites:
+    - Inventory of what runs on the host (an OS major upgrade can break application compatibility)
+    - A tested backup or a rebuildable host (major-version upgrades are hard to roll back)
+    - Maintenance window (a release upgrade or reboot is disruptive)
+    - "For extended support instead of upgrading: an entitlement (Ubuntu Pro token, or a Red Hat subscription with EUS/ELS)"
+  safe_mode:
+    command: |
+      cat /etc/os-release
+      # Ubuntu: is this host attached to Pro / is ESM active?
+      command -v pro >/dev/null 2>&1 && pro security-status --format json 2>/dev/null | head -c 2000
+      # RHEL family: which repos are enabled (look for -eus- / -els-)?
+      ls /etc/yum.repos.d/ 2>/dev/null && grep -rIl 'eus\|els' /etc/yum.repos.d/ 2>/dev/null
+    description: |
+      Read-only. Confirms the exact release and, on Ubuntu, whether
+      Pro/ESM is attached (the authoritative "am I still getting
+      security updates" signal). On RHEL-family hosts it lists the repo
+      config so you can see whether an EUS/ELS repo is enabled. None of
+      this changes anything.
+  variants:
+    - distro_match: ["ubuntu-*", "debian-*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Confirm the release and its support state.
+        cat /etc/os-release | grep -E '^(NAME|VERSION|VERSION_ID)='
+        command -v pro >/dev/null 2>&1 && pro security-status --format json 2>/dev/null | head -c 2000
+
+        # 2a. PREFERRED: upgrade to a supported release.
+        #     Ubuntu: sudo apt update && sudo apt full-upgrade -y && sudo do-release-upgrade
+        #     Debian: follow the release notes' apt sources change, then
+        #       sudo apt update && sudo apt full-upgrade && sudo apt dist-upgrade
+        #     Test application compatibility first; major upgrades can break services.
+
+        # 2b. ALTERNATIVE (Ubuntu, if you cannot upgrade yet): keep security
+        #     updates flowing by attaching Ubuntu Pro (free for up to 5 machines):
+        #       sudo pro attach <token>
+        #       sudo pro enable esm-infra
+        #     This does NOT make the release non-EOL; it buys covered time to
+        #     plan the upgrade before ESM itself ends.
+        echo "Upgrade to a supported release, or attach Ubuntu Pro/ESM to stay covered while you plan."
+      description: |
+        Debian/Ubuntu. The durable fix is an upgrade to a supported
+        release. Ubuntu also offers ESM via Pro as a covered bridge:
+        attaching keeps security fixes coming past standard support, but
+        it is a stopgap, not a substitute for upgrading, and it does not
+        change the release's EOL status.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "oracle-*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Confirm the release and enabled repos.
+        cat /etc/os-release | grep -E '^(NAME|VERSION|VERSION_ID)='
+        ls /etc/yum.repos.d/ 2>/dev/null
+
+        # 2a. PREFERRED: upgrade to a supported release.
+        #     Same-major minor moves: sudo dnf upgrade --releasever=<x.y> (RHEL EUS)
+        #     Major upgrades (e.g. 8 -> 9): use leapp (sudo dnf install leapp-upgrade; sudo leapp preupgrade; sudo leapp upgrade).
+        #     Rocky/Alma: follow the project's documented major-upgrade path.
+        #     Test application compatibility first.
+
+        # 2b. ALTERNATIVE (RHEL, if you cannot upgrade yet): if the host is
+        #     Red Hat subscribed, enable Extended Update Support / Extended
+        #     Life-cycle Support for the pinned minor so security fixes continue:
+        #       sudo subscription-manager release --set=<x.y>
+        #       sudo subscription-manager repos --enable=rhel-<x>-for-<arch>-baseos-eus-rpms
+        #     (EUS/ELS require an entitlement; Rocky/Alma have no EUS equivalent.)
+        echo "Upgrade to a supported release, or (RHEL, subscribed) enable EUS/ELS for the pinned minor."
+      description: |
+        RHEL family. Durable fix is a release upgrade (leapp for a major
+        jump). RHEL subscribers can instead enable EUS/ELS on a pinned
+        minor as a covered bridge; that path needs an entitlement and does
+        not exist for Rocky/AlmaLinux, whose minors go EOL when the next
+        minor ships, so on those the answer is upgrade.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Confirm the release.
+        cat /etc/os-release | grep -E '^(NAME|VERSION|VERSION_ID)='
+
+        # 2. Check the release's end-of-life date at https://endoflife.date
+        #    and plan an upgrade to a currently-supported release. If your
+        #    distro offers an extended-support programme and you cannot
+        #    upgrade yet, enroll in it to keep receiving security fixes while
+        #    you plan.
+        echo "Plan an upgrade to a supported release; see https://endoflife.date for this OS's lifecycle."
+      description: |
+        Distro-unknown fallback. Verify the release's EOL date on
+        endoflife.date and upgrade to a supported release; use the
+        distro's extended-support programme, if any, as a bridge.
+  validation:
+    command: |
+      cat /etc/os-release | grep -E '^(NAME|VERSION|VERSION_ID)='
+      command -v pro >/dev/null 2>&1 && pro security-status --format json 2>/dev/null | head -c 500
+    description: |
+      After an upgrade, confirm VERSION_ID advanced to a supported
+      release; the alert auto-resolves once the reported release is in
+      support. If you instead enrolled in extended support, the alert
+      moves to the informational "on extended support" state once the
+      agent reports the enrollment; that is the expected resolved state
+      until you upgrade.
+  rollback:
+    available: false
+    command: null
+    note: |
+      OS major-version upgrades are effectively one-way; there is no
+      supported in-place downgrade. This is why the prerequisites call for
+      a tested backup or a rebuildable host. Enrolling in extended support
+      is reversible (detach), but detaching just returns the host to the
+      unsupported state, so it is not a meaningful rollback.
+  impact:
+    blast_radius: |
+      The advisory itself has no impact. A release upgrade is disruptive:
+      package churn, at least one reboot, and a real risk of application
+      incompatibility on a major-version jump; stage and test before doing
+      it fleet-wide. Attaching extended support is low-risk (repo/entitlement
+      change, no reboot).
+    estimated_duration: |
+      Minor upgrade: 15-45 minutes plus a reboot. Major upgrade (leapp /
+      do-release-upgrade): 1-3 hours per host including validation. Extended
+      support enrollment: a few minutes.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-07-15"
+    tested_on:
+      - Lifecycle data sourced from the endoflife.date v1 API (schema verified live 2026-07-15)
+      - Enrollment signal from the Crucible support-status collector (Ubuntu pro security-status; RHEL enabled EUS repos)
+    tester: Glassmkr ops
+    research_basis: research-derived
+    source_note: |
+      Design + sourcing in CC_CURRENCY_BUILD_DECISION_2026-07-15, reconciling
+      two deep-research passes. The ESM/EUS "past-EOL but still supported"
+      nuance is load-bearing: the rule reconciles the endoflife.date release
+      EOL date with the host's actual extended-support enrollment
+      (snap.support_status) and never asserts "unsupported" without either a
+      proven not-enrolled signal or explicit "enrollment not verified" wording.
+      Upgrade/enroll commands are desk-researched from the distro upgrade docs
+      (do-release-upgrade, leapp, subscription-manager, pro); the actual
+      upgrade is operator-run in a maintenance window, not automated here.

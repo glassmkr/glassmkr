@@ -1,0 +1,126 @@
+# cmos_battery_low; new rule shipped 2026-05-26 per CC_HANDOFF_2026-05-23.md
+# open follow-up #5.
+#
+# PR #229 excluded VBAT sensors from the PSU rail out-of-spec signal
+# (then named psu_rail_drift; renamed 2026-05-29 per R-P2-3) because their tolerance
+# band (CR2032: 2.6-3.3V healthy) does not match an ATX PSU rail's. This
+# rule is the missing other half: a low VBAT reading SHOULD fire something
+# operationally meaningful. The threshold (< 2.6V) is the standard
+# board-manufacturer guidance for "replacement scheduled, not emergency."
+#
+# Sensor name matching is the same allowlist trend-warnings/features.ts
+# uses for exclusion. _SCALED variants are skipped (voltage-divided
+# readings don't reflect the cell's real voltage).
+id: cmos_battery_low
+priority: P3
+title: CMOS battery low
+summary: Motherboard CMOS coin-cell battery (CR2032) is reading below 2.6V; the cell is ~80% discharged and may fail to hold BIOS settings across the next power cycle. Replacement is scheduled, not emergency; the host runs fine until cold boot.
+
+fix:
+  quick_check:
+    command: |
+      sudo ipmitool sdr type Voltage | grep -iE 'vbat|cmos|bat'
+    description: "Confirm the BMC reading. CR2032 nominal is 3.0V (fresh: 3.3V). Below 2.6V is the replacement band; below 2.0V the cell will not hold settings."
+  verdict_prior: recoverable
+  prerequisites:
+    - Scheduled power-off window (CR2032 cannot be hot-swapped on most boards)
+    - One CR2032 coin cell per affected host
+    - BIOS settings captured before removal; many boards reset to defaults
+
+  safe_mode:
+    command: |
+      sudo ipmitool sdr type Voltage | grep -iE 'vbat|cmos|bat'
+      sudo dmidecode -t bios
+      sudo ipmitool lan print 1 2>/dev/null
+    description: |
+      Read-only diagnostics; captures the current VBAT reading,
+      BIOS version + date (some boards expose CMOS-reset history
+      here), and the IPMI static IP config. Capture these before
+      scheduling the swap so settings can be reapplied if the board
+      resets on cell removal.
+
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Confirm the reading is stable across two snapshots
+        sudo ipmitool sdr type Voltage | grep -iE 'vbat|cmos|bat'
+
+        # 2. Capture BIOS settings + IPMI config before removal
+        sudo dmidecode -t bios > /tmp/bios-pre-cmos-swap.txt
+        sudo ipmitool lan print 1 > /tmp/ipmi-lan-pre-cmos-swap.txt
+
+        # 3. Schedule a power-off; cleanly halt the OS
+        # sudo systemctl poweroff
+
+        # 4. Remove AC, wait 30s for capacitors to drain
+
+        # 5. Replace the CR2032 (consult board manual for location)
+
+        # 6. Power on, re-enter BIOS, re-apply any reset settings
+
+        # 7. After boot, confirm the reading is back in spec
+        sudo ipmitool sdr type Voltage | grep -iE 'vbat|cmos|bat'
+      description: |
+        Diagnostic + plan + replacement steps. The actual cell swap
+        is hands-on hardware work; the commands here bookend it
+        (pre-capture so settings can be restored, post-verify the
+        new cell reads in spec).
+
+  validation:
+    command: |
+      sudo ipmitool sdr type Voltage | grep -iE 'vbat|cmos|bat'
+      timedatectl status
+    description: |
+      Post-replacement; confirm VBAT reads >= 3.0V and that the
+      clock is correct (the RTC will read the BIOS build date if
+      the cell was missing during boot; an NTP sync will correct
+      it but worth verifying explicitly).
+
+  rollback:
+    available: false
+    command: |
+      # The replacement is itself the rollback: re-insert the old
+      # cell. But if you have inserted a fresh CR2032 backwards
+      # (orientation matters; + side up on most boards), pull it
+      # and reinsert correctly. Backwards installation does not
+      # damage the cell or the board, just makes the host think
+      # there is no cell installed.
+      echo "Reverse cell orientation if installed backwards."
+    note: |
+      Replacement itself is reversible (pull the new cell, put the
+      old one back), but the old cell is at end-of-life so reverting
+      defeats the point. The only real rollback is BIOS setting
+      restoration if the board reset to defaults; do that from the
+      pre-swap capture in step 2.
+
+  impact:
+    blast_radius: |
+      Diagnostic phase: no impact. Replacement requires a clean
+      power-off (no hot-swap), so the host is down for the duration
+      of the swap (typically 5-10 minutes including BIOS settings
+      restoration). Side-effect of the swap: BIOS may revert to
+      defaults on first power-on, which can change boot order, IPMI
+      static IP assignment, or virtualization flags. Capture before,
+      restore after.
+    estimated_duration: |
+      Diagnostic + plan: 10-15 min. Power-off window for the swap:
+      5-15 min including BIOS settings restoration. Total wall-clock
+      including scheduling: usually next-maintenance-window.
+    irreversible_steps: false
+
+  provenance:
+    last_verified: "2026-05-26"
+    tested_on:
+      - Desk-research; no validation-fleet cell has reached the threshold yet
+    tester: Glassmkr ops
+    source_note: |
+      Threshold (2.6V) and behavior (BIOS defaults on cold boot) are
+      from common board-manufacturer service guides for CR2032 cells.
+      Sensor name allowlist is the same set excluded from psu_rails
+      in apps/dashboard/src/lib/server/trend-warnings/features.ts as
+      of PR #229, kept in sync because adding a sensor to the
+      exclusion filter without adding it here would silently lose the
+      VBAT signal. _SCALED variants are deliberately excluded; their
+      voltage-divided reading would false-positive against a 2.6V
+      threshold without per-board divider configuration.

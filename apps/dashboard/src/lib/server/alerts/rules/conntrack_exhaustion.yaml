@@ -1,0 +1,181 @@
+# conntrack_exhaustion; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B5, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator fires at >=75% conntrack used, critical at >=90%.
+# Variants split on the critical boundary. When the table fills,
+# new connections are silently dropped; debugging this without
+# the rule is famously painful (everything "works" but new
+# connections randomly fail). Two levers: raise nf_conntrack_max
+# (immediate, easy), or reduce timeouts (more invasive, fixes
+# leaky long-lived connections).
+id: conntrack_exhaustion
+priority: P1
+title: Conntrack table near full
+summary: Linux nf_conntrack table is at or above 75% capacity. At 100%, new connections are silently dropped; services appear to work but new clients can't connect. Critical band (>=90%) means dropping is imminent.
+fix:
+  quick_check:
+    command: |
+      cat /proc/sys/net/netfilter/nf_conntrack_count
+      cat /proc/sys/net/netfilter/nf_conntrack_max
+      # Top source IPs in the table right now:
+      sudo conntrack -L 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i~/^src=/) print $i}' | sort | uniq -c | sort -rn | head -10
+    description: "Current conntrack count vs max + the top 10 source IPs hammering the table. >=80% of max is the warning band. The full FIX has bump-the-max and tune-timeouts variants."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (sysctl changes are non-disruptive; conntrack module must be loaded)
+    - "For critical path (>=90%): operator authority to bump kernel limits via sysctl"
+    - Awareness of which workload generates the most connections (NAT gateway, busy web server, container host with many netns)
+  safe_mode:
+    command: |
+      sysctl net.netfilter.nf_conntrack_count net.netfilter.nf_conntrack_max
+      cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null
+      cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null
+      sudo conntrack -L 2>/dev/null | awk '{print $1,$2,$3}' | sort | uniq -c | sort -rn | head -10
+      sudo conntrack -L 2>/dev/null | awk '/ESTABLISHED|TIME_WAIT|CLOSE_WAIT|FIN_WAIT/ {print $4}' | sort | uniq -c | sort -rn | head -10
+    description: |
+      Read-only inspection. The first two sysctls confirm current
+      usage vs cap. `conntrack -L` dumps the table; the first
+      pipeline counts by protocol (tcp / udp / icmp), the second
+      counts by TCP state (ESTABLISHED / TIME_WAIT etc.). High
+      TIME_WAIT often means short-lived connection storms (web
+      load); high ESTABLISHED means long-lived idle connections.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: gte
+        value: 90
+      command: |
+        # Critical path (>=90%). Dropping is imminent. Raise the
+        # cap NOW, then investigate.
+
+        # 1. Snapshot for the post-mortem
+        sysctl net.netfilter.nf_conntrack_count net.netfilter.nf_conntrack_max
+
+        # 2. Raise nf_conntrack_max (immediate; persisted in
+        #    /etc/sysctl.d/ for survival across reboots).
+        echo 524288 | sudo tee /proc/sys/net/netfilter/nf_conntrack_max
+        cat <<'EOF' | sudo tee /etc/sysctl.d/99-gmk-conntrack.conf
+        net.netfilter.nf_conntrack_max = 524288
+        # Hashtable size matters too; should be max/4 to avoid
+        # collisions. Set in /etc/modprobe.d/ for next module load:
+        # options nf_conntrack hashsize=131072
+        EOF
+        sudo sysctl --system
+
+        # 3. Identify the top conntrack consumers (by source IP)
+        sudo conntrack -L 2>/dev/null | awk '{print $5}' | cut -d= -f2 | sort | uniq -c | sort -rn | head -10
+
+        # 4. Check state distribution; is TIME_WAIT dominating?
+        sudo conntrack -L 2>/dev/null | awk '/tcp/ {print $4}' | sort | uniq -c | sort -rn
+
+        # 5. If TIME_WAIT is huge -> consider lower timeout
+        #    (default 120s; safe to lower to 30 for high-churn hosts)
+        # sudo sysctl net.netfilter.nf_conntrack_tcp_timeout_time_wait=30
+
+        # 6. Verify
+        sysctl net.netfilter.nf_conntrack_count net.netfilter.nf_conntrack_max
+      description: |
+        Critical (>=90%) path. Raise the cap immediately to buy
+        headroom, then identify the consumer. Persisted to
+        /etc/sysctl.d/ so the bump survives reboot. Hashtable size
+        is a related tunable (options nf_conntrack hashsize=...)
+        and matters for performance once max is high.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: lt
+        value: 90
+      command: |
+        # Warning path (75-89%). Investigate growth pattern; plan
+        # a cap raise or timeout tuning.
+
+        # 1. Current state
+        sysctl net.netfilter.nf_conntrack_count net.netfilter.nf_conntrack_max
+
+        # 2. Top consumers
+        sudo conntrack -L 2>/dev/null | awk '{print $5}' | cut -d= -f2 | sort | uniq -c | sort -rn | head -10
+
+        # 3. State distribution
+        sudo conntrack -L 2>/dev/null | awk '/tcp/ {print $4}' | sort | uniq -c | sort -rn
+
+        # 4. Plan: legitimate growth -> raise cap (same as critical
+        #    variant); leaky long-lived idle connections -> lower
+        #    nf_conntrack_tcp_timeout_established (default 5 days).
+        # sudo sysctl net.netfilter.nf_conntrack_tcp_timeout_established=86400
+      description: |
+        Warning (75-89%) path. Investigate, plan tuning. The
+        critical-path commands work here too if operator chooses
+        to act preemptively; nothing about this rule's fixes
+        becomes safer by waiting.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: percent missing. Diagnose + classify manually.
+        sysctl net.netfilter.nf_conntrack_count net.netfilter.nf_conntrack_max 2>/dev/null || \
+          echo "(conntrack module not loaded; alert may be false positive)"
+      description: |
+        Missing-evidence fallback. Run diagnostic; if the module
+        isn't loaded the alert may be a false positive (the
+        evaluator gates on conntrack.available but a race is
+        possible).
+  validation:
+    command: |
+      sysctl net.netfilter.nf_conntrack_count net.netfilter.nf_conntrack_max
+    description: |
+      After fix, the ratio count/max should drop below 75%.
+      Re-firing the alert is the negative validation; if it
+      doesn't re-fire on the next snapshot cycle the bump or
+      timeout tuning held.
+  rollback:
+    available: true
+    command: |
+      sudo rm /etc/sysctl.d/99-gmk-conntrack.conf
+      sudo sysctl --system
+      # Resets timeout tunables to kernel defaults (or whatever
+      # was set before our drop-in took effect).
+    note: |
+      sysctl drop-in is fully reversible. Higher nf_conntrack_max
+      has a tiny memory cost (per-entry ~300 bytes; 500k entries
+      ~150MB max if fully populated). Timeout reductions can
+      cause legitimate idle connections to drop and reconnect , 
+      that's the operator's call.
+  impact:
+    blast_radius: |
+      Raising nf_conntrack_max is non-disruptive. Lowering TCP
+      timeouts (TIME_WAIT, ESTABLISHED) WILL cause existing idle
+      connections to be dropped at the new (shorter) timeout , 
+      apps should handle reconnect cleanly but it's a behavioral
+      change. Diagnostic commands are non-disruptive.
+    estimated_duration: |
+      Limit raise: <1 minute. Consumer identification: 2-5 minutes
+      (conntrack table can be huge; awk pipelines on millions of
+      entries take a few seconds each). Timeout tuning: 1 minute.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    source_note: |
+      Desk-researched from sysctl-net-netfilter(7), conntrack(8),
+      kernel nf_conntrack docs. The 524288 cap is sized for
+      general-purpose Linux servers; NAT gateways and very busy
+      web servers may need 1M+. Hashtable sizing (max/4) is from
+      kernel documentation. Not deliberately re-triggered on
+      validation fleet for this deepening pass.
+
+      2026-05-19 C9 activation: insert_failed_rate supplementary
+      signal added per CC_SPEC_FORGE_C7_C10_ACTIVATION §3.
+      Consumes Crucible v0.11.0 snap.conntrack.insert_failed_rate
+      _per_sec. Threshold 10 inserts/sec at moderate utilization
+      emits a separate warning for "rapid table churn" (short-lived
+      connections exhausting slots faster than they expire); a
+      failure mode the utilization-only threshold misses. Also
+      participates in accept_backlog_or_syn_flood incident group
+      (PR #162); when the classifier fires this rule attaches as
+      evidence.

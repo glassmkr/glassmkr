@@ -1,0 +1,168 @@
+# swap_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B4, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator fires at >=50% swap used, critical at >=80%. Variants
+# split on the critical boundary. High swap usage is *always* a
+# symptom of insufficient RAM (or a leaking process); the swap
+# itself is rarely the fix target. swapoff/swapon can be used to
+# evict swap back into RAM IF there's RAM headroom; included with
+# clear guardrails.
+id: swap_high
+priority: P2
+subordinate_to: oom_kills
+title: Swap usage high
+summary: Swap usage at or above 50%. Swap I/O is 10-100x slower than RAM; sustained swap = thrashing. Critical band (>=80%) indicates imminent service degradation.
+fix:
+  quick_check:
+    command: |
+      free -h
+      cat /proc/swaps
+      # Top 10 by swap usage:
+      for f in /proc/[0-9]*/status; do
+        awk -v p="$f" '/^VmSwap:/ && $2+0 > 0 {gsub("/proc/","",p); gsub("/status","",p); printf "%s %d kB\n", p, $2}' "$f" 2>/dev/null
+      done | sort -k2 -rn | head -10 | while read pid kb _; do
+        echo "$kb kB swap : $(cat /proc/$pid/comm 2>/dev/null) (pid=$pid)"
+      done
+    description: "Swap totals + per-process swap usage (VmSwap from /proc/$PID/status) for the top 10 swap-using processes. Pinpoints which workload is being paged out."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (inspection is non-disruptive)
+    - "For swapoff path: confirmed RAM headroom (free RAM >= currently-used swap, else swapoff will OOM the host)"
+    - Awareness of which services are swapping (top SwapPagesIn/Out processes via /proc/PID/status)
+  safe_mode:
+    command: |
+      free -h
+      swapon --show
+      cat /proc/meminfo | grep -E 'SwapTotal|SwapFree|SwapCached'
+      for p in $(ls /proc | grep -E '^[0-9]+$'); do
+        s=$(awk '/VmSwap/ {print $2}' /proc/$p/status 2>/dev/null)
+        if [ -n "$s" ] && [ "$s" -gt 0 ]; then
+          echo "$s KB - $(cat /proc/$p/comm 2>/dev/null) (pid $p)"
+        fi
+      done | sort -rn | head -20
+    description: |
+      Read-only inspection. `swapon --show` lists active swap
+      devices/files. The for-loop walks /proc/*/status and finds
+      which processes have the most pages swapped out; these are
+      the targets to restart or fix.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: gte
+        value: 80
+      command: |
+        # Critical path (>=80% swap used). Server is thrashing.
+        # Performance is degraded; user-facing services are slow.
+
+        # 1. Identify the top swap consumers
+        for p in $(ls /proc | grep -E '^[0-9]+$'); do
+          s=$(awk '/VmSwap/ {print $2}' /proc/$p/status 2>/dev/null)
+          if [ -n "$s" ] && [ "$s" -gt 0 ]; then
+            echo "$s KB - $(cat /proc/$p/comm 2>/dev/null) (pid $p)"
+          fi
+        done | sort -rn | head -10
+
+        # 2. Restart the top swap consumer; fresh start evicts
+        #    its swap allocation. (Replace <UNIT> with the suspect.)
+        # sudo systemctl restart <UNIT>
+
+        # 3. OPTIONAL: force swap back to RAM. ONLY do this if free
+        #    RAM exceeds currently-used swap; otherwise this OOMs
+        #    the host.
+        free -h
+        # If `Mem available` > `Swap used`:
+        # sudo swapoff -a && sudo swapon -a
+        # (This briefly halts swap traffic; cron jobs / monitors
+        #  with strict timing constraints may notice.)
+
+        # 4. Verify
+        free -h
+      description: |
+        Critical (>=80%) path. Identify the top swap-consuming
+        process(es), restart them to evict swap, then optionally
+        cycle swap (with RAM-headroom precondition). Guardrails
+        on swapoff are real: without enough RAM the host OOMs.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: lt
+        value: 80
+      command: |
+        # Warning path (50-79%). Investigate which processes are
+        # swapping; plan RAM upgrade or workload reduction.
+
+        # 1. Top swap consumers
+        for p in $(ls /proc | grep -E '^[0-9]+$'); do
+          s=$(awk '/VmSwap/ {print $2}' /proc/$p/status 2>/dev/null)
+          if [ -n "$s" ] && [ "$s" -gt 0 ]; then
+            echo "$s KB - $(cat /proc/$p/comm 2>/dev/null) (pid $p)"
+          fi
+        done | sort -rn | head -10
+
+        # 2. Check swappiness; default 60 is aggressive; for
+        #    server workloads 10 is more common.
+        cat /proc/sys/vm/swappiness
+
+        # 3. If a known idle process is hogging swap, restart it
+        #    (its working set will repopulate in RAM from disk).
+      description: |
+        Warning (50-79%) path. Identify swap consumers, consider
+        swappiness tuning, plan a maintenance-window restart.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: percent missing. Diagnose + classify manually.
+        free -h
+        swapon --show
+      description: |
+        Missing-evidence fallback. Run diagnostic; classify
+        manually before intervention.
+  validation:
+    command: |
+      free -h
+      swapon --show
+    description: |
+      After fix, confirm swap-used dropped below 50% of total.
+      Re-firing the alert is the negative validation.
+  rollback:
+    available: true
+    command: |
+      # swappiness change is reversible via sysctl:
+      sudo sysctl vm.swappiness=60   # restore default
+    note: |
+      Service restart isn't "rolled back"; the service runs again
+      with a fresh memory profile. swapoff/swapon doesn't need
+      rollback (swap is still configured). swappiness tuning can
+      be reverted with sysctl if it caused regressions.
+  impact:
+    blast_radius: |
+      Process restart: service-specific downtime (typically <30s
+      for web workers, longer for databases). swapoff briefly
+      halts swap traffic system-wide; if undersized the host OOMs
+      (read the precondition carefully). swappiness change is a
+      kernel-tunable, no service touch.
+    estimated_duration: |
+      Diagnosis: 2-5 minutes. Process restart: service-dependent.
+      swapoff -a && swapon -a: 10-60 seconds depending on
+      currently-used swap volume.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from free(1), swapon(8), proc(5)
+      (VmSwap in /proc/PID/status), sysctl(8) vm.swappiness.
+      The swapoff guardrail (free RAM >= used swap) is critical:
+      omitting it caused a the production host outage during early
+      manual triage in 2024. Not deliberately re-triggered on
+      validation fleet for this deepening pass.
+
+      Pattern library 2026-05-18: Category 2 (RAM and memory). Primary trigger redesign (pswpin rate from /proc/vmstat per spec §3.13) deferred until Crucible C3 ships pswpin/pswpout deltas. Today the rule fires on legacy swap% threshold; new trigger lights up once C3 is available. subordinate_to: oom_kills wired in YAML.

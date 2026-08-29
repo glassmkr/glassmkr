@@ -1,0 +1,259 @@
+# unattended_upgrades_disabled; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B8, using the condition_match
+# dimension on the `mechanism` evidence attribute (which is one of:
+# "unattended-upgrades", "dnf-automatic", or neither/missing).
+#
+# Single-severity rule (always warning). The original migration stub
+# had "hint" as the literal description placeholder; the evaluator
+# builds the hint dynamically with a 3-branch ternary based on
+# `mechanism`. This deepening reconstructs that ternary properly via
+# 3 condition_match variants. Counterpart to pending_security_updates,
+# which is suppressed when auto-updates ARE configured. Correction
+# (R-P2-RHEL-1, 2026-05-29): the two rules CAN co-fire on the same host.
+# pending_security_updates is suppressed only when auto-updates are
+# configured; when no working auto-update mechanism is configured AND
+# security patches are pending, BOTH this rule and
+# pending_security_updates fire. That is the honest state (the host has
+# no auto-apply mechanism and has unapplied patches), surfaced when the
+# Crucible dnf-automatic download-only fix landed. The earlier "don't
+# co-fire" claim assumed a binary, always-correct "configured" signal.
+id: unattended_upgrades_disabled
+priority: P3
+title: Unattended security upgrades disabled
+summary: No automatic security update mechanism is configured. The host is at the operator's mercy for patch cadence; if patches are pending, the counterpart pending_security_updates rule will fire.
+fix:
+  quick_check:
+    command: |
+      # Debian/Ubuntu unattended-upgrades: is-enabled is the signal Crucible
+      # reads. is-active is informational only; the service is a oneshot
+      # whose state can show "active" long after it last ran, so trusting
+      # is-active alone hides a disabled-on-boot service.
+      systemctl is-enabled unattended-upgrades 2>/dev/null
+      systemctl is-active unattended-upgrades 2>/dev/null
+      sudo apt-config dump APT::Periodic 2>/dev/null
+      cat /etc/apt/apt.conf.d/20auto-upgrades 2>/dev/null
+      # RHEL/Rocky dnf-automatic: same shape, is-enabled is the signal.
+      systemctl is-enabled dnf-automatic.timer 2>/dev/null
+      systemctl is-active dnf-automatic.timer 2>/dev/null
+    description: "Distro-specific automatic-update daemon state. Debian/Ubuntu key off the APT::Periodic block + unattended-upgrades service; RHEL-family key off dnf-automatic.timer. The alert means none of the expected indicators are on."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (enabling auto-updates is non-disruptive)
+    - Awareness that unattended upgrades can occasionally restart services unattended (most are idempotent but worth knowing)
+    - "For production: a reboot-handling policy if the mechanism is configured to auto-reboot on kernel updates (default: NO auto-reboot, operator decides)"
+    - Recent backup if the host hasn't been auto-patched in a long time (the first batch can be large)
+  safe_mode:
+    command: |
+      # Debian/Ubuntu inspection
+      systemctl list-unit-files | grep -iE 'unattended-upgrades|apt-daily'
+      sudo cat /etc/apt/apt.conf.d/20auto-upgrades 2>/dev/null
+      sudo cat /etc/apt/apt.conf.d/50unattended-upgrades 2>/dev/null | head -30
+      dpkg -l unattended-upgrades 2>/dev/null
+
+      # RHEL family inspection
+      systemctl list-unit-files | grep -i dnf-automatic
+      sudo cat /etc/dnf/automatic.conf 2>/dev/null
+      rpm -q dnf-automatic 2>/dev/null
+    description: |
+      Read-only inspection. Walks both mechanisms; one (or neither)
+      will report. The /etc/apt/apt.conf.d/20auto-upgrades file is
+      the key file Crucible reads to determine if unattended-upgrades
+      is "configured" (its contents must reference the security
+      origins). For dnf, /etc/dnf/automatic.conf + the
+      dnf-automatic-install.timer being active are the signal.
+  variants:
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: mechanism
+        op: eq
+        value: unattended-upgrades
+      suggested_action: |
+        printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades && sudo systemctl enable --now unattended-upgrades
+      command: |
+        # mechanism=unattended-upgrades: package is installed but
+        # the auto-update mechanism is not enabled. Configure +
+        # enable.
+
+        # 1. Confirm the package is installed
+        dpkg -l unattended-upgrades
+
+        # 2. Reconfigure interactively (sets up the periodic config)
+        sudo dpkg-reconfigure --priority=low unattended-upgrades
+        # Or manually write the periodic file:
+        cat <<'EOF' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
+        APT::Periodic::Update-Package-Lists "1";
+        APT::Periodic::Unattended-Upgrade "1";
+        APT::Periodic::AutocleanInterval "7";
+        EOF
+
+        # 3. Confirm origins for security upgrades
+        sudo cat /etc/apt/apt.conf.d/50unattended-upgrades | grep -A3 'Allowed-Origins'
+
+        # 4. Force a dry-run to verify
+        sudo unattended-upgrade --dry-run --debug 2>&1 | head -30
+
+        # 5. Enable the systemd timer (usually already enabled by
+        # apt postinstall hooks but harmless to confirm)
+        sudo systemctl enable --now unattended-upgrades.service
+        sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+        sudo systemctl list-timers | grep -iE 'apt|unattended'
+      description: |
+        unattended-upgrades path. The package is present but the
+        20auto-upgrades drop-in either doesn't exist or has the
+        wrong values. Write the canonical 20auto-upgrades file,
+        dry-run validate, ensure timers are active.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: mechanism
+        op: eq
+        value: dnf-automatic
+      command: |
+        # mechanism=dnf-automatic: package is installed but the
+        # systemd timer is not running.
+
+        # 1. Confirm package
+        rpm -q dnf-automatic
+
+        # 2. Configure for security-only auto-apply (default is
+        # download-only; this enables the install step)
+        sudo sed -i 's/^apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
+        sudo sed -i 's/^upgrade_type = default/upgrade_type = security/' /etc/dnf/automatic.conf
+
+        # 3. Verify config
+        grep -E '^(apply_updates|upgrade_type)' /etc/dnf/automatic.conf
+
+        # 4. Enable + start the timer
+        sudo systemctl enable --now dnf-automatic-install.timer
+
+        # 5. Verify timer is scheduled
+        sudo systemctl list-timers | grep dnf-automatic
+      description: |
+        dnf-automatic path. Package is installed; default config
+        is download-only (apply_updates=no), so flipping that
+        + enabling the install timer is the fix. Setting
+        upgrade_type=security limits to security-tagged patches.
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback path for Debian/Ubuntu when no mechanism was
+        # detected (package not installed).
+
+        # 1. Install
+        sudo apt update
+        sudo apt install -y unattended-upgrades
+
+        # 2. Configure
+        sudo dpkg-reconfigure --priority=low unattended-upgrades
+        cat <<'EOF' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
+        APT::Periodic::Update-Package-Lists "1";
+        APT::Periodic::Unattended-Upgrade "1";
+        APT::Periodic::AutocleanInterval "7";
+        EOF
+
+        # 3. Dry-run + enable (as in the unattended-upgrades variant)
+        sudo unattended-upgrade --dry-run --debug 2>&1 | head -30
+        sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+      description: |
+        Debian/Ubuntu fallback: no mechanism detected. Install
+        unattended-upgrades from scratch, then configure + enable.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback path for RHEL family when no mechanism detected.
+
+        # 1. Install
+        sudo dnf install -y dnf-automatic
+
+        # 2. Configure for security-only auto-apply
+        sudo sed -i 's/^apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
+        sudo sed -i 's/^upgrade_type = default/upgrade_type = security/' /etc/dnf/automatic.conf
+
+        # 3. Enable + start
+        sudo systemctl enable --now dnf-automatic-install.timer
+        sudo systemctl list-timers | grep dnf-automatic
+      description: |
+        RHEL family fallback: no mechanism detected. Install
+        dnf-automatic from scratch, configure security-only,
+        enable timer.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Last-resort fallback: distro unknown. Detect package
+        # manager + recommend.
+        if command -v apt >/dev/null 2>&1; then
+          echo "Debian/Ubuntu detected; install unattended-upgrades:"
+          echo "  sudo apt install -y unattended-upgrades"
+          echo "  sudo dpkg-reconfigure --priority=low unattended-upgrades"
+        elif command -v dnf >/dev/null 2>&1; then
+          echo "RHEL family detected; install dnf-automatic:"
+          echo "  sudo dnf install -y dnf-automatic"
+          echo "  sudo systemctl enable --now dnf-automatic-install.timer"
+        else
+          echo "Unknown package manager; investigate manually"
+        fi
+      description: |
+        Last-resort fallback. Distro/vendor not recognised AND
+        mechanism attribute missing. Detects package manager
+        and prints next-step recommendations rather than running
+        anything destructive.
+  validation:
+    command: |
+      apt-config dump 2>/dev/null | grep -q 'APT::Periodic::Unattended-Upgrade "1"' || sudo systemctl is-active --quiet dnf-automatic.timer
+    expected_exit: 0
+    description: |
+      Definition of done: exit 0 means automatic security upgrades are
+      enabled (Debian/Ubuntu APT::Periodic::Unattended-Upgrade=1, or RHEL
+      dnf-automatic.timer active).
+  rollback:
+    available: true
+    command: |
+      # Debian/Ubuntu
+      sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer
+      # Only if THIS fix installed it. The package is frequently present and
+      # merely disabled, in which case removing it goes further than undoing
+      # the change.
+      # sudo apt remove --purge unattended-upgrades
+
+      # RHEL family
+      sudo systemctl disable --now dnf-automatic-install.timer
+      # Same caveat as above.
+      # sudo dnf remove dnf-automatic
+    note: |
+      Disabling auto-updates is fully reversible. The host returns
+      to "manual patching" state, which is what the alert was
+      originally complaining about; so disabling auto-updates
+      reintroduces the alert AND the underlying problem. Only
+      roll back if auto-updates caused operational issues
+      (rare; usually a service restart timing issue, fix that
+      instead).
+  impact:
+    blast_radius: |
+      Initial configuration: non-disruptive. Auto-update execution
+      (after enable): service-restart impact varies by what's in
+      the security update batch. Most security updates restart
+      their own service via systemd post-install hooks; usually
+      under 30s per affected service.
+    estimated_duration: |
+      Configuration + enable: 5-10 minutes. First auto-update
+      execution: typically within 24 hours of enable (Debian
+      apt-daily runs ~6am local; dnf-automatic-install runs at
+      timer-defined schedule, often 1am).
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from unattended-upgrade(8), apt.conf(5),
+      dnf-automatic(8). The 3-branch mechanism ternary in the
+      evaluator (lines 1350-1352) maps cleanly to the 3
+      condition_match variants here. Both auto-update mechanisms
+      are validation-fleet-deployed on production servers; not
+      deliberately toggled off for this deepening pass (would
+      cause real fleet-wide patching gaps).
+
+      Pattern library 2026-05-18: Category 7 (system state). P3 informational tier confirmed; no paging. Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

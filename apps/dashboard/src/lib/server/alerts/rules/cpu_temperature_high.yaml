@@ -1,0 +1,250 @@
+# cpu_temperature_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B6, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator emits at >=80°C warning, >=90°C critical (config-tunable via
+# cpu_temp_warning_c / cpu_temp_critical_c). Variants split on the 90°C
+# default critical boundary on the `value` attribute. The rule has TWO
+# evidence paths: `path: "hwmon"` (Crucible 0.8.0+ preferred) and
+# `path: "ipmi"` (fallback for hosts where hwmon is unavailable). Both
+# paths yield the same operator action (cooling check) so we don't
+# split on path.
+# R-P2-2 ownership-branch remediation (val-fleet 2026-05-29): this is a
+# vendor-side physical-hardware rule whose remediation assumes chassis
+# access. The customer-facing alert card appends the shared
+# OWNERSHIP_REMEDIATION_NOTE (evaluator.ts, single source of truth) so an
+# operator who cannot physically service the host still has a path:
+#   "If you operate this hardware (owned or colocated): handle the
+#    inspection or swap yourself, or dispatch a remote-hands technician.
+#    If this is rented or provider-managed: file a hardware service ticket
+#    with your provider. Either way, the physical check needs to happen
+#    on-site."
+# Keep this rule's remediation consistent with that note.
+id: cpu_temperature_high
+priority: P1
+title: CPU temperature high
+summary: CPU thermal reading at or above the warning threshold (default 80°C; critical 90°C). At critical, thermal throttling kicks in and silicon damage risk climbs.
+fix:
+  quick_check:
+    command: |
+      sudo ipmitool sdr type Temperature 2>/dev/null
+      sensors 2>/dev/null | grep -iE 'core|cpu|package'
+    description: "Every BMC-reported temperature sensor + lm-sensors output. CPU package temp >85°C is the warning band; >95°C is when most chips throttle."
+  # Static default verdict. R-P2-1 (val-fleet 2026-05-29): the evaluator
+  # overrides this per-alert to `investigation` when the temperature is
+  # correlated with high CPU utilization (>=70%), since a load-induced
+  # spike is not a cooling fault. The override travels via
+  # evidence.verdict_prior_override and is honoured by resolveFix(); this
+  # `vendor-side` default still applies when the temperature is NOT
+  # load-correlated (the genuine cooling-fault case).
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (inspection is non-disruptive; cooling work needs physical access)
+    - Physical or remote-hands access if cleaning / fan swap is needed
+    - "For critical band (>=90°C): operator authority to schedule emergency cooling intervention or workload pause"
+    - Awareness of the rack's ambient temperature and intake/exhaust airflow direction
+  safe_mode:
+    command: |
+      sensors 2>/dev/null || echo "(lm-sensors not installed)"
+      cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | awk '{print $1/1000 "°C"}'
+      sudo ipmitool sdr type Temperature 2>/dev/null | head -20
+      sudo ipmitool sdr type Fan 2>/dev/null | head -20
+      uptime
+    description: |
+      Read-only thermal inspection. `sensors` reads hwmon directly
+      (matches Crucible's primary path). The /sys/class/thermal/
+      glob is the fallback if lm-sensors isn't installed. ipmitool
+      sdr is the BMC view (matches Crucible's IPMI fallback path).
+      Run all three to triangulate; mismatches between hwmon and
+      IPMI sometimes reveal a bad sensor vs a real overheat.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: value
+        op: gte
+        value: 90
+      command: |
+        # Critical path (>=90°C). Thermal throttling active; silicon
+        # damage risk. Reduce load AND fix cooling immediately.
+
+        # 1. Confirm current temps from all sources
+        sensors 2>/dev/null
+        cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | awk '{print $1/1000 "°C"}'
+        sudo ipmitool sdr type Temperature 2>/dev/null
+
+        # 2. Fan status; is the cooling system working?
+        sudo ipmitool sdr type Fan 2>/dev/null
+        # If a fan is at 0 RPM with status critical -> escalate to
+        # ipmi_fan_failure workflow + replace fan module.
+
+        # 3. Identify what's burning CPU (heat correlates to load)
+        ps aux --sort=-%cpu | head -10
+        # If a runaway process is the cause -> kill/throttle (see cpu_high).
+        # If legitimate workload at full load -> reduce or pause.
+
+        # 4. Force max fan speed (vendor-specific; works on most
+        #    Supermicro / Dell PowerEdge BMCs with the right raw
+        #    command). DOUBLE-CHECK vendor docs before running these
+        #    on production hardware.
+        # Supermicro:
+        # sudo ipmitool raw 0x30 0x45 0x01 0x01   # set fan mode = Full
+        # Dell:
+        # sudo ipmitool raw 0x30 0x30 0x01 0x00   # disable auto control
+        # sudo ipmitool raw 0x30 0x30 0x02 0xff 0x64  # 100% fan speed
+
+        # 5. Physical actions (need remote-hands):
+        #    a) Check for airflow obstruction (cables in fan path,
+        #       cold-aisle/hot-aisle violation, neighbour-server heat).
+        #    b) Clean dust filters / heatsink fins.
+        #    c) Re-seat CPU heatsink, refresh thermal paste (last resort
+        #      ; requires CPU+heatsink dismount; do at maintenance
+        #       window not as an emergency intervention).
+
+        # 6. If temps don't come down -> shut down before damage:
+        # sudo systemctl poweroff
+      description: |
+        Critical (>=90°C) path. Reduce load now (kill / pause / move
+        workload), then chase cooling. The fan-speed-override commands
+        are vendor-specific and dangerous if misapplied; commented
+        out by default. If temps stay critical despite reduced load,
+        emergency power-off is the right call.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: value
+        op: lt
+        value: 90
+      command: |
+        # Warning path (80-89°C). Investigate; plan cooling fix.
+
+        # 1. Current temps
+        sensors 2>/dev/null
+        sudo ipmitool sdr type Temperature 2>/dev/null
+
+        # 2. Fan status
+        sudo ipmitool sdr type Fan 2>/dev/null
+
+        # 3. Workload check
+        ps aux --sort=-%cpu | head -5
+
+        # 4. Decision tree:
+        #    - Ambient too high (rack hot, neighbour load) -> file
+        #      facility ticket for cooling check.
+        #    - Dusty intake / clogged heatsink -> schedule cleaning
+        #      at maintenance window.
+        #    - Fan running but RPM low -> failing fan; schedule
+        #      replacement (escalates to ipmi_fan_failure if it dies).
+        #    - Legitimate sustained load -> consider workload spread
+        #      or capacity upgrade.
+      description: |
+        Warning (80-89°C) path. Investigate, plan intervention.
+        Don't reach for the fan-override commands at warning levels;
+        they're for critical-and-stuck situations.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: value attribute missing. Diagnose manually.
+        sensors 2>/dev/null
+        cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | awk '{print $1/1000 "°C"}'
+        sudo ipmitool sdr type Temperature 2>/dev/null
+      description: |
+        Missing-evidence fallback. Run thermal diagnostic; classify
+        manually before intervention.
+
+  # ====== Field investigation checklist (operator before remediation) ======
+  #
+  # If a host repeatedly fires this alert AND there's no obvious
+  # workload spike, walk this checklist before deciding on
+  # remediation. The cause is almost always in here.
+  #
+  # 1. Chassis fans; speed, redundancy, contamination
+  #    sudo ipmitool sdr type Fan
+  #    # Look for: fans at 100% (thermal demand), <50% (idle), or
+  #    # missing entries (failed fan; cross-ref ipmi_fan_failure).
+  #    # Visually inspect for dust accumulation; >50% blockage on
+  #    # the intake grille adds ~10°C to package temp.
+  #
+  # 2. Ambient + intake temperature
+  #    sudo ipmitool sdr type Temperature | grep -iE 'inlet|ambient'
+  #    # Rack ambient >30°C is the upstream cause for many
+  #    # "CPU running hot" tickets; check facility HVAC + rack-row
+  #    # placement (hot aisle vs cold aisle).
+  #
+  # 3. Thermal paste / heatsink contact
+  #    # If the CPU is the only sensor running hot and other thermal
+  #    # zones are fine, the heatsink contact has degraded. Common on
+  #    # boxes >3 years uptime; thermal compound dries out.
+  #    # Bare-metal: schedule maintenance window for re-pasting.
+  #
+  # 4. BIOS thermal-throttle behaviour
+  #    # Some BIOSes default to power-throttling early (60-65°C);
+  #    # others let the CPU run to TJunction (~95-100°C) before
+  #    # throttling. Check BIOS thermal-management settings; the
+  #    # right value depends on chassis cooling capacity.
+  #
+  # 5. Power profile mismatch
+  #    # Intel pstate driver / AMD P-states may be set to
+  #    # performance mode when the workload doesn't need it.
+  #    cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+  #    # `performance` = always max clock = always max heat;
+  #    # consider `ondemand` or `schedutil` for variable workloads.
+  #
+  # 6. Historical trend
+  #    # If the alert started firing N days ago but ambient + workload
+  #    # haven't changed, something physical changed: fan failure,
+  #    # heatsink shift, dust accumulation. Inspect.
+
+  validation:
+    command: |
+      sensors 2>/dev/null | grep -iE 'package|tdie|cpu'
+      sudo ipmitool sdr type Temperature 2>/dev/null
+    description: |
+      After fix, confirm temps drop below 80°C sustained. Both
+      hwmon (`sensors`) and IPMI views should agree (sub-2°C
+      delta typical). Re-firing the alert is the negative
+      validation.
+  rollback:
+    available: true
+    command: |
+      # Restore auto fan control (Dell example; vendor-specific):
+      sudo ipmitool raw 0x30 0x30 0x01 0x01
+      # Supermicro: set fan mode back to Optimal:
+      # sudo ipmitool raw 0x30 0x45 0x01 0x02
+    note: |
+      Manual fan-override commands ARE reversible by setting fan
+      mode back to auto/optimal. Workload pause/restart isn't
+      "rolled back"; restart resumes. Physical cleaning / heatsink
+      reseating isn't reversible per se (nothing to undo). Thermal
+      paste refresh is irreversible during the install but the
+      pre-state is just "old paste" which is replaceable.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Fan-override commands
+      cause fans to spin up loudly (noise + minor extra power
+      draw) but don't affect service. Workload pause is by
+      definition disruptive. Emergency power-off is a full outage.
+    estimated_duration: |
+      Diagnosis: 5 minutes. Fan override: <1 minute. Workload
+      reduction: minutes to coordinate. Cleaning / fan swap: 15-60
+      minutes (requires remote-hands). Heatsink reseat: 30-60
+      minutes (requires maintenance window).
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from lm-sensors docs (sensors(1)),
+      proc(5) (/sys/class/thermal), ipmitool(1) raw commands for
+      Supermicro IPMI 0x30 / Dell iDRAC 0x30. Fan-override raw
+      commands verified against published Supermicro BMC manuals
+      and Dell iDRAC API guides; commented out by default because
+      misapplied raw commands can brick a BMC config. Not
+      deliberately re-triggered on validation fleet for this
+      deepening pass (would require heating a CPU on purpose).
+
+      Pattern library 2026-05-18: Category 5 (thermal). Well-designed existing rule; per-vendor thresholds wired from existing config schema fields. Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

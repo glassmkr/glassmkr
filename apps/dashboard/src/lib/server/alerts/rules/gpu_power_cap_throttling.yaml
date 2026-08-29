@@ -1,0 +1,123 @@
+# gpu_power_cap_throttling; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §1.4. Updated 2026-05-27: corrected
+# nvidia-smi field name hw_power_brake -> hw_power_brake_slowdown
+# (the short form exists in Crucible's internal parser but the CLI
+# rejects it on driver 525+; the long form is the actual nvidia-smi
+# query field). Plus idle-state false-positive guidance for workstation /
+# inference cards (A16, T4, A40, A2) that power-gate aggressively.
+#
+# Fires when sw_power_cap OR hw_power_brake_slowdown throttle reason is engaged.
+# boot_grace_seconds=300 absorbs the post-boot window where the GPU
+# transitions through power states.
+#
+# Often intentional: operators set explicit power caps via nvidia-smi
+# -pl for thermal-budget management. The rule surfaces (warning, not
+# critical) so the operator can confirm intent versus unexpected
+# throttling.
+#
+# Incident grouping: gpu_thermal_incident (with gpu_thermal_critical).
+id: gpu_power_cap_throttling
+priority: P2
+title: GPU power-cap throttling
+summary: "GPU is being throttled by software power cap (sw_power_cap) or hardware power brake (hw_power_brake_slowdown). May be intentional (operator-configured limit) or unexpected (PSU sizing, chassis power policy)."
+incident_group:
+  group_id: gpu_thermal_incident
+  correlation_window_seconds: 300
+fix:
+  quick_check:
+    command: |
+      nvidia-smi --query-gpu=index,uuid,power.draw,power.limit,enforced.power.limit,clocks_throttle_reasons.sw_power_cap,clocks_throttle_reasons.hw_power_brake_slowdown --format=csv
+    description: "Per-GPU power draw vs the software and hardware power caps + the two throttle-reason bits that fire when the cap engages. sw_power_cap = software limit hit; hw_power_brake_slowdown = the chip itself emergency-braked (PSU sag or thermal trip)."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the host
+    - Awareness of any operator-configured power caps via nvidia-smi -pl
+    - BMC access for chassis power-policy inspection
+  safe_mode:
+    command: |
+      nvidia-smi -q -d POWER
+      nvidia-smi --query-gpu=index,name,power.draw,power.limit,power.default_limit,power.min_limit,power.max_limit --format=csv
+      sudo ipmitool dcmi power reading 2>/dev/null
+    description: |
+      Read-only inspection. nvidia-smi -q -d POWER shows the full
+      power-management state including throttle reasons. CSV form
+      compares default vs configured limit. IPMI DCMI power
+      reading shows chassis-level total power draw against PSU
+      capacity.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Decision tree:
+        # 1. Confirm real vs idle-state throttle FIRST. Run quick_check
+        #    and compare power.draw to power.limit. If power.draw is
+        #    under ~50% of power.limit and ONLY sw_power_cap is
+        #    Active (no hw_power_brake_slowdown), the card is
+        #    throttling at idle. Common on workstation / inference
+        #    cards that aggressively power-gate when unused (A16,
+        #    T4, A40, A2). This is expected behaviour and ack-as-
+        #    benign is the right call. The signal becomes
+        #    actionable only when power.draw is near power.limit AND
+        #    sw_power_cap is Active during real workload.
+        # 2. Compare power.limit (current) vs power.default_limit. If
+        #    the limit was reduced below default, an operator set it
+        #    (or a chassis policy did). Confirm it's intentional.
+        # 3. If the limit equals default but hw_power_brake_slowdown fires:
+        #    chassis PSU is under-sized for the workload thermal +
+        #    electrical load. Check IPMI dcmi power reading vs PSU
+        #    rated capacity.
+        # 4. If you want to raise the limit:
+        # sudo nvidia-smi -pl <watts>
+        #    Persist via systemd unit or @reboot cron; nvidia-smi
+        #    -pl doesn't survive driver reload.
+        # 5. On HGX systems with redundant PSUs: confirm PSU
+        #    redundancy state (psu_redundancy_loss rule covers this).
+      description: |
+        Power-cap throttling that's intentional should be ACK'd; the
+        rule's purpose is to surface unintentional caps that hurt
+        workload performance. Sustained hw_power_brake_slowdown on a host
+        sized correctly for its workload almost always means PSU or
+        chassis-policy investigation. Idle-state sw_power_cap on
+        workstation / inference cards (A16, T4, A40, A2) that power-
+        gate at idle is a documented false-positive; the rule fires
+        but the host is healthy.
+  validation:
+    command: |
+      nvidia-smi --query-gpu=power.draw,power.limit,clocks_throttle_reasons.active --format=csv
+    description: |
+      Throttle reasons should not include sw_power_cap or
+      hw_power_brake_slowdown. Rule auto-resolves on next snapshot.
+  rollback:
+    available: true
+    command: |
+      # Reset to default power limit:
+      sudo nvidia-smi -pl <default_watts>
+    note: |
+      Power-cap changes are fully reversible. nvidia-smi -pl is the
+      authoritative knob; persist via boot-time hooks if the change
+      should survive reboot.
+  impact:
+    blast_radius: |
+      Alert itself is informational. Raising power cap is non-
+      disruptive (immediate effect). Reducing PSU load via workload
+      shedding has whatever impact the workload owner considers
+      acceptable.
+    estimated_duration: |
+      Triage 10-15 min. Cap change: <1 min. PSU investigation:
+      30-60 min.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-27"
+    tested_on:
+      - Synthetic throttle-reason fixtures
+    tester: Glassmkr ops
+    research_basis: validation-pending
+    source_note: |
+      Pattern library 2026-05-18 + new GPU category. Power-cap
+      throttling on bare metal is often intentional configuration;
+      this rule's value is surfacing when it's sustained enough to
+      be hurting workload performance unexpectedly. Surface, not
+      panic. Crucible v0.13.0 surfaces sw_power_cap +
+      hw_power_brake_slowdown throttle reasons from nvidia-smi -q -x.
+      Operator-pattern provenance via validation-pending until
+      Simon's GPU validation hosts surface real data.

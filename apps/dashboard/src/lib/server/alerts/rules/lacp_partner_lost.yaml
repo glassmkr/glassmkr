@@ -1,0 +1,104 @@
+# lacp_partner_lost; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C7_C10_ACTIVATION_2026-05-19.md §2.
+#
+# Fires when an LACP bond's MII layer reports up but the LACP partner
+# is unsynchronized (synchronization bit cleared in the partner port-
+# state bitfield). bond_slave_down handles physical link-state loss;
+# this rule covers the protocol-level failure that MII state doesn't
+# surface; the bond looks functional via link layer while traffic
+# is being dropped by the switch.
+#
+# Also emits a warning when the active aggregator includes fewer
+# ports than configured (silent redundancy loss).
+#
+# Capability gate: snap.bonding (Crucible v0.11.0+). Pre-0.11.0 agents
+# and hosts without bonded interfaces see no emission.
+id: lacp_partner_lost
+priority: P1
+subordinate_to: bond_slave_down
+title: LACP partner lost
+summary: "Bond MII layer reports up but the LACP partner is unsynchronized. The bond appears functional while traffic is dropped by the switch. Also emits a warning when the active aggregator has fewer ports than configured (redundancy reduced)."
+fix:
+  quick_check:
+    command: |
+      for b in /proc/net/bonding/*; do
+        [ -f "$b" ] || continue
+        if grep -q 'Bonding Mode: IEEE 802.3ad' "$b"; then
+          echo "=== $(basename "$b") ==="
+          grep -A3 -E 'Aggregator|Slave Interface|Partner Mac Address|MII Status|Permanent HW addr|Speed|Duplex|Link Failure Count' "$b"
+        fi
+      done
+    description: "Per-LACP-bond detail: aggregator id (matching across slaves means same partner switch), partner MAC, per-slave MII status, link failure count. Partner lost shows as slaves churning aggregator id or partner MAC going 00:00:00:00:00:00."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access on the bonded host
+    - Access to the upstream switch CLI (or the network team)
+    - Awareness of which LAG the bond is supposed to attach to on the switch side
+  safe_mode:
+    command: |
+      cat /proc/net/bonding/<BOND>
+      ip -s link show <BOND>
+      sudo ethtool <SLAVE>
+    description: |
+      Read-only inspection. The bonding /proc file shows the LACP
+      partner port state and partner system MAC the kernel sees; if
+      those don't match the configured switch port, the LAG is mis-
+      wired or mis-configured on the switch.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Inspect partner state in detail:
+        cat /proc/net/bonding/<BOND>
+        # Identify which switch port the slave's MAC is attached to via LLDP:
+        sudo lldpctl <SLAVE> 2>/dev/null || sudo lldpcli show neighbors ports <SLAVE>
+        # On the switch (depends on vendor): verify the port-channel
+        # mode is "active" (LACP), the system priority matches what
+        # the host reports as Partner System MAC, and the port is
+        # actually a member of the right LAG.
+      description: |
+        Most LACP partner-lost incidents come from switch-side mis-
+        configuration: port not in the LAG, wrong LACP mode (static
+        instead of LACP), or LACP rate mismatch (slow vs fast). The
+        kernel's `cat /proc/net/bonding/<BOND>` output is the canonical
+        source; compare the partner key + partner MAC against what
+        the switch reports as its LAG identity.
+  validation:
+    command: |
+      cat /proc/net/bonding/<BOND>
+    description: |
+      Confirm "partner_lacp_synchronized" comes back true on all
+      slaves (partner port state with bit 0x08 set). The Active
+      Aggregator's Number of ports should equal the slave count.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Switch-side configuration changes are reversible via the same
+      CLI path that made them; no host-side action.
+  impact:
+    blast_radius: |
+      No service impact from the alert itself. Mitigation is switch-
+      side configuration (non-disruptive for the running LAG; the
+      bond does not need to be brought down). If the issue is a
+      cable / SFP fault rather than config, replacing those is the
+      remediation and may briefly take that slave out of the bond.
+    estimated_duration: |
+      Triage 5-15 min; switch reconfig or cable swap 10-30 min.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic parseBondFile fixtures (LACP-healthy, partner-desync, active-backup)
+    tester: Glassmkr ops
+    research_basis: research-derived
+    source_note: |
+      Pattern library 2026-05-18 Category 4 (Network). LACP partner
+      timeout is a documented bond failure mode that MII state
+      doesn't surface. Crucible v0.11.0 parses /proc/net/bonding/
+      <bond> partner LACP port state bitfield (IEEE 802.3ad clause
+      43.4.2.2); the synchronization bit (bit 3, 0x08) being clear
+      with MII up indicates the partner has timed out or
+      misconfigured the LAG. Subordinate to bond_slave_down because
+      if MII drops on the same slave, that's the dominant signal
+      and this rule's emission would be redundant.

@@ -1,0 +1,37 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 4-hourly smoke against the live status page. Previously hourly;
+    # cut to every 4h in the 2026-05-17 CI audit (24 runs/day -> 6
+    # runs/day, ~19 CI min/week saved). External uptime checks
+    # (Pingdom / UptimeRobot free tier) catch faster status-page
+    # outages; this workflow exists as belt-and-suspenders.
+    - cron: '17 */4 * * *'
+
+# Least-privilege (security audit 2026-05-22, T-101). Read-only smoke
+# test against the public status page.
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: status.glassmkr.com smoke
+    runs-on: ubuntu-latest
+    steps:
+      # Actions SHA-pinned (T-103). Versions as of 2026-05-26.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @glassmkr/status exec playwright install --with-deps chromium
+
+      - name: Playwright smoke against production status page
+        env:
+          STATUS_URL: https://status.glassmkr.com
+        run: pnpm --filter @glassmkr/status test:e2e

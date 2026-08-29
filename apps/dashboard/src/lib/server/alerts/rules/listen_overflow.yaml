@@ -1,0 +1,114 @@
+# listen_overflow; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C7_C10_ACTIVATION_2026-05-19.md §5.
+#
+# Fires when /proc/net/netstat TcpExt ListenOverflows or ListenDrops
+# rate is non-zero. Legitimate steady-state is exactly zero on a
+# healthy host: any positive rate indicates the kernel is dropping
+# connections at accept-queue level. Either the application accept()
+# loop can't keep up with arriving connections, or net.core.somaxconn
+# / the application's listen(2) backlog is too small.
+#
+# Capability gate: snap.tcp_stats.listen_overflows_rate_per_sec
+# (Crucible v0.11.0+). Null on first snapshot; boot_grace_seconds
+# gives a couple snapshots for the rate to materialize.
+#
+# Participates in accept_backlog_or_syn_flood incident group; when
+# 2+ of this, conntrack_exhaustion, tcp_retrans_high fire together
+# the classifier consolidates per PR #162.
+id: listen_overflow
+priority: P2
+title: TCP listen-queue dropping connections
+summary: "/proc/net/netstat TcpExt ListenOverflows (any non-zero rate) or ListenDrops (at least 1.0/sec sustained) is incrementing; the kernel is dropping arriving connections at accept-queue level. Either the application can't accept() fast enough or net.core.somaxconn is too small for the offered load. The ListenDrops floor avoids paging on quiet hosts that see sporadic long-tail SYN-scan drops."
+incident_group:
+  group_id: accept_backlog_or_syn_flood
+  correlation_window_seconds: 300
+fix:
+  quick_check:
+    command: |
+      nstat -az TcpExtListenOverflows TcpExtListenDrops TcpExtTCPDeferAcceptDrop 2>/dev/null
+      # Per-listener accept queue depth (Send-Q is the backlog of unaccept'd conns):
+      ss -lntpe | head -20
+    description: "Listen-queue overflow counters from the kernel + the per-listener queue depth from ss. Send-Q approaching the somaxconn cap is the immediate signal."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the affected host
+    - Awareness of which listener is under pressure (typically a public-facing service)
+    - Authority to change sysctl + restart the application if backlog tuning requires it
+  safe_mode:
+    command: |
+      ss -lt
+      # Recv-Q is current backlog depth; Send-Q is the configured limit.
+      # A listener with Recv-Q approaching Send-Q is the bottleneck.
+      cat /proc/sys/net/core/somaxconn
+      grep -E "ListenOverflows|ListenDrops" /proc/net/netstat
+    description: |
+      Read-only inspection. `ss -lt` per-listener accept-queue stats
+      are the most actionable signal; identify the bottleneck listener
+      first, then decide whether to scale the application or raise
+      kernel/listener backlogs.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # If somaxconn is the bottleneck (kernel limit too small):
+        # sudo sysctl -w net.core.somaxconn=8192
+        # (Persist in /etc/sysctl.d/ if appropriate)
+
+        # If a specific listener is the bottleneck, the application
+        # also needs to pass a backlog >= somaxconn to listen(2).
+        # nginx: increase listen backlog=N in the listen directive.
+        # Application servers (gunicorn/uvicorn/etc): increase the
+        # workers + backlog flags.
+
+        # If the application accept() loop is the bottleneck and not
+        # the kernel limit: scale accept concurrency or move to
+        # epoll-based acceptors.
+      description: |
+        Two levers: kernel limit (somaxconn) and per-listener backlog
+        (application config). Raising somaxconn alone is ineffective
+        if the application's listen() backlog argument is smaller.
+        If the application can't keep up with accept(), backlog
+        tuning only delays the failure; scaling the acceptor is the
+        real fix.
+  validation:
+    command: |
+      grep -E "ListenOverflows|ListenDrops" /proc/net/netstat
+    description: |
+      Wait for the agent to re-compute rate on next snapshot.
+      Rule auto-resolves when both rates return to zero.
+  rollback:
+    available: true
+    command: |
+      # Revert the sysctl change:
+      sudo sysctl -w net.core.somaxconn=128
+    note: |
+      Sysctl tuning is reversible. Application-side backlog changes
+      require restarting the application; revert via the same config
+      path.
+  impact:
+    blast_radius: |
+      The alert itself has no service impact. The condition behind
+      the alert has user-visible impact (dropped connections =
+      failed requests). Mitigations are non-disruptive for sysctl
+      changes; application backlog changes typically require a
+      service restart.
+    estimated_duration: |
+      Triage 5-15 min; sysctl change is immediate; application
+      backlog change depends on restart procedure.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic /proc/net/netstat fixtures (Crucible parseTcpExt)
+    tester: Glassmkr ops
+    research_basis: operator-pattern
+    source_note: |
+      Pattern library 2026-05-18 Category 4 (Network). ListenOverflows
+      and ListenDrops being non-zero is a clear signal kernel is
+      dropping accept-able connections; typically paired with high
+      load on a busy service or accept-backlog buildup from a
+      SYN flood. Crucible v0.11.0 ships agent-computed rates from
+      /proc/net/netstat TcpExt. Participates in
+      accept_backlog_or_syn_flood incident group: when 2+ of this,
+      conntrack_exhaustion, tcp_retrans_high fire together the
+      classifier consolidates and these emissions attach as evidence.

@@ -1,0 +1,221 @@
+# fd_exhaustion; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B3, using the condition_match
+# dimension added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md.
+#
+# Evaluator emits severity=critical when percent >= 95, warning at
+# 80-94%. Variants split on the same boundary. The critical path
+# raises the system-wide cap and identifies the leaking process;
+# the warning path is investigation-only.
+id: fd_exhaustion
+priority: P1
+title: File descriptor exhaustion
+summary: "Host-wide file descriptor usage at or above 80% of fs.file-max OR a single process at or above 80% of its RLIMIT_NOFILE soft limit. The per-process path activates with Crucible v0.11.0+; older agents only emit on the host-wide path."
+fix:
+  quick_check:
+    command: |
+      # Per-process FD leader first (the rule fires on per-process exhaustion
+      # far more often than system-wide; system-wide ceiling is huge by default).
+      # Walks /proc directly so it works without lsof; resolves PID -> command.
+      for f in /proc/[0-9]*/fd; do
+        pid=${f#/proc/}; pid=${pid%/fd}
+        n=$(ls "$f" 2>/dev/null | wc -l)
+        [ "$n" -gt 0 ] && echo "$n $pid $(cat /proc/$pid/comm 2>/dev/null) $(cat /proc/$pid/status 2>/dev/null | awk '/^Uid:/{print "uid="$2}')"
+      done 2>/dev/null | sort -rn | head -10
+      # System-wide context: file-nr is (current_open, free_pool, max).
+      # If the leader's count is close to its RLIMIT_NOFILE soft (ulimit -n
+      # while running as that user) it's the per-process path; if file-nr's
+      # first column is approaching column 3, it's the system-wide path.
+      echo "--- system-wide ---"
+      cat /proc/sys/fs/file-nr
+    description: "Top 10 processes by open file descriptors (walks /proc directly; works without lsof) followed by the system-wide file-nr triple. The per-process leader is usually the leaker; system-wide is only the problem when the kernel cap (third column) is being approached."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (raising fs.file-max via sysctl is non-disruptive; identifying the leaking process is read-only)
+    - "For critical path (>=95%): operator authority to raise system limits and (if needed) restart the leaking process"
+    - Awareness of which service is the prime suspect (typically the heaviest connection-handling daemon, e.g. database, web server, message broker)
+  safe_mode:
+    command: |
+      cat /proc/sys/fs/file-nr
+      cat /proc/sys/fs/file-max
+      sudo lsof 2>/dev/null | awk '{print $1}' | sort | uniq -c | sort -rn | head -20
+      sudo ls -la /proc/*/fd 2>/dev/null | awk '/->/ {print $9}' | sed 's|/proc/||;s|/fd.*||' | sort | uniq -c | sort -rn | head -20
+    description: |
+      Read-only inspection. /proc/sys/fs/file-nr shows
+      `allocated unused max`; the gap between allocated and max is
+      the headroom. The two `lsof` / `/proc/*/fd` pipelines find
+      which processes own the most open file descriptors; the top
+      of either list is the leak suspect.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: gte
+        value: 95
+      command: |
+        # Critical path (>=95% FDs used). New socket + file opens
+        # will fail any moment. Buy headroom NOW, then identify
+        # the leak.
+
+        # 1. Snapshot current state for the post-mortem
+        cat /proc/sys/fs/file-nr
+        sudo lsof 2>/dev/null | wc -l
+
+        # 2. Raise the system-wide cap (immediate; doesn't survive reboot)
+        echo 2097152 | sudo tee /proc/sys/fs/file-max
+        # And persist:
+        echo "fs.file-max = 2097152" | sudo tee /etc/sysctl.d/99-gmk-fd-max.conf
+        sudo sysctl --system
+
+        # 3. Identify the top FD-consuming process(es)
+        sudo ls -la /proc/*/fd 2>/dev/null | awk '/->/ {print $9}' | sed 's|/proc/||;s|/fd.*||' | sort | uniq -c | sort -rn | head -10
+
+        # 4. For the top suspect (replace <PID>): look at what kind
+        #    of FDs are being held; sockets, pipes, real files?
+        sudo ls -la /proc/<PID>/fd | awk '{print $NF}' | sed 's/\[.*\]//' | sort | uniq -c | sort -rn | head -20
+
+        # 5. If a leak is confirmed in <PID> -> restart that service
+        #    sudo systemctl restart <UNIT>
+
+        # 6. Also bump per-process ulimit if the leak is legitimate
+        #    growth not a leak:
+        #    /etc/security/limits.d/99-gmk-nofile.conf:
+        #      * soft nofile 65536
+        #      * hard nofile 1048576
+        # New value applies only to new logins; existing services
+        # need systemd LimitNOFILE= in their unit file.
+
+        # 7. Verify
+        cat /proc/sys/fs/file-nr
+      description: |
+        Critical (>=95%) path. Raise fs.file-max immediately to
+        buy headroom, then identify + restart the leaking process.
+        Persists the new cap to /etc/sysctl.d/. Per-process ulimit
+        is a separate dimension (LimitNOFILE in systemd units);
+        comments cover it for follow-up.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: lt
+        value: 95
+      command: |
+        # Warning path (80-94% FDs). Investigate, plan limit raise.
+
+        # 1. Current state
+        cat /proc/sys/fs/file-nr
+        cat /proc/sys/fs/file-max
+
+        # 2. Top FD owners; system-wide (numeric PID -> human name)
+        sudo ls -la /proc/*/fd 2>/dev/null | awk '/->/ {print $9}' | sed 's|/proc/||;s|/fd.*||' | sort | uniq -c | sort -rn | head -10
+
+        # 3. Drill into the leader process
+        leader_pid=$(sudo ls -la /proc/*/fd 2>/dev/null | awk '/->/ {print $9}' | sed 's|/proc/||;s|/fd.*||' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+        echo "leader PID: $leader_pid"
+        ps -p "$leader_pid" -o pid,ppid,user,cmd
+        sudo ls -l /proc/$leader_pid/fd | awk '{print $11}' | awk -F'[][]' '{print $1}' | sort | uniq -c | sort -rn | head -10
+        # ^ what KIND of FD is the leader leaking?
+        # Socket -> network connection leak (not closing client conns)
+        # Pipe   -> subprocess plumbing leak (fork+exec without close-on-exec)
+        # /var/log/... -> file handle to a log; rotation handler
+        # anon_inode -> epoll/eventfd; common in event-loop bugs
+        # /tmp/... -> tmpfile leak; classic forgot-to-close
+
+        # 4. Cgroup-aware: if leader is in a container, see its limit
+        # (containers often have their own much-lower LimitNOFILE)
+        sudo cat /proc/$leader_pid/limits | grep "open files"
+        sudo cat /sys/fs/cgroup/$(sudo grep cgroup /proc/$leader_pid/cgroup | head -1 | cut -d: -f3)/cgroup.controllers 2>/dev/null
+
+        # 5. OpenSSH 9.8+ sshd-auth context (campaign-1 finding):
+        # The privsep child `sshd-auth` deliberately runs with
+        # RLIMIT_NOFILE=1. Reports as "600% of FD soft limit" in old
+        # rules and is FALSE-POSITIVE noise; new rule (this one, post
+        # PR #175) explicitly skips processes with rlimit_nofile_soft
+        # < 16. If you see sshd-auth in the leader output, it's a
+        # rendering artefact, not a real consumer.
+
+        # 6. Check growth rate; record now, re-check in 1 hour:
+        date; cat /proc/sys/fs/file-nr
+
+        # 7. Decide: legitimate growth (raise limit + persist) or
+        #    leak (fix the app + restart). The critical-path
+        #    commands all apply if operator chooses to act now.
+      description: |
+        Warning (80-94%) path. Seven-step investigation: identify
+        leader process, classify the FD type (socket/pipe/file/
+        anon_inode/tmp), cgroup-aware container-limit check, OpenSSH
+        sshd-auth false-positive disambiguation (cycle-1 learning),
+        growth-rate sampling, decision. No emergency action needed
+        yet but enough context to either raise the limit or fix
+        the leaking app.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: percent not present in evidence. Run diagnostic
+        # + classify manually.
+        cat /proc/sys/fs/file-nr
+        cat /proc/sys/fs/file-max
+        sudo ls -la /proc/*/fd 2>/dev/null | awk '/->/ {print $9}' | sed 's|/proc/||;s|/fd.*||' | sort | uniq -c | sort -rn | head -10
+      description: |
+        Missing-evidence fallback. Run the diagnostic and classify
+        manually before raising limits or restarting services.
+  validation:
+    command: |
+      cat /proc/sys/fs/file-nr
+      sysctl fs.file-max
+    description: |
+      After fix, confirm /proc/sys/fs/file-nr shows allocated well
+      below max (typically <50% post-restart of a leaking service),
+      and sysctl reports the persisted fs.file-max value matches
+      the new cap. Re-firing the alert is the negative validation , 
+      if it doesn't re-fire on the next snapshot cycle, the fix held.
+  rollback:
+    available: true
+    command: |
+      sudo rm /etc/sysctl.d/99-gmk-fd-max.conf
+      sudo sysctl --system
+    note: |
+      Raising fs.file-max is fully reversible: remove the
+      /etc/sysctl.d/ drop-in and reload sysctl. The service restart
+      (if performed) is not "rolled back"; it just happened. There
+      is no risk to leaving a higher fs.file-max in place; it's a
+      ceiling, not an allocation.
+  impact:
+    blast_radius: |
+      Raising fs.file-max is non-disruptive (kernel-level ceiling
+      change, no service touch). Restarting the leaking service
+      causes that service's downtime; operator-dependent (web
+      server: brief 502s; database: requires coordinated stop;
+      message broker: dropped subscriber connections).
+    estimated_duration: |
+      Limit raise: <1 minute. Process identification: 2-5 minutes.
+      Service restart: service-dependent (5s for a stateless web
+      worker; 30s+ for a database).
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from proc(5) (especially /proc/sys/fs/file-nr
+      and /proc/<pid>/fd), sysctl(8), systemd.exec(5) LimitNOFILE,
+      limits.conf(5), and Glassmkr ops experience with FD leaks in
+      long-running web workers + message brokers. The 2097152 cap
+      is sized for general-purpose Linux servers; tune higher for
+      heavy connection workloads. Not deliberately re-triggered on
+      the validation fleet for this deepening pass (would require
+      forging a leak in a service, which is invasive).
+
+      Pattern library 2026-05-18: Category 7 / 8 (filesystem +
+      capacity). Per-process FD pressure path activated 2026-05-19
+      per CC_SPEC_FORGE_C7_C10_ACTIVATION §1, consuming Crucible
+      v0.11.0 snap.process_fd.top_consumers[]. The host-wide path
+      (this rule's original behaviour) still emits independently.
+      80% warning / 95% critical thresholds apply to both paths.
+      Evidence.scope ("host_wide" vs "per_process") tells the
+      operator which path fired. A leaky daemon hits its
+      LimitNOFILE long before fs.file-max; the per-process path
+      surfaces that case which the host-wide threshold misses.

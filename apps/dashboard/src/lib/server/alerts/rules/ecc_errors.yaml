@@ -1,0 +1,160 @@
+# ecc_errors; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B6.
+#
+# Single-severity rule (always critical; the rule only fires on
+# uncorrectable errors). The correctable-rate-based variant lives in
+# evaluateEccErrors() and is gated on ClickHouse history; this YAML
+# only covers the synchronous uncorrectable path.
+#
+# Uncorrectable ECC means data integrity has been violated at least
+# once; the DIMM is failing now and replacement is urgent. No
+# condition_match split; one main variant + fallback for missing
+# evidence.
+# R-P2-2 ownership-branch remediation (val-fleet 2026-05-29): this is a
+# vendor-side physical-hardware rule whose remediation assumes chassis
+# access. The customer-facing alert card appends the shared
+# OWNERSHIP_REMEDIATION_NOTE (evaluator.ts, single source of truth) so an
+# operator who cannot physically service the host still has a path:
+#   "If you operate this hardware (owned or colocated): handle the
+#    inspection or swap yourself, or dispatch a remote-hands technician.
+#    If this is rented or provider-managed: file a hardware service ticket
+#    with your provider. Either way, the physical check needs to happen
+#    on-site."
+# Keep this rule's remediation consistent with that note.
+id: ecc_errors
+priority: P1
+title: ECC memory errors
+summary: Memory controller reported one or more uncorrectable ECC errors. Data corruption has occurred; the DIMM is failing. Replace immediately.
+fix:
+  quick_check:
+    command: |
+      sudo ipmitool sel elist 2>/dev/null | grep -iE 'ecc|memory|dimm' | tail -20
+      # Per-CSROW correctable/uncorrectable counts (EDAC):
+      for c in /sys/devices/system/edac/mc/mc*/csrow*/ce_count /sys/devices/system/edac/mc/mc*/csrow*/ue_count; do
+        [ -f "$c" ] || continue
+        v=$(cat "$c")
+        [ "$v" = "0" ] || echo "$c = $v"
+      done
+    description: "BMC's SEL for memory events (DIMM-location-aware) + the EDAC sysfs counters (only non-zero rows printed). EDAC catches errors the BMC missed; correlated entries give a DIMM slot identification."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (diagnosis is non-disruptive)
+    - Replacement DIMM on hand (matching capacity, ranks, speed; consult `dmidecode -t memory` for the exact spec)
+    - Maintenance window declared (DIMM swap requires power-down on all but a tiny minority of enterprise servers; consumer-grade boards never hot-swap memory)
+    - Recent backup verified (uncorrectable ECC means data corruption already occurred; some in-memory state may be lost)
+    - Awareness that the affected workload may need restart from clean state after DIMM swap
+  safe_mode:
+    command: |
+      sudo ipmitool sdr type Memory 2>/dev/null
+      sudo ipmitool sel elist 2>/dev/null | grep -i -E 'memory|ecc|dimm' | tail -20
+      sudo dmidecode -t memory 2>/dev/null | head -50
+      sudo edac-util 2>/dev/null || echo "(edac-utils not installed)"
+      sudo dmesg -T | grep -iE 'edac|ecc|mce|memory' | tail -20
+    description: |
+      Read-only memory inspection. ipmitool SDR + SEL show the BMC's
+      view of which DIMM slot is reporting errors. dmidecode prints
+      the slot map (Locator: DIMM_A1 etc.) for physical orientation.
+      edac-util (mcelog companion) is the kernel-side view if
+      installed. dmesg surfaces the kernel's MCE / EDAC notifications.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: uncorrectable ECC detected. Identify slot,
+        # plan emergency maintenance, swap.
+
+        # 1. Identify the failing slot
+        sudo ipmitool sdr type Memory 2>/dev/null
+        sudo ipmitool sel elist 2>/dev/null | grep -iE 'memory|ecc|dimm' | tail -20
+
+        # 2. Get physical slot orientation
+        sudo dmidecode -t memory 2>/dev/null | grep -B1 -A4 'Locator'
+
+        # 3. Kernel-side view (edac and MCE)
+        sudo edac-util -v 2>/dev/null
+        sudo mcelog --client 2>/dev/null
+        sudo dmesg -T | grep -iE 'edac|mce' | tail -30
+
+        # 4. Cross-reference: BMC and kernel should agree on which
+        #    DIMM is reporting. If they disagree, prefer the kernel
+        #    (closer to the silicon).
+
+        # 5. Plan emergency maintenance window:
+        #    a) Stop services that hold state critical for
+        #       resumption (databases need clean shutdown).
+        #    b) Power off the host (no hot-swap on consumer chassis;
+        #       enterprise rare for memory).
+        #    c) Pull the failing DIMM, install replacement.
+        #    d) Power on; check POST clears the slot.
+        #    e) Verify ipmitool / edac / dmesg are clean.
+
+        # 6. Re-run memtest86+ as final confirmation (optional but
+        #    advised before returning to production).
+      description: |
+        Main path: identify slot via BMC + kernel views, plan
+        emergency window, swap DIMM. The kernel-side EDAC view is
+        authoritative when it disagrees with BMC; BMC reports tend
+        to lag by minutes. memtest86+ is the optional re-confirmation
+        step before re-introducing the host.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence is missing or shape mismatch.
+        # Diagnose; classify manually before swapping anything.
+        sudo ipmitool sdr type Memory 2>/dev/null
+        sudo ipmitool sel elist 2>/dev/null | grep -iE 'memory|ecc' | tail -10
+        sudo dmesg -T | grep -iE 'ecc|mce|edac' | tail -20
+      description: |
+        Missing-evidence fallback. Run diagnostic to confirm there's
+        a real uncorrectable event before scheduling a swap.
+  validation:
+    command: |
+      sudo ipmitool sdr type Memory 2>/dev/null
+      sudo ipmitool sel elist 2>/dev/null | tail -5
+      sudo dmesg -T | grep -iE 'ecc|mce|edac' | tail -10
+    description: |
+      After DIMM swap + boot, confirm:
+      - ipmitool sdr type Memory shows no errors on the swapped slot
+      - sel elist tail shows no new memory events
+      - dmesg has no recent edac/mce events
+      All three lines must be clean. Re-firing the alert is the
+      negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      DIMM replacement is not reversible; the old DIMM is failing;
+      reinstalling it just re-triggers the alert. If a replacement
+      DIMM is itself faulty (rare but possible) the second swap is
+      effectively a forward-fix, not a rollback. Data lost to the
+      uncorrectable event is not recoverable from this workflow;
+      restore from backup is the only remedy for affected blocks.
+  impact:
+    blast_radius: |
+      Service outage during DIMM swap (whole host powered off; no
+      hot-swap on consumer chassis, rare on enterprise). All
+      processes lose state; in-memory caches gone. Restart from
+      clean state after.
+    estimated_duration: |
+      Diagnosis: 5-10 minutes. Maintenance window scheduling: hours
+      to coordinate. Power-down + DIMM swap + power-on cycle:
+      15-30 minutes including POST. Optional memtest86+:
+      30 minutes - hours for thorough pass.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from ipmitool(1) sdr/sel commands, dmidecode(8)
+      memory parsing, edac-utils(8), mcelog(8). The "kernel beats
+      BMC when they disagree" practice is from Glassmkr ops experience
+      with a Supermicro chassis where SEL took ~5 minutes to log
+      MCEs the kernel was already reporting. Not deliberately
+      re-triggered on validation fleet for this deepening pass
+      (would require seeding ECC errors, requires specialized
+      equipment).
+
+      Pattern library 2026-05-18: Category 5 (memory hardware). EDAC consumption (per /sys/devices/system/edac/mc/* per spec §3.20) deferred until Crucible C1 ships EDAC counter collection. Today the rule still uses IPMI-SEL-only coverage (limited to BMCs that log ECC events to SEL); EDAC path is the future complement.

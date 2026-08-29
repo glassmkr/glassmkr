@@ -1,0 +1,105 @@
+# softnet_drops; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C11_C18_ACTIVATION_2026-05-19.md §4.
+#
+# Fires when /proc/net/softnet_stat reports kernel input-queue drops
+# at sustained rate. >10 pkt/s emits critical; >1 pkt/s emits warning.
+# Indicates either receive-side processing bottleneck or intentional
+# kernel-layer traffic shaping. Often correlated with conntrack
+# pressure (saturated table) or CPU pressure (softirq starved).
+#
+# Capability gate: snap.softnet.total_dropped_rate_per_sec (Crucible
+# v0.12.0+; null on first snapshot). Boot grace of 300s gives a couple
+# snapshots for the rate to materialise.
+id: softnet_drops
+priority: P1
+title: Kernel softnet dropping packets
+summary: "/proc/net/softnet_stat reports kernel input-queue drops at sustained rate (>1 pkt/s). The NET_RX softirq backlog is filling faster than the kernel can process; packets are being silently discarded. Often correlated with conntrack pressure or CPU pressure."
+fix:
+  quick_check:
+    command: |
+      cat /proc/net/softnet_stat | awk '{printf "cpu=%d packets=%d dropped=%s squeezed=%s\n", NR-1, strtonum("0x"$1), $2, $3}'
+    description: "Per-CPU softnet stats. Column 2 (packets dropped because backlog full) and column 3 (time_squeeze, ran out of budget) are the signals. Drops concentrated on one CPU usually mean RPS/RFS isn't spreading work."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the affected host
+    - Awareness of network throughput / packet rates this host typically handles
+    - Access to /proc and /sys for per-CPU inspection
+  safe_mode:
+    command: |
+      cat /proc/net/softnet_stat
+      mpstat -P ALL 1 5
+      grep . /proc/sys/net/core/netdev_*
+    description: |
+      Read-only inspection. softnet_stat shows per-CPU drops (column 2);
+      mpstat -P ALL shows per-CPU softirq% (find the hot CPU); the
+      netdev_* sysctls expose the kernel's backlog tuning (netdev_max_
+      backlog typical default is 1000 which is small for 10 GbE).
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Three diagnostic paths.
+        #
+        # 1. Single CPU saturated by softirq?
+        #    Per-CPU drops in /proc/net/softnet_stat skewed to one
+        #    CPU + softirq% near 100% on that CPU = RPS/RSS
+        #    misconfiguration concentrating traffic on one CPU.
+        #    Inspect: cat /proc/interrupts | grep <NIC>
+        #    Fix: enable RPS to spread softirq work across CPUs.
+        #      echo ffff > /sys/class/net/<IFACE>/queues/rx-0/rps_cpus
+        #
+        # 2. Backlog too small for offered load?
+        #    Symptom: high drop rate, no single CPU saturated.
+        #    Fix: raise netdev_max_backlog.
+        #      sudo sysctl -w net.core.netdev_max_backlog=8192
+        #      (Persist in /etc/sysctl.d/ if appropriate.)
+        #
+        # 3. Runaway interrupt source?
+        #    Symptom: very high interrupt rate on a single source +
+        #    high softirq% + drops. Often a misconfigured NIC or
+        #    irqbalance pinning all interrupts to CPU0.
+        #    Fix: tune irqbalance or pin NIC interrupts manually.
+      description: |
+        Softnet drops come from one of three places: a saturated
+        single CPU (RPS/RSS fix), a too-small kernel backlog
+        (netdev_max_backlog), or a runaway interrupt source. Identify
+        which by cross-referencing per-CPU drops with mpstat softirq%.
+  validation:
+    command: |
+      cat /proc/net/softnet_stat
+    description: |
+      Wait for the agent to re-compute drop rate on the next snapshot.
+      Rule auto-resolves when total_dropped_rate_per_sec drops back
+      under 1 pkt/s.
+  rollback:
+    available: true
+    command: |
+      sudo sysctl -w net.core.netdev_max_backlog=1000
+      # Or revert /etc/sysctl.d/ drop-in and: sudo sysctl --system
+    note: |
+      Sysctl tuning is reversible. RPS changes are reversible by
+      writing zeros back to the rps_cpus mask.
+  impact:
+    blast_radius: |
+      Alert is informational. Remediation is non-disruptive (sysctl
+      changes apply immediately; RPS changes affect new connections
+      without breaking existing ones). The underlying condition has
+      user-visible impact: dropped packets cause TCP retransmits
+      (see tcp_retrans_high rule) and connection failures.
+    estimated_duration: |
+      Triage 10-20 min including per-CPU correlation. Remediation
+      5-10 min once root cause identified.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic per-CPU softnet_stat fixture
+    tester: Glassmkr ops
+    research_basis: operator-pattern
+    source_note: |
+      Pattern library 2026-05-18 Category 4 (Network). Softnet drops
+      are a less-common but high-impact signal; usually correlated
+      with conntrack pressure or CPU pressure. Threshold: 1 pkt/s
+      sustained warns, 10 pkt/s pages. Crucible v0.12.0 parses
+      /proc/net/softnet_stat column 2 (input_queue_dropped) summed
+      across CPUs; agent-computed rate via vmstat (C3) pattern.

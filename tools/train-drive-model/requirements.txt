@@ -1,0 +1,10 @@
+pandas==2.2.*
+numpy==1.26.*
+polars==1.18.*
+pyarrow==17.0.*
+duckdb==1.1.*
+lightgbm==4.5.*
+scikit-learn==1.5.*
+onnxmltools==1.12.*
+onnx==1.16.*
+requests==2.32.*

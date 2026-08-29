@@ -1,0 +1,20 @@
+{
+  "name": "@glassmkr/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pg": "./src/pg.ts",
+    "./clickhouse": "./src/clickhouse.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.18.2",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.2",
+    "typescript": "^5.8.0"
+  }
+}

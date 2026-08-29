@@ -1,0 +1,203 @@
+# zfs_pool_unhealthy; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B2, refactored same-day per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md to use the new
+# condition_match dimension.
+#
+# Fires on any non-ONLINE pool state. The evaluator distinguishes
+# critical (FAULTED, UNAVAIL) from warning (DEGRADED, etc.) via
+# severity. The deepened workflow splits the fix by state band:
+#   - FAULTED/UNAVAIL: data at risk, urgent recovery (condition_match
+#     op=in on state)
+#   - DEGRADED: still serving I/O, replace vdev (condition_match
+#     op=eq on state)
+#   - fallback: any other non-ONLINE state (rare; e.g. OFFLINE,
+#     REMOVED, SUSPENDED); re-trial diagnostics.
+id: zfs_pool_unhealthy
+priority: P1
+title: ZFS pool unhealthy
+summary: "ZFS pool in non-OPTIMAL state. Severity scales with vdev redundancy class (Crucible v0.10.4+): SUSPENDED pools and FAULTED top-level vdevs page critical; DEGRADED on single/raidz1/mirror_2way pages critical; raidz3/mirror_3way+ pages warning. L2ARC failures emit at info severity (no data loss). SLOG faults handled by zfs_slog_faulted."
+
+fix:
+  quick_check:
+    command: |
+      sudo zpool status -x
+      sudo zpool list -o name,health,errors
+    description: "`zpool status -x` prints only pools that are not healthy (silent when all good). The list output is the one-line-per-pool summary; correlate the two to see which pool needs attention."
+  verdict_prior: vendor-side
+  prerequisites:
+    - Replacement drive on hand (matching capacity; ZFS doesn't require exact model match but capacities must be >= the failed vdev)
+    - Recent backup verified (FAULTED pools may have already lost data; scrub-after-replace doesn't recover lost blocks)
+    - Maintenance window declared (replacing a vdev triggers resilver; I/O degrades during resilver)
+    - Out-of-band access (resilver may consume disk bandwidth; SSH performance can drop)
+
+  safe_mode:
+    command: |
+      sudo zpool status -v
+      sudo zpool list -v
+      sudo zfs get all <POOL> | grep -iE 'health|errors|state'
+      sudo dmesg -T | grep -iE 'zfs|zio' | tail -30
+    description: |
+      Read-only inspection. `zpool status -v` shows the per-vdev
+      state, in-progress scrub/resilver, and any read/write/checksum
+      errors. The dmesg tail catches kernel-level ZFS errors (often
+      the most useful signal for FAULTED pools). Substitute the
+      pool name for <POOL> from the alert evidence.
+
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        # Codex 2026-05-22B F3: evaluator emits `pool_state` and (for vdev
+        # scope) `vdev_state`; the previous `state` attribute never matched
+        # and both critical/degraded variants fell through to the wildcard
+        # fallback. Pool-level state is the most common selector; vdev
+        # state mismatches are usually a subset of a pool-level DEGRADED.
+        attribute: pool_state
+        op: in
+        value: ["FAULTED", "UNAVAIL"]
+      command: |
+        # FAULTED or UNAVAIL pool; multiple vdev failures.
+        # Data may be lost; the goal is now recovery, not repair.
+
+        # 1. Read the full status; every error matters
+        sudo zpool status -v <POOL>
+        sudo zpool history <POOL> | tail -50
+
+        # 2. Check kernel logs for the underlying cause
+        sudo dmesg -T | grep -iE 'zfs|zio|hba|sas|sata' | tail -100
+
+        # 3. Try importing read-only if pool was exported (or if
+        #    automount failed). DO NOT use -f without understanding;
+        #    forcing import on a corrupt pool can make recovery harder.
+        # sudo zpool import -o readonly=on <POOL>
+
+        # 4. If the failure is recoverable (e.g. a single vdev lost
+        #    redundancy AND a second vdev came back), see:
+        #    https://openzfs.github.io/openzfs-docs/man/master/8/zpool-import.8.html
+        # sudo zpool clear <POOL>
+
+        # 5. If unrecoverable -> restore from backup. Data on FAULTED
+        #    pools is at minimum suspect, at worst lost.
+      description: |
+        FAULTED / UNAVAIL path; pool cannot serve I/O. Likely
+        multi-vdev failure or controller-level issue. Triage first,
+        then either clear-and-resilver if recoverable or restore
+        from backup. Don't force-import without understanding.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        # Codex 2026-05-22B F3: evaluator emits `pool_state` and (for vdev
+        # scope) `vdev_state`; the previous `state` attribute never matched
+        # and both critical/degraded variants fell through to the wildcard
+        # fallback. Pool-level state is the most common selector; vdev
+        # state mismatches are usually a subset of a pool-level DEGRADED.
+        attribute: pool_state
+        op: eq
+        value: DEGRADED
+      command: |
+        # DEGRADED pool; still serving I/O, one or more vdevs lost.
+        # Replace the failed vdev to restore redundancy.
+
+        # 1. Identify the failed vdev
+        sudo zpool status -v <POOL>
+
+        # 2. Confirm SMART status of the underlying drive
+        # (replace <DEVICE> with what step 1 reports as failed)
+        sudo smartctl -a /dev/<DEVICE>
+
+        # 3. Offline the failed vdev (defensive; ZFS may already have)
+        # sudo zpool offline <POOL> /dev/<DEVICE>
+
+        # 4. Physically replace the drive (hot-swap if chassis supports;
+        #    otherwise power down). Same chassis procedure as smart_failing.
+
+        # 5. Tell ZFS about the replacement
+        sudo zpool replace <POOL> /dev/<OLD_DEVICE> /dev/<NEW_DEVICE>
+        # If replacement uses the same device path:
+        # sudo zpool replace <POOL> /dev/<DEVICE>
+
+        # 6. Watch resilver progress
+        zpool status -v <POOL>   # one-shot; re-run to monitor
+      description: |
+        DEGRADED path; pool is still serving I/O but redundancy is
+        reduced. Replace the failed vdev and let ZFS resilver. This
+        is the most common pool-unhealthy path. Resilver can take
+        hours-to-days depending on pool size + load.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: pool state is non-ONLINE but doesn't match
+        # FAULTED/UNAVAIL or DEGRADED specifically. Possible values
+        # include OFFLINE (operator-disabled), REMOVED (vdev hot-
+        # removed), SUSPENDED (I/O paused). Diagnose first; the
+        # remedy depends on the specific state.
+        sudo zpool status -v <POOL>
+        sudo zpool history <POOL> | tail -50
+        sudo zpool list -v <POOL>
+        sudo dmesg -T | grep -iE 'zfs|zio' | tail -30
+      description: |
+        Missing-evidence or unexpected-state fallback. Use when
+        the alert's state attribute is not one of the standard
+        bands (FAULTED/UNAVAIL/DEGRADED). Diagnose, then escalate
+        to the appropriate variant or run manual recovery.
+
+  validation:
+    command: |
+      sudo zpool status -v <POOL> | grep -E 'state:|errors:'
+      sudo zpool status -v <POOL> | grep -E 'scan:'
+    description: |
+      After fix, confirm pool state is ONLINE, errors row shows
+      "No known data errors", and any in-progress scan (resilver/
+      scrub) has completed. Resilver completion can take hours;
+      re-run periodically. The validation is "ONLINE + no errors"
+      both lines together, not either alone.
+
+  rollback:
+    available: false
+    command: null
+    note: |
+      ZFS pool repair is not reversible. Drive replacement is
+      irreversible (same as smart_failing). `zpool clear` errors
+      can be re-triggered if the underlying issue persists. Forced
+      import (`-f`) on a corrupt pool is sometimes irreversible in
+      a worse way; pool metadata damage. Don't try clever recovery
+      without confirming backups are restorable first.
+
+  impact:
+    blast_radius: |
+      DEGRADED: no service impact during replacement; ZFS continues
+      serving I/O. Resilver causes I/O contention but doesn't pause
+      service. FAULTED/UNAVAIL: pool is offline. Anything mounted
+      from it is unavailable until the pool returns to ONLINE.
+    estimated_duration: |
+      DEGRADED replacement: 5 minutes to swap + 1-24 hours resilver
+      depending on pool size. FAULTED triage: 30 min - several
+      hours depending on whether the pool is recoverable.
+    irreversible_steps: true
+
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: research-derived
+    source_note: |
+      Desk-researched from zpool(8) + zfs(8) man pages and OpenZFS
+      documentation. Glassmkr ops experience with mdadm rebuilds
+      generalizes to ZFS resilvers but not all ZFS recovery paths
+      are mdadm-equivalent. Not deliberately re-triggered on the
+      validation fleet for this deepening pass; per validation-
+      fleet.md, ZFS-using boxes need to be verified per-rule before
+      live testing. Validation pool offlining is destructive and
+      requires a dedicated test box.
+
+      Pattern library 2026-05-18: Category 3.5 (ZFS). Per-vdev
+      redundancy-class severity matrix activated 2026-05-19 per
+      CC_SPEC_FORGE_C1_C6_DEFERRED_TUNES §2.2, consuming Crucible
+      v0.10.4 vdev_redundancy_class metadata. SLOG handling moved to
+      the zfs_slog_faulted rule (PR #159). L2ARC failures now emit
+      at info severity (no data loss; performance ticket). Hosts on
+      pre-0.10.4 Crucible fall back to uniform DEGRADED-emits-critical
+      with parser_quality "legacy_uniform" in evidence. FAULTED
+      top-level vdevs now route critical (was: pool-level critical
+      already; now also tagged via severity_reason).

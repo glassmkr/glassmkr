@@ -1,0 +1,83 @@
+// scope: public
+import { json } from "@sveltejs/kit";
+import { cookieDomain } from "$lib/server/auth/cookie-domain";
+import { registrationDisabled } from "$lib/server/auth/registration";
+import type { RequestHandler } from "./$types";
+import { createCustomer, generateToken } from "@glassmkr/auth";
+import { query } from "@glassmkr/db/pg";
+import { takeRateLimitHit } from "@glassmkr/auth/rate-limit";
+import { getSourceIp } from "$lib/server/auth/source-ip";
+import { enforceIpRateLimit, rateLimitedResponse } from "$lib/server/auth/rate-limit-middleware";
+import { sendAlert } from "$lib/server/alerts/telegram";
+
+const REGISTER_WINDOW_MS = 60 * 60 * 1000;
+
+export const POST: RequestHandler = async (event) => {
+  try {
+    // Self-hosters routinely want to create their own account and then close
+    // the door. Off by default so the documented first-run flow works.
+    if (registrationDisabled()) {
+      return json({ error: "Registration is disabled on this instance." }, { status: 403 });
+    }
+    // G1 (launch hardening, 2026-08-24): signup velocity per IP. The Redis
+    // bucket is the real gate (shared across processes, survives restarts);
+    // the in-memory hit below stays as the Redis-down backstop. Both key on
+    // getSourceIp: getClientAddress() returned the nginx loopback peer for
+    // every request, collapsing all signups into one global bucket.
+    const ipFail = await enforceIpRateLimit(event, {
+      namespaceSuffix: "register",
+      capacity: 3,
+      refillPerSecond: 3 / 3600,
+    });
+    if (ipFail) return rateLimitedResponse(ipFail.failure);
+    const limit = takeRateLimitHit(`register:${getSourceIp(event)}`, 3, REGISTER_WINDOW_MS);
+    if (!limit.allowed) {
+      return json({ error: `Too many attempts. Try again in ${limit.retryAfterSeconds} seconds.` }, { status: 429 });
+    }
+
+    const { email, password, display_name } = await event.request.json();
+    if (!email || !password) {
+      return json({ error: "Email and password are required" }, { status: 400 });
+    }
+    if (password.length < 8) {
+      return json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    }
+
+    const { customer } = await createCustomer(email, password, display_name);
+
+    // Record ToS acceptance
+    const ip = getSourceIp(event);
+    await query(
+      `UPDATE customers SET tos_accepted_at = NOW(), tos_version = '2026-04-11', registration_ip = $1 WHERE id = $2`,
+      [ip, customer.id]
+    ).catch(() => {});
+
+    // Auto-login: set JWT cookie
+    const token = generateToken(customer);
+    event.cookies.set("guardian_token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60,
+      path: "/",
+      domain: cookieDomain(),
+    });
+    // "Last used" hint for the login page (long-lived, non-sensitive).
+    event.cookies.set("gmk_last_login", "password", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 60 * 60 * 24 * 400 });
+
+    const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    sendAlert(`*New signup*: \`${email}\` at ${timestamp}`).catch(() => {});
+
+    return json({
+      ok: true,
+      email: customer.email,
+      message: "Account created.",
+    }, { status: 201 });
+  } catch (err: any) {
+    if (err.code === "23505") {
+      return json({ error: "Email already registered" }, { status: 409 });
+    }
+    console.error("Register error:", err);
+    return json({ error: "Registration failed" }, { status: 500 });
+  }
+};

@@ -1,0 +1,10 @@
+# Glassmkr security contact
+# https://glassmkr.com/trust
+
+Contact: mailto:security@glassmkr.com
+Contact: https://github.com/glassmkr/crucible/security/advisories/new
+Expires: 2027-08-27T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://glassmkr.com/.well-known/security.txt
+Canonical: https://app.glassmkr.com/.well-known/security.txt
+Policy: https://github.com/glassmkr/crucible/blob/main/SECURITY.md

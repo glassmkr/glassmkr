@@ -1,0 +1,194 @@
+# ipmi_sel_critical; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B6.
+#
+# Single-severity rule (always critical). No condition_match split;
+# main variant walks the SEL classification + per-sensor-type fix
+# matrix, fallback covers missing-evidence. Cross-references many
+# other rules (ecc_errors, psu_redundancy_loss, ipmi_fan_failure,
+# cpu_temperature_high) since SEL events often duplicate signals
+# already firing as more-specific rules.
+id: ipmi_sel_critical
+priority: P1
+# Forensic / post-incident: SEL is an event log; rows don't disappear
+# from history. The window-based query may stop returning entries
+# (default 30d), but that's "stale" not "resolved." Operators close
+# manually after either clearing the SEL or confirming the underlying
+# hardware fault was handled.
+manual_resolve: true
+title: IPMI SEL critical events
+summary: BMC System Event Log contains one or more critical-severity asserted events in the last N days (default 30). Critical events indicate real hardware faults; DIMM, PSU, fan, voltage, or temperature.
+fix:
+  quick_check:
+    command: |
+      # This SEL alert names the failed component(s): {{affected_components}}.
+      # The BMC has already identified the part; the commands below just
+      # confirm it and point at the focused workflow (Memory -> DIMM replace,
+      # Power Supply -> psu_redundancy_loss, Fan -> ipmi_fan_failure, etc.).
+      sudo ipmitool sel info 2>/dev/null | head -10
+      sudo ipmitool sel elist 2>/dev/null | grep -iE 'asrt|asserted' | tail -30
+      # Group by sensor type (confirms the sub-system when several events co-occur):
+      sudo ipmitool sel elist 2>/dev/null | awk -F'|' '{print $3}' | sort | uniq -c | sort -rn | head -10
+    description: "Leads with the failed component the SEL already named ({{affected_components}}), then the SEL summary + recent asserted events + per-sensor-type grouping so you can go straight to the focused workflow (Memory, Power Supply, Fan, Temperature) rather than re-diagnosing."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (diagnosis is non-disruptive; replacement actions depend on the event type)
+    - Physical / remote-hands access if hardware replacement is needed
+    - Awareness of which more-specific rules may also be firing (memory events overlap ecc_errors; PSU events overlap psu_redundancy_loss; etc.) so duplicate work is avoided
+    - "For follow-up: backup verified before any destructive maintenance"
+  safe_mode:
+    command: |
+      # Vendor-agnostic baseline (works on every host with ipmitool):
+      sudo ipmitool sel info 2>/dev/null
+      sudo ipmitool sel elist 2>/dev/null | tail -40
+      sudo ipmitool sel time get 2>/dev/null
+      sudo ipmitool sdr 2>/dev/null | grep -iE 'critical|fail|fault'
+
+      # Detect BMC vendor (drives the vendor-rich path below):
+      sudo ipmitool mc info 2>/dev/null | grep -iE 'Manufacturer|Product'
+      sudo dmidecode -s system-manufacturer 2>/dev/null
+
+      # Vendor-rich diagnostics (more context than ipmitool alone) ;
+      # dispatch by vendor:
+      #
+      #   Dell (iDRAC):
+      #     sudo racadm getsel 2>/dev/null | tail -40        # full LCL events
+      #     sudo racadm getsystinfo 2>/dev/null               # system health
+      #     sudo racadm getsensorinfo 2>/dev/null             # all sensors
+      #
+      #   HPE (iLO):
+      #     sudo ilorest list --selector iml 2>/dev/null      # integrated mgmt log
+      #     sudo ilorest serverstate 2>/dev/null
+      #
+      #   Supermicro (BMC):
+      #     sudo SUM -i bmc -c GetEventLog 2>/dev/null         # SUM CLI
+      #     # or via web: https://<bmc-ip> -> Server Health -> Health Event Log
+      #
+      #   Lenovo (XClarity):
+      #     sudo OneCli inventory show eventlog 2>/dev/null
+      #
+      #   Generic Redfish (works on most modern BMCs):
+      #     curl -ksu admin:<pw> https://<bmc-ip>/redfish/v1/Systems/Self/LogServices/Log1/Entries | jq
+    description: |
+      Read-only SEL inspection. `sel info` shows total entries,
+      space used, and whether the log is full (full SEL drops new
+      events silently; empty it after triage if it is). `sel
+      elist` is the per-event listing. `sel time get` confirms
+      the BMC clock isn't badly skewed (which would shift event
+      timestamps into the past/future and confuse the window
+      filter). The vendor-rich block dispatches to the vendor's
+      native CLI (racadm/ilorest/SUM/OneCli/Redfish) which often
+      exposes richer context; correlated sensor values at event
+      time, vendor-specific severity classifications, and links
+      to vendor knowledge-base articles; that pure ipmitool
+      doesn't surface.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: critical SEL events. Classify by sensor type,
+        # take the appropriate action, then clear the SEL.
+
+        # 1. Full critical event list within the window
+        sudo ipmitool sel elist 2>/dev/null | grep -iE 'asrt|asserted'
+
+        # 2. Group by sensor type; points at the right fix workflow
+        sudo ipmitool sel elist 2>/dev/null | awk -F'|' '{print $3}' | sort | uniq -c | sort -rn
+
+        # 3. Sensor-type fix matrix:
+        #
+        #    Memory  -> see ecc_errors workflow
+        #               sudo ipmitool sel elist | grep -iE 'memory|ecc'
+        #
+        #    Power Supply -> see psu_redundancy_loss workflow
+        #               sudo ipmitool sel elist | grep -iE 'power|psu|ps[0-9]'
+        #
+        #    Fan -> see ipmi_fan_failure workflow
+        #               sudo ipmitool sel elist | grep -i fan
+        #
+        #    Temperature -> see cpu_temperature_high workflow
+        #               sudo ipmitool sel elist | grep -iE 'temp|thermal'
+        #
+        #    Voltage -> investigate PSU + motherboard;
+        #               sudo ipmitool sdr type Voltage
+        #               (no dedicated rule; SEL is the front door)
+        #
+        #    Processor -> investigate CPU thermal + see board logs;
+        #               often correlates with cpu_temperature_high.
+        #
+        #    Drive Slot / Drive Bay -> physical drive fault on
+        #               servers with hardware RAID controllers;
+        #               often the same drive that smart_failing /
+        #               raid_degraded surfaces from the OS view.
+
+        # 4. After acting on each event type, clear the SEL so
+        #    future critical events stand out. The clear is safe;
+        #    SEL is per-host log only.
+        sudo ipmitool sel clear
+
+        # 5. Confirm SEL is empty + watch for new events
+        sudo ipmitool sel info
+        sudo ipmitool sel info   # one-shot; re-run to monitor
+      description: |
+        Main path: classify critical events by sensor type, hand
+        off to the appropriate focused workflow (ecc_errors /
+        psu_redundancy_loss / ipmi_fan_failure / cpu_temperature_high),
+        then clear the SEL. SEL is a per-host log; clearing it
+        doesn't lose anything beyond the events you just acted on.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence shape missing. Run the full diagnostic
+        # + classify manually.
+        sudo ipmitool sel info
+        sudo ipmitool sel elist | tail -50
+        sudo ipmitool sdr 2>/dev/null | grep -iE 'critical|fail|fault'
+      description: |
+        Missing-evidence fallback. Walk the SEL manually; classify
+        before acting.
+  validation:
+    command: |
+      sudo ipmitool sel info
+      sudo ipmitool sel elist | grep -iE 'asserted' | tail -10
+    description: |
+      After fix, confirm:
+      - No new critical events in the window after fix completion
+      - `sel info` shows lower entry count if SEL was cleared
+      Re-firing the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      `ipmitool sel clear` is not reversible; the SEL entries are
+      gone. They're typically duplicated in BMC firmware-specific
+      remote logs (iDRAC Lifecycle Log, Supermicro SUM logs, etc.)
+      if you need a historical record; preserve those before
+      clearing if compliance matters. Hardware replacement steps
+      taken in response to events are not reversible (same as the
+      focused-rule rollback notes).
+  impact:
+    blast_radius: |
+      Diagnostic + SEL inspection: non-disruptive. SEL clear:
+      kernel-side / OS-side unaffected; only the BMC log is reset.
+      Per-event hardware fixes: see the focused workflow they
+      hand off to.
+    estimated_duration: |
+      SEL triage: 10-30 minutes depending on event count + types.
+      Per-event fix duration: see the focused workflow each event
+      hands off to. SEL clear: <1 minute.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from ipmitool(1) sel/sdr subcommands, IPMI
+      2.0 spec sections on SEL semantics (event severity / direction
+      / sensor type encodings). Cross-references to focused rules
+      reflect Crucible's evidence.sensor_types breakdown. Not
+      deliberately re-triggered on validation fleet for this
+      deepening pass; SEL events accumulate organically from real
+      hardware over time.
+
+      Pattern library 2026-05-18: Category 5 (hardware/BMC). Vendor-aware severity normalization (per spec §3.21) deferred until Crucible C11 ships normalized BMC vendor + per-vendor severity mapping. Today fires on severity === 'critical' from the SEL text as-is.

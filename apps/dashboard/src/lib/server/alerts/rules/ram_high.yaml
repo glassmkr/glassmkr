@@ -1,0 +1,159 @@
+# ram_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B4, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator fires at >=90% used (default; config-tunable via
+# ram_threshold_percent), critical band at >=95%. Variants split on
+# the critical boundary. Note: high RAM usage on modern Linux often
+# includes page cache, which is reclaimable; the rule's evidence
+# uses `used_mb` from the agent which already accounts for that.
+id: ram_high
+priority: P3
+# Subordinate to oom_kills. When OOM is firing on the same host, the
+# memory-exhaustion incident is already paged at event-grade severity
+# via oom_kills; this rule's emission demotes to evidence-only.
+subordinate_to: oom_kills
+title: RAM usage high
+summary: Memory pressure on the host. Warning at 90%, critical at 95%. Sustained pressure leads to swap thrashing and OOM kills.
+fix:
+  quick_check:
+    command: |
+      free -h
+      ps -eo pid,user,rss,vsz,comm --sort=-rss | head -15
+    description: "Memory totals + the top 15 processes by resident set size. The full FIX has cgroup-aware variants for containerised workloads where the host-level view is misleading."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (inspection is non-disruptive; intervention may require restarting the leaking service)
+    - "For critical path (>=95%): operator authority to restart the suspected memory-hungry process"
+    - Awareness of which services run on this host (databases and JVMs are the usual suspects)
+  safe_mode:
+    command: |
+      free -h
+      cat /proc/meminfo | head -10
+      ps aux --sort=-rss | head -20
+      sudo slabtop -o 2>/dev/null | head -20
+    description: |
+      Read-only memory inspection. `free -h` shows used / available
+      / buffers/cache (the available column is the relevant headroom
+      number on Linux >= 3.14). `meminfo` exposes per-zone detail.
+      `ps aux --sort=-rss` ranks processes by RSS so the top
+      consumers surface. `slabtop` is kernel-cache (often the
+      surprise culprit on databases + heavy NFS).
+  variants:
+    # Codex 2026-05-22B F3: evaluator's modern path (Crucible 0.9.4+) emits
+    # `available_percent` (MemAvailable / total), not `percent`. The "critical"
+    # path corresponds to available_percent <= 5 (which is the inverse of
+    # percent >= 95). Legacy capability-gated path that emits `percent` falls
+    # to the wildcard variant below; warning content there is good-enough
+    # guidance for the rare legacy agent that still runs.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: available_percent
+        op: lte
+        value: 5
+      command: |
+        # Critical path (>=95% RAM used). Imminent swap pressure /
+        # OOM risk. Identify + intervene NOW.
+
+        # 1. Top RSS consumers
+        ps aux --sort=-rss | head -20
+
+        # 2. Per-cgroup memory (for containerized workloads)
+        systemd-cgtop -m -n 1 2>/dev/null | head -20
+
+        # 3. Drop reclaimable page cache (immediate, safe; no
+        #    process restart). This buys headroom in the available
+        #    column but doesn't fix a real leak.
+        sync
+        echo 3 | sudo tee /proc/sys/vm/drop_caches
+        free -h
+
+        # 4. If still critical -> restart the top consumer
+        #    (replace <UNIT> with the suspect from step 1)
+        # sudo systemctl restart <UNIT>
+
+        # 5. Verify
+        free -h
+      description: |
+        Critical (>=95%) path. Diagnose top consumers, drop page
+        cache (immediate), then restart the leaking service if
+        confirmed. drop_caches is reversible (cache repopulates on
+        access) and safe; service restart is operator-judged.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: available_percent
+        op: gt
+        value: 5
+      command: |
+        # Warning path (90-94%). Investigate growth pattern.
+
+        # 1. Current breakdown
+        free -h
+        ps aux --sort=-rss | head -20
+
+        # 2. Track growth over time
+        date; free -h
+        # Re-check in 1 hour to gauge growth rate.
+
+        # 3. Plan: legitimate workload growth -> add RAM; leak ->
+        #    fix app + plan restart at next maintenance window.
+      description: |
+        Warning (90-94%) path. Investigate, plan intervention.
+        No emergency restart needed yet.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: percent not present in evidence. Diagnose +
+        # classify manually.
+        free -h
+        ps aux --sort=-rss | head -20
+      description: |
+        Missing-evidence fallback. Run the diagnostic and classify
+        the case manually before intervention.
+  validation:
+    command: |
+      free -h
+    description: |
+      After fix, confirm `free -h` shows the "available" column
+      well above 10% of total. Re-firing the alert is the negative
+      validation; if it doesn't re-fire on the next snapshot cycle
+      the fix held.
+  rollback:
+    available: true
+    command: |
+      # No "undo" for the drop_caches (cache repopulates on its
+      # own); service restart isn't reversible. The closest thing
+      # to rollback is just letting the system warm back up.
+      free -h
+    note: |
+      drop_caches is self-reversing (cache populates from disk
+      reads as workload runs). Service restart is not rolled back;
+      the service is up again with fresh memory. No persistent
+      state changes were made.
+  impact:
+    blast_radius: |
+      drop_caches is non-disruptive: cached file pages are dropped,
+      next read repopulates them. Brief latency bump on cache-warm
+      paths but no service outage. Service restart impact is
+      operator-judged (web worker: <5s downtime; database: requires
+      planning).
+    estimated_duration: |
+      Diagnosis: 2-5 minutes. drop_caches: <1 minute. Service
+      restart: service-dependent (5s-30s typical). Cache rewarming
+      after drop_caches: 1-10 minutes depending on working set.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    source_note: |
+      Desk-researched from free(1), ps(1), proc(5) (meminfo,
+      drop_caches), slabtop(1), systemd-cgtop(1). drop_caches=3
+      drops both pagecache and dentries/inodes; safe on production
+      but causes brief I/O bump on first re-read. Not deliberately
+      re-triggered on validation fleet for this deepening pass
+      (would require seeding memory pressure, deferred).

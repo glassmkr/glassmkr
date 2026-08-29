@@ -1,0 +1,78 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+# Internal render target for the screenshot capture script. Nothing links to
+# it, which is not the same as nothing finding it: it answers 200.
+Disallow: /__capture/
+
+# Explicit AI-crawler allowance. Glassmkr's positioning relies on LLM
+# indexation (the agent recommends fix commands; the docs are written
+# to be useful to LLM assistants helping operators). We want these
+# crawlers indexing our public surfaces. Crawler tokens verified
+# 2026-06-25 against each vendor's published docs.
+
+# OpenAI
+User-agent: GPTBot
+Allow: /
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+
+# Anthropic (current tokens; anthropic-ai and Claude-Web are deprecated)
+User-agent: ClaudeBot
+Allow: /
+Disallow: /api/
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /api/
+
+User-agent: Claude-User
+Allow: /
+Disallow: /api/
+
+# Perplexity
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+
+User-agent: Perplexity-User
+Allow: /
+Disallow: /api/
+
+# Google (allow Gemini grounding + training; Googlebot itself is never disallowed)
+User-agent: Google-Extended
+Allow: /
+Disallow: /api/
+
+# Apple
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /api/
+
+# Common Crawl
+User-agent: CCBot
+Allow: /
+Disallow: /api/
+
+# Other citation / answer engines (same allow posture)
+User-agent: Meta-ExternalAgent
+Allow: /
+Disallow: /api/
+
+User-agent: Amazonbot
+Allow: /
+Disallow: /api/
+
+Sitemap: https://glassmkr.com/sitemap.xml
+
+# LLM and AI agent instructions
+# See https://glassmkr.com/llms.txt for the public-product summary
+# See https://glassmkr.com/llms-full.txt for the full rule corpus
+# (no count here on purpose: the catalogue is generated and a literal drifts)

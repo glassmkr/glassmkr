@@ -1,0 +1,108 @@
+# nvlink_link_down; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §2.1.
+#
+# Fires on multi-GPU hosts when any NVLink reports state=down (active
+# fault). "inactive" state is NOT triggered on by itself; many systems
+# legitimately power down NVLinks at idle, and firing on inactive
+# would produce sustained false positives on quiescent multi-GPU
+# hosts.
+#
+# Capability gate: tier1.available + tier1.gpus.length >= 2. Single-
+# GPU hosts have no NVLink to monitor.
+#
+# Incident grouping: gpu_hardware_fault.
+id: nvlink_link_down
+priority: P1
+title: NVLink link down
+summary: "An NVLink on a multi-GPU host is in the down state. Multi-GPU bandwidth is reduced; if the GPU participates in NCCL collectives the entire training/inference job's latency degrades."
+incident_group:
+  group_id: gpu_hardware_fault
+  correlation_window_seconds: 300
+fix:
+  quick_check:
+    command: |
+      nvidia-smi nvlink --status
+      nvidia-smi nvlink --errors 2>/dev/null | head -40
+    description: "Per-link state across every NVLink connection on the host + the error counters per link. 'inactive' or 'down' in --status combined with non-zero replay/recovery/error counts in --errors localises the fault to a specific link pair."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access on the host
+    - Awareness of the chassis NVLink topology (PCIe-bridge cables vs HGX baseboard vs NVSwitch)
+    - "For HGX systems: BMC access to inspect NVSwitch port telemetry"
+  safe_mode:
+    command: |
+      nvidia-smi nvlink --status
+      nvidia-smi topo --matrix
+      # On DCGM-equipped hosts:
+      dcgmi nvlink -s -g 0 2>/dev/null
+    description: |
+      Read-only inspection. nvidia-smi nvlink --status shows per-GPU
+      per-link state and bandwidth. topo --matrix shows the expected
+      vs actual topology. DCGM gives per-link replay/recovery error
+      counters when available.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Identify which links are down and which GPUs they connect:
+        nvidia-smi nvlink --status
+        # On PCIe-bridge cards (e.g. A100 PCIe NVLink Bridge):
+        #   - Inspect the physical NVLink bridge connector.
+        #   - Reseat the bridge.
+        # On HGX systems with NVSwitch:
+        #   - Check NVSwitch port faults via DCGM (tier 2 not full
+        #     in v0.13.0; use dcgmi directly).
+        #   - The NVLink may be electrically intact but the partner
+        #     NVSwitch port has faulted.
+        # On SXM systems with direct GPU-to-GPU links:
+        #   - No user-serviceable cable; the link is on the
+        #     baseboard.
+        #   - Reboot may recover transient link-down; sustained
+        #     across reboots is RMA territory.
+        #
+        # If DCGM is installed, per-link error counters tell you
+        # whether it's a transient (replay errors recover) or hard
+        # fault (CRC errors climb):
+        dcgmi nvlink -s -g 0
+      description: |
+        NVLink troubleshooting differs by physical topology. Per
+        NVIDIA's NVLink troubleshooting guide: physical reseat first
+        on cable-based systems, then check partner NVSwitch port
+        telemetry, then attempt host reboot to recover transients.
+        Sustained link-down after a clean reboot is the RMA signal.
+  validation:
+    command: |
+      nvidia-smi nvlink --status | grep -v "<inactive>"
+    description: |
+      All previously-down links should report active bandwidth.
+      "Inactive" entries (idle) are fine. Rule auto-resolves on
+      next snapshot.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Physical reseating + replacement are irreversible from the
+      software side.
+  impact:
+    blast_radius: |
+      Alert itself has no service impact. Reseat + reboot remediation
+      require GPU + host downtime; for active inference / training
+      this affects throughput. NCCL collectives running across the
+      affected link will experience errors.
+    estimated_duration: |
+      Triage 15-30 min. Reseat: 30-60 min. RMA path: days-to-weeks.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-20"
+    tested_on:
+      - Synthetic NVLink state fixtures (Crucible v0.13.0 parseNvLinkStatus)
+    tester: Glassmkr ops
+    research_basis: validation-pending
+    source_note: |
+      Pattern library 2026-05-18 + new GPU category. NVIDIA NVLink
+      troubleshooting guide as primary reference. Crucible v0.13.0
+      Tier 1 path: nvidia-smi nvlink --status -> per-GPU NvLinkBasic.
+      Tier 2 path (DCGM): per-link replay / recovery / CRC counters
+      surface as enrichment but Tier 2 ships parser_quality=stub in
+      v0.13.0; the structured fields lift to fleet-tested in the
+      follow-up release. Validation-pending overall.

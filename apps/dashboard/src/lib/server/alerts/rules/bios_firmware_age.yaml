@@ -1,0 +1,116 @@
+# bios_firmware_age; currency-monitoring milestone 2026-07-15.
+#
+# INFORMATIONAL advisory, never a fault. Both deep-research passes (Claude +
+# ChatGPT, RESEARCH_CURRENCY_MONITORING_2026-07-15) were explicit that raw
+# BIOS age is not a defensible "should update" signal: a 3-year-old BIOS may
+# be the newest release ever published for that board, and the ecosystem tools
+# that actually manage firmware compare INSTALLED version against a vendor
+# catalog, not age against a stopwatch. So this rule does not tell anyone to
+# update; it prompts them to VERIFY the installed BIOS/UEFI and BMC firmware
+# against the vendor's catalog. Severity is info (dashboard-only, never pages).
+#
+# The evaluator guards VM / placeholder dates (is_virtual, plus implausible
+# years) so cloud/virtual hosts, which report garbage SMBIOS dates, never fire.
+# Threshold is 24 months. A real "firmware update available" signal is a later
+# milestone (fwupd on Linux, Redfish out-of-band); only then would this warrant
+# anything above info.
+id: bios_firmware_age
+priority: P3
+title: BIOS firmware metadata is aging
+summary: |
+  The host's SMBIOS BIOS release date is more than 24 months old. This is NOT a fault and NOT necessarily out of date: the installed BIOS may still be the latest release the board vendor has ever published. It is a prompt to confirm, against the vendor's catalog, that the BIOS/UEFI and BMC firmware are current, since stale platform firmware is a common source of unpatched hardware-level vulnerabilities and errata.
+
+  Acknowledge this advisory once you have confirmed the installed version is the latest published for this board, or after you have scheduled the update.
+fix:
+  quick_check:
+    command: |
+      cat /sys/class/dmi/id/bios_vendor /sys/class/dmi/id/bios_version /sys/class/dmi/id/bios_date 2>/dev/null
+    description: "Shows the board vendor, installed BIOS version, and its release date straight from SMBIOS. Compare the version against the latest published for this exact board on the vendor's support site; the date alone does not tell you whether a newer release exists."
+  verdict_prior: recoverable
+  prerequisites:
+    - The exact board model (from /sys/class/dmi/id/product_name or the vendor's service tag / serial)
+    - Access to the vendor's firmware catalog or support page for that model
+    - "For an actual update: a maintenance window (BIOS/BMC flashes typically require a reboot and sometimes a full power cycle) and a verified backup of BIOS settings"
+  safe_mode:
+    command: |
+      # Read-only inventory of the installed platform firmware.
+      cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name 2>/dev/null
+      cat /sys/class/dmi/id/bios_vendor /sys/class/dmi/id/bios_version /sys/class/dmi/id/bios_date 2>/dev/null
+      # BMC firmware revision (if a BMC is present), useful to check alongside BIOS.
+      sudo ipmitool mc info 2>/dev/null | grep -iE 'firmware revision|manufacturer|product'
+    description: |
+      Read-only. Captures the board identity plus the installed BIOS
+      version and date, and the BMC firmware revision. Use these to
+      look up the latest published versions on the vendor catalog.
+      Nothing here changes any firmware.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Identify the board and the installed BIOS.
+        cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name \
+            /sys/class/dmi/id/bios_version /sys/class/dmi/id/bios_date 2>/dev/null
+
+        # 2. Look up the LATEST BIOS published for this exact board model on
+        #    the vendor's support site (Dell, HPE, Supermicro, Lenovo, ASUS,
+        #    Gigabyte, ASRock). Compare versions, not dates.
+        #    If the installed version is already the latest, acknowledge this
+        #    advisory: an old date on the newest available BIOS is expected.
+
+        # 3. Only if a newer BIOS exists AND it fixes something relevant
+        #    (security errata, stability for your workload): plan the update
+        #    in a maintenance window per the vendor's documented procedure.
+        #    Firmware flashing is out of scope for automated remediation; it is
+        #    board-specific, disruptive, and occasionally bricking. There is no
+        #    safe generic flash command, which is why none is provided here.
+        echo "Compare installed BIOS/BMC versions against the vendor catalog; update only via the vendor's own procedure."
+      description: |
+        Verification-only. There is deliberately no generic firmware-flash
+        command: the correct tooling (Dell DSU/iDRAC, HPE SUM/iLO, Lenovo
+        OneCLI/XCC, Supermicro SUM) and procedure differ per vendor and a
+        wrong flash can brick the board. The remediation is: confirm whether
+        a newer version exists, and if so update through the vendor's path.
+  validation:
+    command: |
+      cat /sys/class/dmi/id/bios_version /sys/class/dmi/id/bios_date 2>/dev/null
+    description: |
+      After any update, confirm the reported BIOS version and date
+      advanced to the newly flashed release. If you acknowledged the
+      advisory because the installed version was already the latest,
+      no change is expected and the acknowledgement is the resolution.
+  rollback:
+    available: false
+    command: null
+    note: |
+      BIOS downgrade is vendor-specific and sometimes blocked outright
+      (anti-rollback fuses). This rule never triggers a flash, so there is
+      nothing to roll back from the advisory itself. If an operator-initiated
+      BIOS update misbehaves, recovery is via the vendor's BIOS-recovery
+      procedure (dual-BIOS switch, recovery jumper, or BMC-assisted reflash),
+      not a generic rollback.
+  impact:
+    blast_radius: |
+      The advisory itself has zero impact: it is informational and changes
+      nothing. An operator-chosen BIOS/BMC update (out of band of this rule)
+      requires a reboot and sometimes a full power cycle, so the host is
+      offline for the duration; stagger across a fleet for HA workloads.
+    estimated_duration: |
+      Verification against the vendor catalog: 10-20 minutes. An actual
+      firmware update, if chosen: one maintenance window per host.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-07-15"
+    tested_on:
+      - Desk-researched from the currency-monitoring deep-research passes (endoflife.date, DMTF SMBIOS, vendor firmware-management docs)
+      - SMBIOS bios_date format + placeholder cases verified against the DMI schema and known VM sentinels (GCE, VirtualBox, QEMU)
+    tester: Glassmkr ops
+    research_basis: research-derived
+    source_note: |
+      Design decision recorded in CC_CURRENCY_BUILD_DECISION_2026-07-15: BIOS
+      age is shipped as an info-only advisory, not a should-update alert,
+      because raw age does not establish that a newer BIOS exists. The
+      evaluator reads snap.dmi.bios_date (SMBIOS type 0, mm/dd/yyyy), guards
+      VMs via snap.dmi.is_virtual and rejects implausible/placeholder years,
+      and fires above 24 months. A future milestone adds a real
+      update-available signal (fwupd on Linux, Redfish out-of-band for BMC);
+      only that would justify escalating above info.

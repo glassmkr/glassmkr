@@ -1,0 +1,127 @@
+# gpu_thermal_critical; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §1.3.
+#
+# Fires on a GENUINE thermal fault only: a HARDWARE thermal slowdown
+# (throttle reason hw_slowdown / hw_thermal_slowdown - the HW hit its own
+# model-correct slowdown temp) OR GPU die temp >= 92C. It does NOT fire on
+# sw_thermal_slowdown / thermal_slowdown_active alone: that is the driver
+# holding the card at its thermal *target* under load (normal, not a fault;
+# round-5 A6000 false alarm at 84C). boot_grace_seconds=300 absorbs the
+# post-boot warm-up window where thermal sensors stabilise.
+#
+# Data-center GPUs hit HW slowdown at model-specific temps: L4 ~87C, A100/
+# H100 ~92C, A6000 95C. hw_thermal_slowdown is the model-correct signal; the
+# 92C absolute backstop sits above every model's thermal target so normal
+# target-holding never trips it.
+#
+# Incident grouping: gpu_thermal_incident (with gpu_power_cap_throttling).
+id: gpu_thermal_critical
+priority: P1
+title: GPU thermal critical
+summary: "GPU die temperature at or above the HW slowdown threshold, or the kernel reports a hardware thermal slowdown. A software thermal slowdown at the card's thermal target (normal load behavior) does not fire. Sustained operation at thermal limits accelerates wear and reduces throughput. Boot grace 300s for post-boot sensor stabilisation."
+incident_group:
+  group_id: gpu_thermal_incident
+  correlation_window_seconds: 300
+fix:
+  quick_check:
+    command: |
+      nvidia-smi --query-gpu=index,uuid,temperature.gpu,temperature.memory,clocks_throttle_reasons.active,clocks_throttle_reasons.sw_thermal_slowdown,clocks_throttle_reasons.hw_thermal_slowdown --format=csv
+    description: "Per-GPU GPU + memory temperature + the four throttle reasons that distinguish 'just hot' from 'kernel is actively throttling to stay under the thermal limit'. hw_thermal_slowdown engaged means the chip is at risk."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access on the host
+    - BMC / IPMI access for chassis fan + ambient telemetry
+    - Awareness of current workload thermal profile
+  safe_mode:
+    command: |
+      nvidia-smi --query-gpu=index,name,temperature.gpu,fan.speed,power.draw --format=csv
+      sudo ipmitool sensor list | grep -i -E "fan|inlet|exhaust|ambient"
+      sensors 2>/dev/null | head -30
+    description: |
+      Read-only inspection. nvidia-smi temp + fan (where present);
+      IPMI fans + intake/exhaust ambient; hwmon for CPU-side hot
+      spots that might indicate broader chassis cooling problems.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Diagnostic order:
+        # 1. Chassis airflow. Are intake / exhaust ambient sensors
+        #    showing rising temperatures over the last hour? IPMI
+        #    sensor list trends are the canonical source.
+        # 2. GPU fan speed (where applicable). Data-center GPUs in
+        #    PCIe form factor (L4) have fans; SXM modules use chassis
+        #    cooling loop and have no fan field. Fan at 100% but temp
+        #    still climbing = cooling capacity exceeded.
+        # 3. Heatsink seating. Visual inspection; this is the only
+        #    way to catch warpage or missing thermal pads.
+        # 4. Workload load. If everything physical is fine, the
+        #    workload's thermal profile may have shifted; reduce or
+        #    rotate.
+        sudo ipmitool sensor list | grep -i -E "fan|inlet|exhaust|ambient"
+        # On HGX hosts, baseboard temp via Redfish (tier 3 once that
+        # ships):
+        # curl -ksu admin:<pass> https://<bmc>/redfish/v1/Chassis/HGX_Chassis_0/Thermal
+      description: |
+        Thermal critical without a power-cap or workload spike is
+        usually a cooling problem (airflow, heatsink seating, ambient
+        intake temperature). With a workload spike, it can be the
+        application's thermal envelope catching up to the chassis
+        cooling capacity.
+  validation:
+    command: |
+      nvidia-smi --query-gpu=index,name,temperature.gpu --format=csv
+    description: |
+      Temperature should sit below 92C with no hardware thermal slowdown
+      active. Rule auto-resolves on next snapshot.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Physical interventions (reseat heatsink, replace fan, improve
+      airflow) don't have a "rollback" semantic. Power-cap reductions
+      to suppress thermal symptoms are revertable via nvidia-smi -pl
+      but that masks the underlying cause.
+  impact:
+    blast_radius: |
+      Alert itself has no service impact. Mitigations (physical fan /
+      airflow work, GPU reseat) require powering down the GPU and
+      possibly the host. Reducing workload thermal load by stopping
+      inference jobs is the non-physical option.
+    estimated_duration: |
+      Triage 10-20 min. Physical investigation 30-60 min.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-21"
+    tested_on:
+      - Synthetic temp + throttle-reason fixtures
+      - val-L4 (NVIDIA L4) under sustained FP32 matmul stress; 901s, 4 concurrent CUDA streams, TF32 disabled, TDP-capped at 72W
+      - the GPU host L4 (production) under sustained CUDA load 2026-05-20
+    tester: Glassmkr ops
+    research_basis: fleet-tested
+    source_note: |
+      Pattern library 2026-05-18 + new GPU category. Per-model
+      throttle thresholds from NVIDIA datasheets (L4 product brief,
+      A100/H100 SXM5 datasheets). 90C threshold is conservative across
+      L4/A100/H100; per-model config overrides deferred. Crucible
+      v0.13.0 surfaces thermal_slowdown_active and
+      performance_state_reasons from the nvidia-smi XML output.
+
+      **Synthetic-workload triggerability**: NOT REACHABLE on standard
+      NVIDIA L4 cooling under any synthetic load CC has been able to
+      construct. Two independent verification attempts both plateaued
+      well below the 90C threshold:
+
+      - 2026-05-20 on the GPU host L4: 70C plateau after 5 min of
+        100% util CUDA load at 72W.
+      - 2026-05-21 on val-L4 (5-gap closure Gap 3): 67C plateau after
+        15 min sustained 4-stream FP32 matmul at TDP cap. clocks held
+        1035-1095 MHz; hw_thermal_slowdown + sw_thermal_slowdown
+        never engaged.
+
+      This rule fires only on REAL customer-environmental conditions:
+      DC HVAC failures, chassis airflow blocked by adjacent cards,
+      dust buildup, or thermal-pad degradation over time. It is NOT
+      reachable by workload alone on healthy cooling. Operators
+      receiving this alert should treat it as a cooling-system signal
+      first, not a workload signal.

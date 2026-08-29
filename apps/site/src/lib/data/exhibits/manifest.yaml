@@ -1,0 +1,56 @@
+# Capture manifest for homepage and marketing evidence exhibits.
+# Required by the redesign specification, section 7.4. Every entry must name a
+# real artifact, and scripts/check-exhibits.mjs recomputes the hash, so an
+# exhibit cannot drift from the data it claims to show.
+#
+# Two exhibit forms are allowed: a browser or terminal capture, or a
+# recorded-data render (the production component rendered from immutable
+# captured data). This entry is the second form, which is why viewport is
+# "responsive" rather than a pixel size: there is no image, so the exhibit
+# keeps real HTML, real text selection, and real accessibility, and it reflows
+# on a phone instead of becoming an unreadable screenshot.
+
+exhibits:
+  - id: val-debian-os-eol
+    captured_at: 2026-08-27T06:42:52Z
+    host_alias: val-debian
+    scenario_id: unarmed-baseline
+    crucible_version: 1.0.1
+    dashboard_commit: 00a2ee67f9513a9a27a872f795cd146f49a8cdd7
+    source_environment: validation fleet
+    viewport: responsive
+    artifact_path: apps/site/src/lib/data/exhibits/val-debian-os-eol.json
+    source_data_path: apps/site/src/lib/data/exhibits/val-debian-os-eol.json
+    sha256: ac1cc4c37a7d0f35fbd95bce818ca535f7a8975c43770e3879cd011c5ff39dc6
+    notes: >
+      A real alert from a real machine, not an armed scenario: a Supermicro
+      SYS-530MT-H8TNR running Debian 12, reporting through Crucible 1.0.1 to a
+      self-hosted dashboard on the same box. The alert body, recommendation and
+      evidence are copied verbatim from the API response; the priority,
+      category and quick-check command come from the shipped rule definition.
+      The exhibit renders no IP address, no serial, and no key, because the
+      alert card does not contain them. This is a deliberate boundary, not
+      redaction: nothing was painted over.
+
+      RECAPTURED 2026-08-27, first at Crucible 1.0.0 and again at 1.0.1 when that
+      release shipped hours later, so the homepage does not show a superseded
+      agent at launch. The host's agent was upgraded and the alert was
+      re-read from the API; exactly two values moved, last_seen and
+      crucible_version. Every other field is byte-identical to the 0.15.1
+      capture, which is itself evidence that nothing was reshaped to look
+      better. The dashboard was NOT rebuilt (its container predates both
+      captures), so dashboard_commit is unchanged and still honest.
+
+      GAP AGAINST SPEC 14.1, ACCEPTED BY SIMON 2026-08-26: the specification
+      asks the first homepage exhibit to show a HARDWARE or NETWORK alert. This
+      one is an OS-lifecycle alert, because this host's hardware is genuinely
+      healthy and there is nothing wrong to show.
+
+      Decision: ship this exhibit and keep the gap recorded honestly. Do NOT
+      arm an md fault on val-debian, or on any box that has another role. When
+      a real hardware alert appears anywhere in the fleet after launch, swap
+      the exhibit through this manifest: add the new capture, verify the hash,
+      repoint the component. Any future ARMED hardware capture happens on a
+      scratch box with no other purpose.
+
+      Never substitute a synthetic hardware alert to close this gap.

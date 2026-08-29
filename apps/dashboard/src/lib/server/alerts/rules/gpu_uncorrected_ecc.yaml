@@ -1,0 +1,101 @@
+# gpu_uncorrected_ecc; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §1.2.
+#
+# Fires when any of:
+#   - tier1.gpus[].ecc_errors_uncorrected_aggregate > 0 (VRAM ECC
+#     could not correct; data was corrupted)
+#   - tier1.gpus[].retired_pages_double_bit > 0 (DBE retirements
+#     already happened)
+#   - tier1.gpus[].retired_pages_pending > 0 (reboot is pending to
+#     actually retire pages flagged for retirement)
+#
+# Capability gate: snap.gpu.tier1.available === true AND
+# tier1.gpus[].ecc_mode_current === true (some inference workloads
+# legitimately disable ECC; the rule should not fire there).
+#
+# Incident grouping: gpu_hardware_fault.
+id: gpu_uncorrected_ecc
+priority: P0
+title: GPU uncorrected ECC or DBE retired pages
+summary: "GPU reports uncorrected ECC errors, double-bit ECC retired pages, or pending retirements. Uncorrected ECC means error correction could not recover; in-flight data may have been corrupted. Pending retirements require a reboot."
+incident_group:
+  group_id: gpu_hardware_fault
+  correlation_window_seconds: 300
+fix:
+  quick_check:
+    command: |
+      nvidia-smi --query-gpu=index,uuid,ecc.errors.uncorrected.aggregate.total,ecc.errors.uncorrected.volatile.total,retired_pages.double_bit.count,retired_pages.pending --format=csv
+    description: "Per-GPU uncorrected ECC counters (lifetime + since last reset) + retired-page state. A non-zero pending retired-page count means a reboot is required before the page is taken offline."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access on the host
+    - "For replacement: spare GPU on hand + maintenance window"
+    - GPU UUID + serial captured for warranty/RMA documentation
+  safe_mode:
+    command: |
+      nvidia-smi -q -d ECC
+      nvidia-smi --query-gpu=index,name,uuid,ecc.errors.uncorrected.aggregate.total,retired_pages.double_bit_ecc.count,retired_pages.pending --format=csv
+    description: |
+      Read-only inspection. nvidia-smi -q -d ECC is the canonical
+      view; CSV form gives a quick fleet-comparison shape.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Capture full SMART-like diagnostic before any action:
+        nvidia-bug-report.sh --output-file /tmp/nvbugreport-$(hostname).log.gz
+        # Confirm ECC mode is on (rule won't fire if disabled but
+        # verify the snapshot wasn't stale):
+        nvidia-smi --query-gpu=ecc.mode.current --format=csv
+        # If pending retirements > 0, reboot is required:
+        # sudo reboot
+        # After reboot, confirm retirements applied:
+        nvidia-smi -q -d ECC | grep -A5 "Retired Pages"
+        # Plan replacement: capture serial + vbios for RMA paperwork:
+        nvidia-smi --query-gpu=index,name,uuid,serial,vbios_version --format=csv
+      description: |
+        Uncorrected ECC is the canonical end-of-life signal for VRAM.
+        Per NVIDIA, no recovery is possible; the affected memory must
+        be retired and the GPU's effective capacity drops. Once
+        retired-pages crosses the per-GPU threshold (typically 64
+        pages per memory channel on A100; varies by model), schedule
+        replacement.
+  validation:
+    command: |
+      nvidia-smi --query-gpu=ecc.errors.uncorrected.aggregate.total,retired_pages.pending --format=csv
+    description: |
+      After replacement (or after reboot if only pending retirements
+      were the trigger), uncorrected aggregate should be 0 and
+      retired_pages_pending should be 0. Rule auto-resolves.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Page retirement is irreversible from the software side; the
+      GPU's VRAM map permanently excludes the retired pages. GPU
+      replacement is irreversible (the affected card goes to RMA).
+  impact:
+    blast_radius: |
+      Uncorrected ECC may have already corrupted in-flight data on
+      the workload. Customer-facing impact depends on whether the
+      affected GPU was serving inference or training; for training
+      a single uncorrected ECC error during a step typically requires
+      restarting from the last checkpoint.
+    estimated_duration: |
+      Triage 15-30 min. Reboot (if pending retirements): 5-10 min.
+      Replacement via RMA: days-to-weeks.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-20"
+    tested_on:
+      - Synthetic ECC counter fixtures (Crucible v0.13.0 nvidia-smi CSV parse)
+    tester: Glassmkr ops
+    research_basis: validation-pending
+    source_note: |
+      NVIDIA published guidance on VRAM retired pages + DBE
+      handling. Crucible v0.13.0 parses ecc.errors.uncorrected.* and
+      retired_pages.* fields. Validation-pending until Simon's
+      incoming GPU hosts surface clean data. Distinct from
+      gpu_corrected_ecc_storm (SBE rate trending): this rule is the
+      hard end-of-life signal; SBE storms are the warning that
+      precedes it.

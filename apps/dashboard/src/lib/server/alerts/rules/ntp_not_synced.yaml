@@ -1,0 +1,185 @@
+# ntp_not_synced; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B7, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator has two-tier severity:
+#   - synced=false  -> CRITICAL (clock actually drifting)
+#   - synced=true, daemon_running=false -> WARNING (protection lost
+#     but kernel still synced for now)
+# Variants split on the `synced` boolean attribute. Cross-references
+# clock_drift (which fires once drift has actually accumulated).
+id: ntp_not_synced
+priority: P2
+title: NTP not synced
+summary: Either the kernel clock is unsynchronized (critical; drift in progress) OR the NTP daemon has stopped while the clock is still synced (warning; drift will start once kernel state expires).
+fix:
+  quick_check:
+    command: |
+      timedatectl status | grep -iE 'synchronized|active'
+      chronyc sources 2>/dev/null
+      ntpq -p 2>/dev/null
+      # Is the daemon actually running?
+      systemctl is-active chronyd 2>/dev/null
+      systemctl is-active systemd-timesyncd 2>/dev/null
+      systemctl is-active ntpd 2>/dev/null
+    description: "Did timedatectl report synchronized? Then the source list (chronyc/ntpq); then the active state of each common NTP daemon. Lets you tell 'no daemon' from 'daemon up but no reachable source'."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (inspection + daemon enable are non-disruptive)
+    - Upstream NTP servers reachable (test from the host with `dig`, `chronyc sources`, or `timedatectl show-timesync`)
+    - Awareness that RHEL family ships chrony as default; Debian/Ubuntu ships systemd-timesyncd; both can be replaced with ntpd if operator prefers (rare on modern systems)
+  safe_mode:
+    command: |
+      timedatectl status
+      timedatectl show -p NTP -p NTPSynchronized -p TimeUSec
+      systemctl status chronyd systemd-timesyncd ntpd 2>/dev/null | grep -E 'Active:|Loaded:'
+      chronyc tracking 2>/dev/null || \
+        timedatectl show-timesync 2>/dev/null
+    description: |
+      Read-only inspection. Confirms which time daemon is installed
+      and active. `timedatectl status` shows NTPSynchronized
+      (kernel state) + the daemon's view; mismatch between the two
+      tiers is the signal this rule fires on.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: synced
+        op: eq
+        value: false
+      suggested_action: |
+        sudo systemctl enable --now chronyd 2>/dev/null || sudo systemctl enable --now systemd-timesyncd
+      command: |
+        # Critical path (synced=false). Kernel reports the clock
+        # is NOT synchronized; drift is accumulating right now.
+
+        # 1. Current state
+        timedatectl status
+        chronyc tracking 2>/dev/null || \
+          timedatectl show-timesync 2>/dev/null
+
+        # 2. Pick a daemon based on what's installed:
+        #    chrony: RHEL family default + many Debian/Ubuntu hosts
+        #    systemd-timesyncd: Debian/Ubuntu default
+        if command -v chronyd >/dev/null 2>&1; then
+          sudo systemctl enable --now chronyd
+        elif systemctl list-unit-files | grep -q systemd-timesyncd; then
+          sudo systemctl enable --now systemd-timesyncd
+        else
+          echo "No NTP daemon installed; install one:"
+          echo "  sudo apt-get install -y chrony     # Debian/Ubuntu"
+          echo "  sudo dnf install -y chrony         # RHEL family"
+        fi
+
+        # 3. Force immediate sync attempt
+        sudo chronyc -a makestep 2>/dev/null || \
+          sudo systemctl restart systemd-timesyncd
+
+        # 4. Watch convergence
+        timedatectl status | grep -E "synchron|time"   # one-shot; re-run to monitor
+
+        # 5. Diagnose why sync failed:
+        #    a) Upstream blocked by firewall? (UDP/123 outbound)
+        sudo ss -uln | grep 123 2>/dev/null
+        #    b) DNS resolution for pool servers?
+        getent hosts pool.ntp.org 2>/dev/null
+        #    c) Hypervisor clock issue (paravirt clock not
+        #       available on the guest)?
+        cat /sys/devices/system/clocksource/clocksource0/current_clocksource
+
+        # 6. If clock-drift accumulated meanwhile -> escalate to
+        #    clock_drift workflow (the step-correction path).
+      description: |
+        Critical (synced=false) path. Start a daemon if none is
+        running, force a sync attempt, then diagnose upstream
+        reachability. Cross-references clock_drift if drift has
+        already accumulated.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: synced
+        op: eq
+        value: true
+      command: |
+        # Warning path (synced=true, daemon_running=false).
+        # Kernel still reports synced but the daemon stopped;
+        # protection is gone; drift will start once kernel state
+        # expires (typically minutes-hours).
+
+        # 1. Confirm daemon status
+        systemctl status chronyd systemd-timesyncd ntpd 2>/dev/null | grep -E 'Active:|Loaded:'
+
+        # 2. Identify which daemon was the intended one
+        ls /etc/chrony.conf /etc/systemd/timesyncd.conf /etc/ntp.conf 2>/dev/null
+
+        # 3. Enable + start (idempotent if already enabled)
+        if command -v chronyd >/dev/null 2>&1; then
+          sudo systemctl enable --now chronyd
+        else
+          sudo systemctl enable --now systemd-timesyncd
+        fi
+
+        # 4. Check why it stopped (last logs)
+        journalctl -u chronyd -u systemd-timesyncd --no-pager -n 30
+      description: |
+        Warning (synced=true, daemon stopped) path. Restart the
+        daemon. If it stopped from a misconfig, the journal tail
+        usually shows the cause; fix config, re-enable.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: synced attribute missing. Diagnose manually.
+        timedatectl status
+        systemctl status chronyd systemd-timesyncd ntpd 2>/dev/null
+      description: |
+        Missing-evidence fallback. Run diagnostic to read current
+        state; classify manually before applying remediation.
+  validation:
+    command: |
+      timedatectl show -p NTPSynchronized --value | grep -qx yes
+    expected_exit: 0
+    description: |
+      Definition of done: exit 0 means the kernel clock is synchronized
+      (NTPSynchronized=yes). Re-run until it passes; sync can take a few
+      seconds after the time daemon starts.
+  rollback:
+    available: true
+    command: |
+      # Disable ONLY the daemon this fix started. Both lines ran
+      # unconditionally before, which on a host that already ran chronyd
+      # meant the rollback switched off working time sync that predated
+      # the fix. Uncomment the one you started.
+      # sudo systemctl disable --now chronyd
+      # sudo systemctl disable --now systemd-timesyncd
+    note: |
+      Daemon enable / start is reversible via the inverse
+      systemctl command. Clock corrections that occurred during
+      sync are not reversible (clock moved to upstream truth).
+  impact:
+    blast_radius: |
+      Diagnostic + enable-daemon commands are non-disruptive in
+      the warning case (clock is already correct; just resuming
+      protection). In the critical case, the first sync after
+      enabling may step the clock; see clock_drift's impact
+      notes on step-correction effects on TLS / cron / replication.
+    estimated_duration: |
+      Diagnosis: 2-5 minutes. Daemon enable + initial sync: 1-5
+      minutes. Step correction (if needed): <1 second. Root-cause
+      investigation: hours.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from timedatectl(1), chrony.conf(5),
+      systemd-timesyncd(8). The two-tier severity (synced=false
+      vs daemon-stopped) mirrors the evaluator's ordering logic
+      (synced=false takes precedence over daemon-stopped). Not
+      deliberately re-triggered on validation fleet for this
+      deepening pass.
+
+      Pattern library 2026-05-18: Category 6 (time). Two-tier design (NTP-not-synced + clock_drift) confirmed; clock_drift now subordinated to this rule when both fire. Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

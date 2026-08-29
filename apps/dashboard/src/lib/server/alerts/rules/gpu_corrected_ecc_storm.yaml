@@ -1,0 +1,105 @@
+# gpu_corrected_ecc_storm; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §2.2.
+#
+# Fires when corrected-ECC volatile counter is unusually high
+# (>1000 since the last GPU power-on), or when retired_pages_single_
+# bit is non-zero. SBE storms typically precede DBE faults; this is
+# the early-warning rule that gives operators time to plan
+# preventive replacement.
+#
+# Cross-snapshot rate calculation (true rate-of-change beats absolute
+# threshold for ECC; same principle as Backblaze SMART analysis
+# referenced in audit Cat 3) is deferred to a follow-up. The per-
+# snapshot level signal is conservative; rate-based detection ships
+# when the cross-snapshot library has a per-host time-series primitive
+# applicable to GPU metrics.
+#
+# Capability gate: tier1.available + ecc_mode_current=true.
+id: gpu_corrected_ecc_storm
+priority: P3
+title: GPU corrected-ECC level high
+summary: "GPU corrected-ECC counter is high or single-bit retired pages are non-zero. SBE storms typically precede DBE faults; this rule gives operators time to plan preventive replacement before uncorrected ECC fires."
+fix:
+  quick_check:
+    command: |
+      nvidia-smi --query-gpu=index,uuid,ecc.errors.corrected.aggregate.total,ecc.errors.corrected.volatile.total --format=csv
+      # Trend over the last hour from Crucible's snapshot history (in the dashboard):
+      echo "See the GPU panel on the server detail page for the trend chart."
+    description: "Per-GPU corrected ECC counters (lifetime + since last reset). The dashboard's GPU panel renders the corrected-error trend so a storm shows as a slope. The alert fires on rate, not absolute count."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the host
+    - "For preventive replacement: spare GPU on hand + maintenance window"
+    - Awareness of the GPU's VRAM retired-pages threshold for this model
+  safe_mode:
+    command: |
+      nvidia-smi -q -d ECC
+      nvidia-smi --query-gpu=index,name,uuid,ecc.errors.corrected.volatile.total,ecc.errors.corrected.aggregate.total,retired_pages.single_bit_ecc.count,retired_pages.pending --format=csv
+      # On H100+ where retired-pages has been replaced by row-remapping:
+      nvidia-smi --query-remapped-rows=index,remapped_rows.failure,remapped_rows.correctable,remapped_rows.uncorrectable --format=csv 2>/dev/null
+    description: |
+      Read-only inspection. nvidia-smi -q -d ECC is the canonical
+      view. On H100+ NVIDIA replaced retired-pages with row-remapping
+      (a finer-grained mechanism); query that field separately.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Trend the counter. If aggregate is climbing rapidly
+        #    (cross-snapshot signal; future rule), plan preventive
+        #    replacement. Per-snapshot the threshold is "level is
+        #    unusually high"; cross-snapshot rate-based detection
+        #    is a follow-up.
+        # 2. Per-GPU-model retired-pages threshold reference (from
+        #    NVIDIA documentation):
+        #    - A100: 64 retired pages per memory channel
+        #    - L4 / consumer cards: typically lower budget
+        #    - H100+: row-remapping replaces retired-pages; the
+        #      relevant counter is remapped_rows.correctable
+        # 3. If retired_pages_single_bit is climbing AND ECC mode is
+        #    on, the GPU is doing its job (correcting errors); the
+        #    operator's job is to monitor the rate and plan ahead.
+      description: |
+        Corrected ECC is per-design behaviour up to a point; the
+        signal is the rate of correction climbing. NVIDIA's
+        threshold guidance per GPU family is the canonical
+        reference. Preventive replacement before DBE is the
+        operational play.
+  validation:
+    command: |
+      nvidia-smi --query-gpu=ecc.errors.corrected.volatile.total --format=csv
+    description: |
+      Replaced GPU reports a clean ECC counter (or the volatile
+      counter resets at next power-on). Rule auto-resolves.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Replacement is irreversible from the software side. Keep the
+      original GPU in vendor RMA channel; vendor support may want
+      it for failure analysis.
+  impact:
+    blast_radius: |
+      Alert is informational (P3). Preventive replacement is
+      scheduled, not emergency. Choosing not to replace and waiting
+      until DBE fires is operator's call; the rule's job is to
+      surface the early warning.
+    estimated_duration: |
+      Triage 15-30 min. Preventive replacement is scheduled at the
+      next planned maintenance window.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-20"
+    tested_on:
+      - Synthetic ECC counter fixtures
+    tester: Glassmkr ops
+    research_basis: validation-pending
+    source_note: |
+      Pattern library 2026-05-18 + new GPU category. SBE rate-of-
+      change beats absolute threshold (Backblaze-style approach
+      applied to GPU memory); cross-snapshot rate calc is deferred
+      to a follow-up. For v1 the per-snapshot signal is "volatile
+      counter > 1000 OR retired_pages_single_bit > 0", conservative
+      but actionable. Crucible v0.13.0 surfaces the underlying
+      counters via nvidia-smi --query-gpu=ecc.errors.corrected.* +
+      retired_pages.*.

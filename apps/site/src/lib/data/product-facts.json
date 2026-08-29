@@ -1,0 +1,7 @@
+{
+  "hostedNodeCap": 10,
+  "crucibleLicense": "AGPL-3.0-only",
+  "dashboardLicenseLabel": "AGPL-3.0-only",
+  "dashboardLicenseSpdx": "AGPL-3.0-only",
+  "_notes": "Configured product facts consumed by site components; canonical map is ground-truth.yaml at the monorepo root. hostedNodeCap confirmed 10 (round-2, 2026-08-24); dashboard license AGPL-3.0-only (LICENSE at repo root). dashboardLicenseLabel was 'AGPL' and fed the homepage eyebrow, which rendered a non-canonical label that a source grep could not see; it is now the same locked value as the SPDX field. crucibleLicense flipped to AGPL-3.0-only 2026-08-29 (Simon): effective from crucible v1.1.0; v1.0.1 and earlier remain MIT, and copy must not claim otherwise."
+}

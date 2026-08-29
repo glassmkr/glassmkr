@@ -1,0 +1,161 @@
+# disk_latency_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B1.
+#
+# Fires at >= 50ms avg read OR write latency (warning) or >= 200ms
+# (critical) on a non-idle device (read_iops + write_iops > 0). The
+# evaluator already shipped an inline evidence.fix_commands array;
+# the deepening promotes those into the variants[0].command and
+# fleshes out the surrounding workflow.
+id: disk_latency_high
+priority: P3
+title: Disk latency high
+summary: Disk's average read or write latency exceeds the threshold under non-trivial IOPS load. Indicates a struggling drive, saturated I/O queue, in-progress RAID rebuild, or noisy-neighbor workload.
+
+fix:
+  quick_check:
+    command: |
+      sudo iostat -xz 5 3 2>/dev/null | tail -40
+      # Sustained r_await/w_await > 50ms is the warning band; > 200ms is critical.
+    description: "Three 5-second iostat samples (await + utilization per device) plus a band reminder. The first sample is since-boot averaged; the next two are real-time and reveal which device is slow now."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access to the host (no maintenance window required for diagnostic phase)
+    - The drive's logical role known (boot, data, RAID member, etc.) to decide whether replacement is safe to schedule
+
+  safe_mode:
+    command: |
+      sudo smartctl -a /dev/${DEVICE}
+      sudo iostat -xz 1 5
+      cat /sys/block/${DEVICE}/queue/scheduler
+      cat /proc/mdstat
+    description: |
+      Read-only diagnostic suite to identify the cause:
+      smartctl shows whether the drive itself is degraded;
+      iostat shows current latency + queue depth + utilization;
+      the scheduler readout shows whether the wrong scheduler
+      is configured (e.g. cfq on an SSD); /proc/mdstat reveals
+      any in-progress RAID rebuild that's slowing the drive.
+
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. SMART health check (drive itself is the most common cause)
+        sudo smartctl -a /dev/${DEVICE}
+
+        # 2. Current I/O scheduler (wrong scheduler on SSD/NVMe = high latency)
+        cat /sys/block/${DEVICE}/queue/scheduler
+
+        # 3. Real-time I/O activity (find the noisy process)
+        sudo iotop -oP -d 5 -n 3
+
+        # 4. Check if a RAID rebuild is running (rebuild paces I/O)
+        cat /proc/mdstat
+
+        # 5. Check queue depth + utilization continuously
+        sudo iostat -xz 1 10
+
+        # Fix paths depending on what step 1-4 reveal:
+        # - SMART degraded -> escalate to smart_failing replacement flow
+        # - Wrong scheduler -> echo mq-deadline > /sys/block/${DEVICE}/queue/scheduler
+        # - RAID rebuild -> wait it out (status in /proc/mdstat shows ETA)
+        # - Noisy process -> nice/ionice or kill the consumer
+      description: |
+        Diagnostic-first workflow. The actual fix depends on what
+        the diagnostics reveal; root causes are too varied to encode
+        as a single command sequence. Common outcomes documented as
+        the trailing comments. SMART-degraded path escalates to the
+        smart_failing rule's workflow.
+
+  # ====== I/O scheduler + queue-depth tuning ======
+  #
+  # The scheduler choice has 5-20% latency impact for the same
+  # workload + device. Pick by device type:
+  #
+  #   NVMe SSDs:        none   (or mq-deadline if you need fairness)
+  #   SATA/SAS SSDs:    none   (or mq-deadline)
+  #   SATA/SAS HDDs:    mq-deadline  (or bfq for desktop-like fairness)
+  #   Virtual disks:    none   (the hypervisor schedules)
+  #
+  # Inspect + set:
+  #   cat /sys/block/<DEVICE>/queue/scheduler
+  #   # Format: "[mq-deadline] none kyber bfq"; the bracketed value
+  #   # is active.
+  #   echo none | sudo tee /sys/block/<DEVICE>/queue/scheduler
+  #
+  # Persist via udev rule:
+  #   cat <<'EOF' | sudo tee /etc/udev/rules.d/60-scheduler.rules
+  #   # Set 'none' scheduler for NVMe devices
+  #   ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/scheduler}="none"
+  #   # Set 'none' for SSDs (rotational=0)
+  #   ACTION=="add|change", KERNEL=="sd[a-z]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="none"
+  #   # Set 'mq-deadline' for spinning disks (rotational=1)
+  #   ACTION=="add|change", KERNEL=="sd[a-z]*", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="mq-deadline"
+  #   EOF
+  #   sudo udevadm control --reload-rules
+  #
+  # Queue depth (nr_requests); increase for high-throughput workloads:
+  #   cat /sys/block/<DEVICE>/queue/nr_requests
+  #   # Default 64 (sd, mq); raise to 256-1024 if throughput-bound.
+  #   echo 256 | sudo tee /sys/block/<DEVICE>/queue/nr_requests
+  #
+  # Read-ahead (read_ahead_kb); helps sequential, hurts random:
+  #   cat /sys/block/<DEVICE>/queue/read_ahead_kb
+  #   # Default 128; tune higher for media/sequential workloads.
+  #
+  # Direct I/O / io_uring (application-side):
+  #   # If the application supports it, O_DIRECT or io_uring can
+  #   # bypass page cache + reduce latency outliers. fio benchmarks
+  #   # show 20-40% p99 latency improvement on NVMe with io_uring.
+  #   # Outside Crucible's purview but the right thing to suggest
+  #   # to the app team if scheduler tuning doesn't help.
+
+  validation:
+    command: |
+      sudo iostat -xz 1 5
+    description: |
+      After the underlying cause is addressed, run iostat for 5
+      seconds and confirm avg-await column is well below the alert
+      threshold (50ms warning / 200ms critical) for the affected
+      device. Re-run several times across different load conditions
+      to confirm the fix held.
+
+  rollback:
+    available: true
+    command: |
+      # Most fixes for high latency are reversible:
+      # - Scheduler change: re-write the old value to /sys/block/.../queue/scheduler
+      # - Process throttling: remove the ionice/nice change
+      # - Configuration tuning (queue depth, readahead, etc.): revert via sysfs
+      # Drive replacement (smart_failing path) is NOT reversible; see that rule.
+      echo "Re-write old scheduler value if it was changed:"
+      echo "  echo <old-scheduler> | sudo tee /sys/block/${DEVICE}/queue/scheduler"
+    note: |
+      Most fix actions for high latency are read-only diagnostics or
+      reversible sysfs/sysctl tweaks. The exception is if SMART
+      confirms drive failure and the fix is replacement; that path
+      is irreversible (see smart_failing's rollback note).
+
+  impact:
+    blast_radius: |
+      Diagnostic commands have no service impact. Scheduler / queue
+      tuning is hot-applied via sysfs and reversible. If the fix is
+      drive replacement, impact mirrors smart_failing.
+    estimated_duration: |
+      Diagnostic phase: 5-10 min. Configuration tuning fix:
+      seconds to apply, an hour or so to monitor stability.
+      Drive replacement (if needed): see smart_failing.
+    irreversible_steps: false
+
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    source_note: |
+      Desk-researched from iostat(1) + iotop(8) + smartctl(8) man
+      pages and the inline evidence.fix_commands array already
+      shipped in the TS evaluator. Promoted the inline commands
+      into variants[0].command. Diagnostic-first workflow modeled
+      on the standard latency-triage flow; root cause selection
+      is left to operator judgment since the fix space is wide.

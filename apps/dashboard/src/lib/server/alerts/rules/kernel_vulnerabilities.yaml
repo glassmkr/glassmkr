@@ -1,0 +1,314 @@
+# kernel_vulnerabilities; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B8.
+# Per-vuln message + operator_action evidence field added 2026-05-22.
+#
+# distro_match split for the kernel + microcode package names which
+# differ between Debian family (intel-microcode / amd64-microcode +
+# linux-image-*) and RHEL family (microcode_ctl / linux-firmware +
+# kernel). Cross-references kernel_needs_reboot; mitigations require
+# a reboot to take effect.
+#
+# Severity is per-host: info if EVERY unmitigated vuln has a kernel
+# software mitigation engaged ("Clear CPU buffers attempted", "Safe
+# RET", "Retpoline"); warning otherwise. PR #154 introduced this
+# downgrade because pure software-band-aid hosts wait on vendor
+# microcode and there is no customer action.
+#
+# Alert evidence carries a `per_vuln` array (one row per unmitigated vuln
+# with state in {software_engaged, actionable} and a human-readable `hint`)
+# and an `operator_action` field in {ack_vendor_side, review}.
+#
+# 2026-07-03 correction (blind-remediation campaign): "Vulnerable: No
+# microcode" is now `actionable`, NOT vendor-side. That sysfs string means
+# the microcode LOADED on this host lacks the mitigation -- fixable by
+# installing/updating the microcode package -- not that the vendor shipped
+# no fix. The old code mapped it to a since-removed
+# `awaiting_microcode_no_software` state -> `ack_vendor_side`, which told
+# operators to ACK an Intel GDS vuln that a Nov-2025 microcode actually
+# fixed (it just needed non-free-firmware enabled). `ack_vendor_side` now
+# fires ONLY when every unmitigated vuln has a software band-aid engaged
+# (the kernel has done its part; the residual is genuinely microcode-
+# dependent) -- and even then the message says to try a microcode update
+# first.
+id: kernel_vulnerabilities
+priority: P2
+# Reboot-cluster grouping (fleet report rec #5): when a reboot is already
+# pending (kernel_needs_reboot is active on the host), fold this under it so the
+# operator sees one "reboot required" incident instead of two scattered kernel
+# alerts; the per-vuln details attach as evidence on the parent. When no reboot
+# is pending, this still fires on its own (subordinate_to only attaches while
+# the parent is active within the correlation window).
+subordinate_to: kernel_needs_reboot
+title: Kernel vulnerability mitigations missing
+summary: |
+  One or more CPU vulnerability mitigations (Spectre, Meltdown, MDS, TSA, Downfall, etc.) report unmitigated or partial coverage in /sys/devices/system/cpu/vulnerabilities/.
+
+  Alert message shows one bullet per unmitigated vuln plus a state hint:
+
+    Unmitigated CPU vulnerabilities:
+    • tsa: Vulnerable: Clear CPU buffers attempted, no microcode  [software band-aid engaged; awaiting AMD microcode]
+    • gather_data_sampling: Vulnerable: No microcode  [update CPU microcode + kernel and reboot; vendor-side only if still Vulnerable afterwards]
+
+  Default action is to update the CPU microcode + kernel packages and reboot (on Debian/Ubuntu the microcode is in the non-free-firmware component; enable it if apt reports no candidate). A vuln is vendor-side (ACK-able) only when a kernel software band-aid is already engaged for every unmitigated vuln AND updating microcode does not clear it. The alert auto-resolves when /sys flips to "Mitigation: ...".
+fix:
+  quick_check:
+    command: |
+      grep -H '.' /sys/devices/system/cpu/vulnerabilities/* 2>/dev/null
+    description: "Per-vulnerability mitigation state from the kernel's sysfs interface. 'Mitigation: ...' lines are protected; 'Vulnerable' lines are unprotected. 'Not affected' is the best state. Microcode/kernel update is the usual fix."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (package updates are non-disruptive at install time)
+    - Maintenance window for reboot (mitigations don't activate until kernel + microcode load on next boot)
+    - Recent backup verified (kernel updates have low but non-zero failure rate; older hardware especially)
+    - "For production: stagger reboots across the fleet so one host's reboot doesn't drop a quorum (DBs, message brokers)"
+  safe_mode:
+    command: |
+      grep . /sys/devices/system/cpu/vulnerabilities/*
+      uname -r
+      # Debian/Ubuntu
+      dpkg -l | grep -iE 'linux-image|intel-microcode|amd64-microcode'
+      # RHEL family
+      rpm -qa kernel microcode_ctl linux-firmware 2>/dev/null
+      # Cross-check upstream advisories
+      ls /usr/share/doc/intel-microcode/changelog.Debian.gz 2>/dev/null
+    description: |
+      Read-only inspection. The grep on /sys/devices/system/cpu/vulnerabilities/
+      shows per-vuln status; what counts as "mitigated" varies
+      (could be "Mitigation: <name>", "Not affected", or
+      "Vulnerable: <reason>"). The evaluator fires when any line
+      contains "Vulnerable" without "Mitigation". Package listing
+      shows current kernel + microcode versions; cross-reference
+      against upstream advisories.
+  variants:
+    # Variant axis (2026-05-18 iteration 2): variants now split on
+    # DISTRO FAMILY only. The previous structure split on motherboard
+    # vendor under the assumption that vendor implies CPU family
+    # (e.g. ASRock/Gigabyte/ASUS -> AMD), but ASUS Z12-series boards
+    # ship Intel Ice Lake / Sapphire Rapids, and ASRock boards often
+    # arrive with the DMI vendor literal "To Be Filled By O.E.M."
+    # which doesn't match any vendor pattern. Both cases were observed
+    # on the validation fleet and caused the wrong FIX to render.
+    # CPU vendor is now auto-detected at command run-time via
+    # /proc/cpuinfo (which is always present + accurate). This also
+    # collapses the Intel and AMD variants into one Debian/Ubuntu
+    # variant, simplifying the rule library.
+    # Narrower commands (2026-05-18 iteration 5): apt + dnf
+    # --only-upgrade silently skip packages that aren't installed,
+    # so we can list every candidate kernel meta-package + every
+    # candidate microcode package on one line and let the package
+    # manager pick. No shell-side CPU-vendor / kernel-meta-package
+    # detection needed. Customer-facing FIX drops from ~80 lines to
+    # ~10 lines. Long-form guidance for the "0 upgrades + still
+    # Vulnerable" case moves to the rule's description field where
+    # it's discoverable but not in the copy-paste block.
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Current vulnerability state
+        grep . /sys/devices/system/cpu/vulnerabilities/* 2>/dev/null
+
+        # 2. Microcode package for this CPU vendor (auto-detected from
+        #    /proc/cpuinfo; no more listing an arm64 kernel on an amd64 box).
+        if grep -qi 'vendor_id.*AMD' /proc/cpuinfo; then MC=amd64-microcode; else MC=intel-microcode; fi
+        echo "CPU microcode package: $MC"
+
+        # 3. Make sure the microcode package is reachable. "Vulnerable: No
+        #    microcode" almost always means the package simply is not installed
+        #    -- not that the vendor shipped no fix. On minimal Debian the
+        #    microcode lives in the non-free-firmware component, which is
+        #    DISABLED by default, so apt reports "no installation candidate".
+        #    Enable it when the candidate is missing.
+        sudo apt update
+        if ! apt-cache policy "$MC" 2>/dev/null | grep -q 'Candidate: [0-9]'; then
+          echo "No candidate for $MC -- enabling the non-free component"
+          # Debian 12/13 deb822 sources: add non-free-firmware to Components.
+          if [ -f /etc/apt/sources.list.d/debian.sources ]; then
+            sudo sed -i '/^Components:/{/non-free-firmware/!s/$/ non-free-firmware/}' /etc/apt/sources.list.d/debian.sources
+          fi
+          # Ubuntu keeps microcode in restricted/multiverse (usually enabled):
+          command -v add-apt-repository >/dev/null 2>&1 && sudo add-apt-repository -y multiverse restricted 2>/dev/null || true
+          sudo apt update
+        fi
+        apt-cache policy "$MC" 2>/dev/null | grep -q 'Candidate: [0-9]' || \
+          echo "Still no $MC candidate -- enable non-free-firmware (Debian) or multiverse+restricted (Ubuntu) by hand, then re-run."
+
+        # 4. Install microcode (install, NOT --only-upgrade, so it lands even
+        #    when it was never present) + upgrade the kernel.
+        sudo apt install -y "$MC"
+        if command -v pveversion >/dev/null 2>&1; then
+          echo "Proxmox: kernel ships via proxmox-kernel-*; the microcode above is the relevant piece."
+        else
+          sudo apt install -y --only-upgrade linux-image-amd64 linux-image-generic libc6
+        fi
+
+        # 5. Reboot to activate (microcode + kernel load at boot).
+        sudo glassmkr-crucible reboot --reason "kernel/microcode update"
+      description: |
+        Debian/Ubuntu. The CPU vendor is auto-detected from /proc/cpuinfo
+        to pick intel-microcode vs amd64-microcode. Key fix over the old
+        recipe: "Vulnerable: No microcode" usually means the microcode
+        package is simply not installed, not that the vendor shipped no fix
+        -- and on minimal Debian the microcode lives in the
+        non-free-firmware component that is disabled by default, so a plain
+        install fails with "no installation candidate". Step 3 detects that
+        and enables the component (deb822 debian.sources on Debian 12/13;
+        multiverse + restricted on Ubuntu) before installing. Step 4 uses
+        `apt install` (not --only-upgrade, which silently skips a package
+        that was never present). Reboot required (see kernel_needs_reboot).
+
+        Only if a vuln is STILL "Vulnerable" after updating microcode and
+        rebooting is it genuinely vendor-side: then the residual is your CPU
+        vendor shipping a fix for your SKU. Watch
+        /usr/share/doc/{intel,amd64}-microcode/changelog.Debian.gz and ACK
+        the alert with that rationale.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        grep . /sys/devices/system/cpu/vulnerabilities/* 2>/dev/null
+        grep -m1 microcode /proc/cpuinfo    # note the RUNNING revision
+        sudo dnf update -y kernel microcode_ctl linux-firmware
+
+        # If dnf reported "Nothing to do" but old_microcode is still
+        # Vulnerable, the newer microcode is likely installed on disk but
+        # never LOADED: RHEL applies Intel microcode from the early
+        # initramfs, and a stale initramfs keeps booting the old revision
+        # (dmesg shows "Running old microcode"; microcode_ctl stages
+        # firmware under /usr/lib/firmware/<kver>/intel-ucode/).
+        # Rebuild the initramfs so it embeds the packaged revision:
+        sudo dracut -f
+
+        # Reboot to activate (see kernel_needs_reboot)
+        sudo glassmkr-crucible reboot --reason "kernel/microcode update"
+
+        # Post-boot: the running revision must have increased.
+        grep -m1 microcode /proc/cpuinfo
+      description: |
+        RHEL family. dnf handles CPU vendor detection (microcode_ctl
+        for Intel, linux-firmware for AMD) so neither side needs
+        explicit vendor selection. Reboot required.
+
+        The dracut step covers the stale-initramfs case (found live on
+        Rocky 10 by the validation campaign): microcode_ctl already at
+        the newest version, yet the loaded revision is older because the
+        boot initramfs predates the package. A package update alone is a
+        no-op there; regenerating the initramfs is the actual fix. dracut
+        -f is idempotent and safe when versions already match.
+
+        If the alert returns at INFO severity post-reboot, kernel
+        software mitigation is engaged and the only blocker is
+        upstream microcode availability; watch
+        `rpm -q --changelog microcode_ctl | head -50`. WARNING
+        severity post-reboot means no software mitigation possible;
+        same ACK path, higher residual risk.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        grep . /sys/devices/system/cpu/vulnerabilities/* 2>/dev/null
+        if command -v apt >/dev/null 2>&1; then
+          if grep -qi 'vendor_id.*AMD' /proc/cpuinfo; then MC=amd64-microcode; else MC=intel-microcode; fi
+          sudo apt update
+          # "No microcode" usually just means the package is not installed.
+          # On Debian it lives in non-free-firmware (disabled by default);
+          # enable it if apt reports no candidate.
+          if ! apt-cache policy "$MC" 2>/dev/null | grep -q 'Candidate: [0-9]'; then
+            [ -f /etc/apt/sources.list.d/debian.sources ] && sudo sed -i '/^Components:/{/non-free-firmware/!s/$/ non-free-firmware/}' /etc/apt/sources.list.d/debian.sources
+            command -v add-apt-repository >/dev/null 2>&1 && sudo add-apt-repository -y multiverse restricted 2>/dev/null || true
+            sudo apt update
+          fi
+          sudo apt install -y "$MC"
+          sudo apt install -y --only-upgrade linux-image-amd64 linux-image-generic libc6
+        elif command -v dnf >/dev/null 2>&1; then
+          sudo dnf update -y kernel microcode_ctl linux-firmware
+          # Stale-initramfs guard: on RHEL the microcode loads from the early
+          # initramfs; rebuild it so an already-installed newer revision
+          # actually gets applied (no-op when versions already match).
+          sudo dracut -f
+        fi
+
+        # Reboot to activate (see kernel_needs_reboot)
+        sudo glassmkr-crucible reboot --reason "kernel/microcode update"
+      description: |
+        Distro-unknown fallback. Detects apt vs dnf and runs the
+        equivalent of the distro-specific variants: auto-detects the CPU
+        vendor's microcode package, enables non-free-firmware/multiverse if
+        apt has no candidate, then installs microcode + upgrades the kernel.
+        Same "vendor-side only if still Vulnerable after updating" guidance
+        as the Debian and RHEL variants.
+  validation:
+    command: |
+      grep . /sys/devices/system/cpu/vulnerabilities/*
+      # Per-vuln summary table:
+      for v in /sys/devices/system/cpu/vulnerabilities/*; do
+        echo "$(basename $v): $(cat $v)"
+      done | column -ts:
+      # CPU microcode version check (post-update):
+      grep -m1 microcode /proc/cpuinfo
+    description: |
+      After fix + reboot, confirm:
+      - No /sys/devices/system/cpu/vulnerabilities/* file contains
+        "Vulnerable:" without a "Mitigation:" prefix
+      - microcode revision in /proc/cpuinfo matches the package
+        version installed (`rpm -qa | grep microcode` or
+        `dpkg -l | grep microcode`)
+      - RHEL family: if the revision did NOT change across the reboot,
+        the initramfs was not regenerated; run `sudo dracut -f` and
+        reboot again (see the RHEL variant).
+      Many vulns will show "Mitigation: <name>" indicating they're
+      now handled. Some show "Not affected" (hardware-immune).
+
+      Vuln-name to CVE reference (for tickets / changelogs):
+        spec_store_bypass    -> Speculative Store Bypass (Spectre v4)
+        spectre_v1           -> Bounds Check Bypass
+        spectre_v2           -> Branch Target Injection
+        meltdown             -> Rogue Data Cache Load
+        l1tf                 -> L1 Terminal Fault (Intel)
+        mds                  -> Microarchitectural Data Sampling
+        tsx_async_abort      -> Intel TAA
+        itlb_multihit        -> iTLB multihit
+        srbds                -> Special Register Buffer Data Sampling
+        mmio_stale_data      -> MMIO Stale Data (Intel)
+        retbleed             -> Branch History Buffer (AMD/Intel)
+        gather_data_sampling -> Intel Downfall (GDS)
+        tsa                  -> Transient Scheduler Attack (AMD)
+        srso                 -> Speculative Return Stack Overflow (AMD)
+
+      Re-firing the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Kernel + microcode downgrade is technically possible (apt
+      install <pkg>=<old>; dnf install <kernel-old>) but rarely
+      the right move; the OLD package is the vulnerable one and
+      downgrade re-exposes the host. If the new kernel boots
+      badly (driver regression), the kernel boot menu lets you
+      select the previous kernel at boot; not a "rollback" but
+      a forward-recovery path.
+  impact:
+    blast_radius: |
+      Package install: no service impact. Reboot (required to
+      activate mitigations) is the disruptive step; host offline
+      ~1-5 minutes including POST. Stagger reboots across fleet
+      for HA workloads.
+    estimated_duration: |
+      Package update: 5-15 minutes. Reboot incl. POST: 1-5 minutes.
+      Total maintenance window: 10-30 minutes per host.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from intel-microcode(8), amd64-microcode(8),
+      kernel package docs (apt + dnf), proc(5) sysfs CPU
+      vulnerabilities tree. Vendor-specific microcode package
+      mapping (Intel -> intel-microcode vs AMD -> amd64-microcode
+      on apt; both via microcode_ctl + linux-firmware on dnf) is
+      from desk research; not validation-fleet tested per the
+      vendor_match constraint (would require deliberately rolling
+      back microcode on a live box, security regression). Cross-
+      references kernel_needs_reboot for the activation step.
+
+      Pattern library 2026-05-18: Category 7 (system state). Trigger redesign to CVE security-update state (per spec §3.24) deferred until Crucible C13 ships distribution-aware CVE pending. Today the rule reads /sys/devices/system/cpu/vulnerabilities/ and uses the kernel-software-mitigation phrase detection added 2026-05-18 (PR #154) to downgrade severity to info when the kernel software fix is engaged.

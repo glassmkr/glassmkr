@@ -1,0 +1,220 @@
+# interface_errors; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B5, using the condition_match
+# dimension on the `driver` attribute (the evaluator emits one of
+# "errors" for hardware-layer faults or "drops" for software-layer
+# backpressure, with severity orthogonally tier=red|yellow).
+#
+# Operator decision boundary is the driver (hardware vs software),
+# not severity; both paths take different actions even at the same
+# tier. Severity (tier) shapes urgency but not approach. The two
+# main variants split on driver; an additional fallback covers
+# missing-evidence.
+id: interface_errors
+priority: P2
+title: Interface errors high
+summary: Network interface reports elevated CRC / frame / carrier errors (physical layer) OR elevated packet drops (software ring/softirq layer). Tier red = critical (cable swap or kernel tuning urgent); tier yellow = warning.
+fix:
+  quick_check:
+    command: |
+      # Per-interface delta over 5s. Catches the rate at which errors/drops
+      # are accumulating now, not the lifetime cumulative (which is noisy on
+      # long-uptime hosts where 200k cumulative drops over a year is normal).
+      ifaces=$(ip -br link show up | awk '$1!="lo"{print $1}')
+      for i in $ifaces; do
+        a=$(awk -v IF=$i 'index($0, IF":"){print $4, $5, $12, $13}' /proc/net/dev)
+        printf "%s baseline: %s\n" "$i" "$a"
+      done
+      sleep 5
+      for i in $ifaces; do
+        b=$(awk -v IF=$i 'index($0, IF":"){print $4, $5, $12, $13}' /proc/net/dev)
+        printf "%s after5s : %s   # rx_err rx_drop tx_err tx_drop\n" "$i" "$b"
+      done
+      # Cumulative + per-driver detail (replace eth0 with alert's interface):
+      ip -s -s link show
+      sudo ethtool -S eth0 2>/dev/null | grep -iE 'err|drop|fail|crc' | head -20
+    description: "Per-interface error/drop counter delta over 5 seconds (rate, not lifetime cumulative). Long-uptime hosts often have large historical drop counts that are pre-existing scar tissue; the rule fires on recent rate. Cumulative + per-driver ethtool detail follow for root-cause. BENIGN CASE to rule in or out FIRST: rx_dropped climbing while rx_errors, CRC, missed, fifo, and no-buffer counters are ALL zero on a public-facing interface is usually unsolicited traffic the host correctly discards (broadcast/multicast/scans; on Intel ixgbe the delta shows up as fdir_miss). That is not a fault and no amount of ring-buffer tuning removes it; acknowledge with that rationale instead of tuning further. Ring/softirq tuning is for the case where no-buffer/missed/fifo counters are climbing."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (diagnosis is non-disruptive; physical-layer fixes need on-site or remote-hands)
+    - "For driver=errors path: replacement cable / SFP / transceiver on hand if hardware is confirmed"
+    - "For driver=drops path: tolerance for tuning sysctls (typically reversible)"
+    - Awareness of interface role (uplink, bond slave, dedicated storage NIC, etc.) so the blast radius of physical work is understood
+  safe_mode:
+    command: |
+      ip -s link show <INTERFACE>
+      sudo ethtool -S <INTERFACE> | egrep -i 'err|drop|crc|miss|fault|timeout|reset|fifo|overrun'
+      sudo ethtool <INTERFACE>
+      sudo ethtool -m <INTERFACE> 2>/dev/null || echo "(no SFP / not a fiber port)"
+      sudo dmesg -T | grep -iE '<INTERFACE>|link' | tail -30
+    description: |
+      Read-only inspection. `ip -s link` shows the rolling RX/TX
+      error/drop counters. `ethtool -S` exposes the driver-specific
+      detailed stats; the column names here are the leading clue
+      to the failure mode. `ethtool -m` reads the SFP module
+      diagnostics (DDM) on fiber ports; high optical Rx errors
+      point at a dirty fiber connector.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: driver
+        op: eq
+        value: errors
+      command: |
+        # Hardware-layer path (driver=errors).
+        # CRC / frame / fifo / carrier errors -> physical layer
+        # fault (cable, SFP, NIC port).
+
+        # 1. Confirm hardware errors via driver stats
+        sudo ethtool -S <INTERFACE> | egrep -i 'crc|frame|fifo|carrier|err'
+
+        # 2. Optical diagnostics if applicable (fiber)
+        sudo ethtool -m <INTERFACE> 2>/dev/null
+        # Look for: high "Rx optical power" deviation, "Laser
+        # output power" out of spec.
+
+        # 3. NIC self-test
+        sudo ethtool -t <INTERFACE>
+
+        # 4. Driver-level link flap evidence
+        sudo dmesg -T | grep -iE '<INTERFACE>|link' | tail -30
+
+        # 5. Physical fixes in order of likelihood:
+        #    a) Reseat the cable (both ends)
+        #    b) Swap the cable
+        #    c) Swap the SFP transceiver (if applicable)
+        #    d) Try a different switch port
+        #    e) Replace the NIC (last resort; usually chassis swap
+        #       or PCIe card swap depending on form factor)
+
+        # For tier=red: act NOW. For tier=yellow: schedule at next
+        # maintenance window.
+      description: |
+        Hardware-layer (driver=errors) path. Confirm via ethtool -S,
+        check SFP DDM if optical, run self-test, then escalate
+        cable -> SFP -> port -> NIC. Tier=red indicates urgent;
+        tier=yellow allows scheduled action.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: driver
+        op: eq
+        value: drops
+      command: |
+        # Software-layer path (driver=drops).
+        # No CRC errors, but packets are being dropped at the ring
+        # buffer / softirq layer -> tuning fix, not hardware.
+
+        # 1. Confirm the drops are software, not hardware
+        sudo ethtool -S <INTERFACE> | egrep -i 'drop|miss|overrun|no_buff'
+        # rx_no_buffer_count / rx_missed_errors / fifo / dropped
+        # = ring buffer too small.
+        #
+        # Vendor counter naming map (read the column that matches
+        # your NIC's driver; `ethtool -i <INTERFACE>` shows the
+        # driver):
+        #
+        #   Intel ixgbe (10G):     rx_no_buffer_count, rx_missed_errors
+        #   Intel i40e (40G XL):   rx_dropped, rx_unknown_protocol
+        #   Intel ice (E810):      rx_dropped, rx_oversize, rx_missed
+        #   Intel igb (1G):        rx_no_buffer_count, rx_missed_errors
+        #   Mellanox mlx4 (CX-3):  rx_dropped, rx_alloc_failed
+        #   Mellanox mlx5 (CX-4+): rx_out_of_buffer, rx_steer_missed_packets
+        #   Broadcom bnxt (CX-5/6): rx_discards, rx_drop_pkts
+        #   Broadcom tg3 (older):  rx_discards
+        #   Realtek r8169:         rx_missed (basic; treat as catch-all)
+        #   Aquantia atlantic:     RxDroppedPackets
+        #   virtio (VMs):          rx_queue_N_drops
+        #   tg / cisco/enic:       rxq_no_disp_rsrc, rxq_rx_pkts_no_skb
+        #
+        # The naming convention varies but the SEMANTICS are stable:
+        # "ring buffer overflow" + "alloc failure" + "missed packet"
+        # are the three to look for in any driver's output.
+
+        # 2. Inspect current ring buffer sizes
+        sudo ethtool -g <INTERFACE>
+        # Current vs Pre-set maximums.
+
+        # 3. Increase the RX ring buffer (immediate; doesn't survive
+        #    reboot; persist via systemd-networkd / netplan if kept)
+        # sudo ethtool -G <INTERFACE> rx 4096
+
+        # 4. Check softirq pressure on the CPU(s) handling this NIC
+        cat /proc/softirqs | head -1
+        cat /proc/softirqs | grep -E 'NET_RX|NET_TX'
+        # Look for one CPU column dominating -> IRQ affinity issue.
+
+        # 5. NIC queue / CPU affinity (advanced)
+        sudo ethtool -l <INTERFACE>   # queue counts
+        # cat /proc/interrupts | grep <INTERFACE>   # IRQ distribution
+        # Consider spreading interrupts across CPUs with `irqbalance`
+        # or manual /proc/irq/<N>/smp_affinity tuning.
+
+        # 6. For tier=red: tune ring buffer + escalate to networking
+        #    SME if drops persist. For tier=yellow: schedule tuning
+        #    investigation at maintenance window.
+      description: |
+        Software-layer (driver=drops) path. Ring buffer tuning is
+        the first lever; softirq / IRQ affinity is the second.
+        Hardware path is explicitly NOT this variant; if you're
+        seeing CRC errors, fall into the driver=errors variant
+        instead.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: driver attribute missing (older Crucible) or
+        # unrecognized. Run the full diagnostic; classify manually.
+        ip -s link show <INTERFACE>
+        sudo ethtool -S <INTERFACE> 2>/dev/null | egrep -i 'err|drop|crc|miss|fault|timeout|reset|fifo|overrun'
+        sudo ethtool <INTERFACE>
+      description: |
+        Missing-evidence fallback. Run diagnostic + classify
+        hardware (CRC / frame / fifo errors) vs software (rx_no_buffer
+        / missed) manually before acting.
+  validation:
+    command: |
+      ip -s link show <INTERFACE>
+      sudo ethtool -S <INTERFACE> | egrep -i 'err|drop'
+    description: |
+      After fix, the relevant counter should stop incrementing.
+      Note: the kernel doesn't reset counters; you're watching the
+      delta over time, not an absolute zero. Re-firing the alert
+      after the next 5-min interval is the negative validation.
+  rollback:
+    available: true
+    command: |
+      # Ring buffer change is reversible:
+      sudo ethtool -G <INTERFACE> rx <ORIGINAL_VALUE>
+      # SFP / cable swap: physically swap back the original part.
+    note: |
+      Software tunes (ring buffer size, IRQ affinity) are fully
+      reversible. Hardware replacement isn't "rolled back" but
+      the original part is usually retained for warranty / RMA
+      until confirmed dead.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Ring buffer resize
+      (`ethtool -G`) causes a brief interface reset (~1 second);
+      services with strict sub-second timeouts may notice. Cable /
+      SFP swap requires brief link-down; minimize impact by
+      working on bond slaves one at a time.
+    estimated_duration: |
+      Diagnosis: 5-15 minutes (longer for software path since the
+      stats names are obscure). Ring buffer tune: <1 minute.
+      Hardware swap: 1-15 minutes depending on form factor.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from ethtool(8), ip(8), proc(5)
+      (/proc/softirqs, /proc/interrupts). The hardware vs software
+      classification mirrors the evaluator's tier/driver split
+      (see evaluateInterfaceErrors in evaluator.ts). Glassmkr ops
+      hit the ring-buffer overflow case on services-1 with high
+      traffic to ClickHouse; ethtool -G rx 4096 cleared it.
+
+      Pattern library 2026-05-18: Category 4 (network). CRC vs buffer severity split (per spec §3.17) and vendor-specific counter mappings deferred until Crucible C-series ships per-vendor counters (ixgbe rx_no_buffer_count, mlx5 rx_out_of_buffer, etc).

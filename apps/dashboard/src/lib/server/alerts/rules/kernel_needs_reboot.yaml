@@ -1,0 +1,186 @@
+# kernel_needs_reboot; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B8.
+#
+# Single-severity rule (always warning). Light distro split for the
+# detection helper (apt: /var/run/reboot-required; dnf: needs-restarting);
+# the actual reboot command is universal. Cross-references
+# kernel_vulnerabilities (upstream cause) and pending_security_updates
+# (which usually introduces the new kernel package that triggers this rule).
+id: kernel_needs_reboot
+priority: P2
+title: Reboot required (newer kernel installed)
+summary: A newer kernel package is installed on disk but the running kernel is older. Security patches in the new kernel are not active until reboot.
+fix:
+  quick_check:
+    command: |
+      # Debian/Ubuntu reboot-required flag:
+      [ -f /var/run/reboot-required ] && cat /var/run/reboot-required.pkgs
+      # Currently-booted kernel vs installed kernels:
+      echo "Running: $(uname -r)"
+      echo "Installed:"; ls -t /boot/vmlinuz-* 2>/dev/null | head -5
+      # RHEL/Rocky needs-restarting:
+      sudo needs-restarting -r 2>/dev/null
+    description: "Three signals: the Debian flag file, the running-vs-installed kernel mismatch (a newer kernel installed than the one running), and needs-restarting on RHEL-family. Any one being a positive signal means schedule a reboot."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (the reboot itself is the disruptive event)
+    - Maintenance window declared (reboot causes 1-5 minute outage incl. POST)
+    - "For HA workloads: ensure quorum / failover is healthy on the OTHER hosts before rebooting this one (DBs, brokers, etcd, etc.)"
+    - Backup verified (rare boot failures after kernel update do happen, especially on older hardware)
+    - "If unattended: a fallback recovery method (hosting panel, IPMI, KVM) in case the new kernel fails to boot"
+  safe_mode:
+    command: |
+      uname -r
+      ls /boot/vmlinuz-* | sort -V | tail -5
+      # Debian/Ubuntu
+      cat /var/run/reboot-required 2>/dev/null
+      cat /var/run/reboot-required.pkgs 2>/dev/null
+      # RHEL family
+      sudo needs-restarting -r 2>/dev/null
+      # Cross-check what's installed vs running
+      dpkg -l | grep -E '^ii  linux-image-(unsigned-)?[0-9]' 2>/dev/null
+      rpm -qa kernel kernel-core kernel-default kernel-uek 2>/dev/null
+    description: |
+      Read-only inspection. `uname -r` is the running kernel;
+      /boot/vmlinuz-* sorted is the installed kernels. The two
+      detection helpers (reboot-required + needs-restarting -r)
+      are the canonical signals each package manager exposes;
+      both match the evaluator's input.
+  variants:
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        # Debian/Ubuntu reboot path.
+
+        # 1. Confirm the gap
+        uname -r
+        ls /boot/vmlinuz-* | sort -V | tail -3
+        cat /var/run/reboot-required 2>/dev/null
+        cat /var/run/reboot-required.pkgs 2>/dev/null
+
+        # 2. Schedule a reboot
+        # Immediate (test environments only):
+        # sudo systemctl reboot
+        # With a delay (production; gives clients a chance to drain):
+        # sudo shutdown -r +5 "Rebooting for kernel update in 5 minutes"
+
+        # 3. Tell Crucible this is a planned reboot (suppresses the
+        #    unexpected_reboot alert that would otherwise fire on
+        #    next snapshot):
+        sudo glassmkr-crucible mark-reboot --reason "kernel update"
+
+        # 4. Confirm new kernel is running after boot
+        # uname -r
+        # cat /proc/version
+      description: |
+        Debian/Ubuntu reboot path. mark-reboot tells the agent
+        the reboot is operator-acknowledged; the unexpected_reboot
+        evaluator suppresses correctly on next-snapshot detection.
+        shutdown -r +N is the operator-friendly form (gives notice
+        + writes to wall).
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        # RHEL family reboot path.
+
+        # 1. Confirm the gap (needs-restarting helper)
+        uname -r
+        sudo needs-restarting -r
+        rpm -qa kernel kernel-core kernel-default kernel-uek
+
+        # 2. Schedule a reboot
+        # sudo systemctl reboot
+        # sudo shutdown -r +5 "Rebooting for kernel update in 5 minutes"
+
+        # 3. Mark as planned
+        sudo glassmkr-crucible mark-reboot --reason "kernel update"
+
+        # 4. Confirm post-boot
+        # uname -r
+      description: |
+        RHEL family reboot path. Same flow as Debian; the only
+        difference is `needs-restarting -r` instead of
+        /var/run/reboot-required for confirmation pre-reboot.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: distro unknown. Universal reboot flow.
+
+        # 1. Confirm the gap
+        uname -r
+        ls /boot/vmlinuz-* | sort -V | tail -3
+
+        # 2. Mark + reboot
+        sudo glassmkr-crucible mark-reboot --reason "kernel update"
+        sudo shutdown -r +5 "Rebooting for kernel update in 5 minutes"
+
+        # 3. Confirm post-boot
+        # uname -r
+      description: |
+        Fallback for unknown distro. Universal reboot pattern
+        without the distro-specific detection helper.
+  validation:
+    command: |
+      uname -r
+      ls /boot/vmlinuz-* | sort -V | tail -3
+    description: |
+      After reboot, confirm:
+      - uname -r matches the newest installed kernel in /boot
+      - No new reboot-required signal in /var/run/ (Debian) or
+        needs-restarting -r (RHEL) reports nothing
+      Re-firing the alert means the reboot didn't load the new
+      kernel; check boot menu / GRUB default.
+  rollback:
+    available: false
+    command: null
+    note: |
+      A reboot isn't reversible. If the new kernel boots but
+      misbehaves, select the previous kernel from the boot menu
+      on next reboot (not a "rollback" but a forward-recovery
+      path). If the new kernel fails to boot entirely, console /
+      IPMI / hosting-panel intervention is needed to pick the
+      previous kernel from GRUB.
+
+      Zero-downtime alternatives (avoid the reboot altogether):
+        - kpatch (Red Hat / SUSE) applies kernel patches at
+          runtime without reboot. `kpatch list`; `kpatch install`.
+          Available for kernels built by the distro vendor;
+          requires kpatch-rt or kpatch packages installed.
+        - Canonical Livepatch (Ubuntu Pro): runtime kernel
+          patching service; `sudo canonical-livepatch status`.
+          Reboot still eventually required for ABI-changing
+          patches (KABI breaks); livepatch covers most CVEs in
+          the gap.
+        - HA failover: if this host is in a cluster, drain it
+          first (`kubectl drain`, pcs cluster standby, etc.),
+          reboot, then re-add to the active rotation. Customer-
+          facing downtime: zero.
+  impact:
+    blast_radius: |
+      Reboot causes full-host downtime ~1-5 minutes including
+      BIOS POST + kernel load + service startup. All non-
+      persistent state is lost (memory caches, open sockets).
+      Services should restart automatically via systemd; ensure
+      no critical service has manual-start-only config.
+    estimated_duration: |
+      Reboot itself: 1-5 minutes incl. POST + service startup.
+      Cooldown (services warming up): 2-10 minutes depending
+      on workload (DBs especially have a settling period).
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from systemctl(1) reboot, shutdown(8),
+      glassmkr-crucible mark-reboot (Glassmkr-specific). The two
+      detection helpers (reboot-required on apt, needs-restarting
+      on dnf) are canonical; both verified on the validation
+      fleet during routine patching cycles. Reboot itself was
+      validation-fleet-tested as part of the planned-reboot
+      Crucible feature work in 2026-04. Cross-references
+      unexpected_reboot via the mark-reboot suppression path.
+
+      Pattern library 2026-05-18: Category 7 (system state). Both needs-restarting -r (RHEL family) and /var/run/reboot-required (Debian/Ubuntu) covered. Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

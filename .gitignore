@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+.svelte-kit/
+.turbo/
+.env
+.env.*
+!.env.example
+# Legacy env files found in git history by the 2026-05-22 secret-scan
+# (.forge-env, .email-env). Not in HEAD; ignore so they can't be
+# recommitted. The hyphen-style naming slipped past the .env* globs.
+.*-env
+*.log
+.DS_Store
+# Local preview/scratch dir (HTML mockups, screenshots, working notes served
+# via a local http.server). Not deploy artifacts; keep out of git.
+.preview/
+
+# Cloudflare Pages build output (apps/status)
+apps/status/.svelte-kit/
+apps/status/.wrangler/

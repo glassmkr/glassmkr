@@ -1,0 +1,233 @@
+# server_unreachable; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B8.
+#
+# UNIQUE among the 38 rules: this one is NOT in evaluator.ts. It's
+# emitted by apps/dashboard/src/lib/server/watchdog.ts (lines 35-123,
+# entry point: runWatchdogCycle), because the trigger condition
+# (no snapshot received in N minutes) is cross-snapshot and can't be
+# evaluated from a single snapshot. The coverage test explicitly
+# acknowledges this exception.
+#
+# Single-severity rule (always critical). Main + fallback. The alert
+# auto-resolves on next successful snapshot; there's no "apply fix"
+# step in the traditional sense; the workflow is diagnostic, with
+# the actual recovery action being either restart-collector or
+# hosting-panel intervention.
+#
+# Migration-stub fix: the original migration stub referenced
+# `glassmkr-collector` as the service name. The watchdog source
+# (buildFixCommands at watchdog.ts:57-69) uses `glassmkr-crucible`,
+# which is the correct current name. This YAML matches the watchdog.
+id: server_unreachable
+priority: P1
+title: Server unreachable
+summary: Dashboard has not received a snapshot from this server in 2x the configured collection interval (default 10 minutes). Either the Crucible agent stopped reporting, the network is down, or the server is offline. Alert auto-resolves on next successful snapshot.
+fix:
+  quick_check:
+    command: |
+      # Run these from a host that can reach the server (your jump host, your laptop, etc.):
+      ping -c3 ${SERVER:-server-hostname}
+      ssh ${SERVER:-server-hostname} 'systemctl status glassmkr-crucible --no-pager; date -u; uptime'
+      # Or check the BMC if SSH is also down:
+      sudo ipmitool -I lanplus -H ${SERVER_BMC:-server-bmc} -U ${BMC_USER:-admin} -P "$BMC_PASS" chassis status
+    description: "Server stopped reporting to the dashboard (>10 minutes since last snapshot). From a host that can still reach it: ping for L3 reachability, SSH for OS + Crucible service state, BMC for hardware-level state when the OS is down."
+  verdict_prior: investigation
+  prerequisites:
+    - "Network reachability test target: server hostname or IP from the snapshot's last evidence"
+    - "For SSH path: SSH access to the unreachable server (assumes network is up but agent is the issue)"
+    - "For console path: hosting panel / IPMI / KVM access if SSH is unreachable too"
+    - Awareness that this alert auto-resolves on the next successful snapshot, so any fix that lands within the next collection interval will clear it
+  safe_mode:
+    command: |
+      # Network-level reachability check
+      ping -c 3 <SERVER>
+
+      # If on the same network, ARP check
+      arp -n | grep -i <SERVER> 2>/dev/null
+
+      # If you have SSH access, the agent's own status
+      ssh <SERVER> 'sudo systemctl status glassmkr-crucible'
+      ssh <SERVER> 'sudo journalctl -u glassmkr-crucible -n 20 --no-pager'
+
+      # Crucible has its own status command (Crucible 0.8.0+)
+      ssh <SERVER> 'systemctl is-active glassmkr-crucible 2>/dev/null'
+    description: |
+      Read-only triage. The first two probes test network
+      reachability (ping is universally available; arp is useful
+      when the server is on the same L2 segment). The SSH probes
+      then test the agent state assuming the network is OK.
+      Substitute <SERVER> with the hostname / IP from the alert's
+      evidence.last_seen_iso row.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: classify the failure mode first, then take
+        # the right action. Four common scenarios:
+        #
+        #   A. Network up, agent stopped/crashed       (most common)
+        #   B. Network up, agent running but API key revoked
+        #   C. Network up, clock skew breaks TLS
+        #   D. Server actually offline (power, network, kernel)
+
+        # === Scenario triage ===
+
+        # 1. Test network reachability
+        ping -c 3 <SERVER>
+        # If ping fails -> scenario D (server offline);
+        # skip to step 6.
+
+        # 2. Test SSH (more authoritative than ping; SSH proves
+        # the host's userspace is alive)
+        ssh -o ConnectTimeout=5 <SERVER> 'uptime'
+        # If SSH fails but ping works -> network filter or sshd
+        # down; investigate the host's firewall + sshd, then
+        # if needed jump to scenario D.
+
+        # === Scenario A: agent stopped/crashed (most common) ===
+
+        # 3. Check the agent's systemd state
+        ssh <SERVER> 'sudo systemctl status glassmkr-crucible'
+        ssh <SERVER> 'sudo journalctl -u glassmkr-crucible -n 50 --no-pager'
+
+        # 4. If stopped/failed, restart
+        ssh <SERVER> 'sudo systemctl restart glassmkr-crucible'
+
+        # 5. Verify the agent is sending again
+        ssh <SERVER> 'sudo journalctl -u glassmkr-crucible -f --no-pager' &
+        # Wait for "snapshot ingested" or equivalent + Ctrl+C.
+
+        # === Scenario B: API key revoked ===
+
+        # If the journal shows 401 / 403 / "invalid_token" errors,
+        # the dashboard has revoked the host's API key. Issue a
+        # new key in the Dashboard UI -> Settings -> API keys ->
+        # Generate, then update on the host:
+        # ssh <SERVER> 'sudo /etc/glassmkr/keys'
+        # ssh <SERVER> 'sudo systemctl restart glassmkr-crucible'
+
+        # === Scenario C: clock skew (TLS validation) ===
+
+        # If the journal shows "x509: certificate has expired or is
+        # not yet valid" or similar TLS errors:
+        ssh <SERVER> 'timedatectl status'
+        # If clock is drifted -> see clock_drift / ntp_not_synced
+        # workflows.
+
+        # === Scenario D: server actually offline ===
+
+        # 6. Hosting-panel / IPMI / KVM intervention.
+        #
+        # Bare-metal; per-vendor BMC entry points:
+        #   - Supermicro:  https://<bmc-ip>/ -> Remote Control -> iKVM/HTML5
+        #                  -> Server Health -> Health Event Log
+        #   - Dell iDRAC:  https://<idrac-ip>/ -> Maintenance -> Lifecycle Log
+        #                  -> Server -> Power/Thermal -> Power Control
+        #                  -> CLI: racadm getsysinfo  /  racadm serveraction status
+        #   - HPE iLO:     https://<ilo-ip>/ -> Information -> Integrated Mgmt Log
+        #                  -> Power -> Server Power
+        #                  -> CLI: ilorest serverstate  /  ilorest serverstate poweron
+        #   - Lenovo XClarity: https://<xcc-ip>/ -> Events -> Event Log
+        #                      -> CLI: OneCli config show ServerInfo
+        #
+        # Cloud; per-provider entry points:
+        #   - AWS EC2:  Console -> EC2 -> Instances -> select -> Actions ->
+        #               Monitor and troubleshoot -> Get system log / Get
+        #               console output (last 64 KB of boot output);
+        #               also "Instance status checks" tab for the 2/2
+        #               check breakdown.
+        #   - GCP:      Console -> Compute Engine -> VM Instances -> select ->
+        #               Logs -> Serial console output (live!); or
+        #               `gcloud compute instances get-serial-port-output`.
+        #   - Hetzner / OVH / other providers:  Provider portal usually exposes
+        #               IPMI iKVM via "Rescue" or "Remote console" menu;
+        #               same vendor BMC URLs as above once you're in.
+        #
+        # - If just power-cycled: wait 5-10 minutes for boot + agent
+        #   start; alert should auto-clear.
+        # - If kernel won't boot: GRUB / rescue mode via the BMC iKVM;
+        #   single-user mode then fsck + journal triage.
+
+        # === Bonus: Crucible's own self-diagnosis ===
+        # Once SSH is back, the agent has built-in diagnostics:
+        # ssh <SERVER> 'sudo glassmkr-crucible doctor ipmi'
+        # That checks BMC reachability, IPMI permissions, sensor read.
+        # Useful for differentiating "agent works but BMC subsystem broken"
+        # from "agent itself broken."
+
+        # 7. After any fix, watch for auto-resolution. The alert
+        # clears when the next snapshot lands (within 1-2 collection
+        # intervals).
+      description: |
+        Main path: 4-scenario triage. The first two ping/ssh probes
+        narrow to network-up vs network-down; subsequent steps
+        diagnose agent vs key vs clock vs full-host outage. The
+        alert auto-resolves on next successful snapshot so any fix
+        clears it without a manual ack step.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence is missing or shape mismatch. Run a
+        # minimal triage probe using the hostname/IP if present.
+        ping -c 3 <SERVER>
+        ssh -o ConnectTimeout=5 <SERVER> 'sudo systemctl status glassmkr-crucible' 2>/dev/null
+      description: |
+        Missing-evidence fallback. Minimal ping + SSH probe. The
+        main variant assumes operator has the server identifier
+        from evidence.server_id + ability to resolve to hostname/
+        IP; this fallback runs the same probes manually.
+  validation:
+    command: |
+      # Dashboard-side: confirm the alert has cleared
+      # (auto-resolves on next snapshot; no manual action needed)
+      ssh <SERVER> 'sudo systemctl is-active glassmkr-crucible'
+      ssh <SERVER> 'sudo journalctl -u glassmkr-crucible -n 5 --no-pager'
+    description: |
+      After fix, confirm:
+      - The agent reports `active` via systemctl is-active
+      - Recent journal shows snapshot send activity (no errors)
+      The Dashboard-side validation is automatic: the alert
+      resolves on next snapshot received (within 1-2 collection
+      intervals).
+  rollback:
+    available: false
+    command: null
+    note: |
+      There's nothing to roll back; diagnostic + restart actions
+      are all forward-recoveries. If the agent restart caused
+      issues, the prior state was "agent not reporting", which is
+      strictly worse than "agent restarted but flaky". If a
+      hosting-panel intervention was destructive (rare), that's
+      outside this workflow's scope.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Agent restart on
+      the target host briefly suspends snapshot collection (~5-30s)
+      but doesn't impact the host's other services. Hosting-panel
+      interventions (power cycle, console attach) have their own
+      blast radius; operator-judged.
+    estimated_duration: |
+      Triage: 5-15 minutes (depends on scenario). Agent restart
+      + first snapshot: 1-2 minutes. Full host recovery (scenario
+      D): variable, minutes-hours.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Source-of-truth for evidence shape is watchdog.ts:106-112
+      (the evidence object built by runWatchdogCycle). Service
+      name corrected from the migration stub's stale
+      "glassmkr-collector" to the current "glassmkr-crucible"
+      (matches buildFixCommands at watchdog.ts:64-65). Scenarios
+      A-D are Glassmkr ops experience from real fleet incidents:
+      A is the most common (~70% of fires), B + C combined ~20%,
+      D ~10%. Not deliberately re-triggered on validation fleet
+      for this deepening pass (would require deliberately
+      breaking an agent; already covered by routine maintenance
+      restarts).
+
+      Pattern library 2026-05-18: Category 7 (system state). Acts as the classifier when both bmc_unreachable and redfish_health_degraded fire (subordinated to this rule via incident-grouping). Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

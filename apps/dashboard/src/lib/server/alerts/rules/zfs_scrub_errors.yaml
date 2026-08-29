@@ -1,0 +1,194 @@
+# zfs_scrub_errors; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B2, refactored same-day per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md to use the new
+# condition_match dimension.
+#
+# The evaluator emits this alert from THREE distinct conditions, each
+# populating a different evidence attribute mutually exclusively:
+#   1. scrub_errors > 0  ; last scrub found errors (real corruption)
+#   2. scrub_never_run   ; pool has never been scrubbed (hygiene gap)
+#   3. days_since_scrub > 30; stale scrub (hygiene gap)
+#
+# Each variant below matches on the appropriate attribute. The
+# fallback covers any alert where none of the three attributes are
+# present (shouldn't happen given the evaluator's emission logic,
+# but defensive).
+id: zfs_scrub_errors
+priority: P1
+title: ZFS scrub found errors
+summary: ZFS pool's most recent scrub detected checksum or repair errors, or the pool has not been scrubbed in over 30 days. Errors suggest failing disks or silent corruption; missing scrub is preventive-maintenance gap.
+
+fix:
+  quick_check:
+    command: |
+      sudo zpool status | grep -E '(pool:|scan:|errors:)' | head -40
+    description: "Per-pool scan recency + error count. `errors: No known data errors` is healthy; any other phrasing is the signal. `scan: scrub in progress` means a scrub is running now."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (no maintenance window for scrub diagnostic phase)
+    - "For error case: replacement drive on hand if smartctl reveals failing hardware"
+    - "For never-scrubbed or stale-scrub case: maintenance window OK to be brief (scrub runs in background)"
+
+  safe_mode:
+    command: |
+      sudo zpool status -v <POOL>
+      sudo zpool history <POOL> | grep -E 'scrub|scan' | tail -10
+      sudo zpool list -v <POOL>
+    description: |
+      Read-only inspection. `zpool status -v` shows last scrub
+      result + any checksum/read/write errors per vdev. `zpool
+      history` shows when previous scrubs ran. Run first to
+      distinguish the three cases (errors-found vs never-scrubbed
+      vs stale-scrub) before acting.
+
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: scrub_errors
+        op: gt
+        value: 0
+      command: |
+        # Case 1: Last scrub FOUND ERRORS.
+        # Pool is repairing what it can; underlying disk may be failing.
+
+        # 1. Identify affected files + vdev
+        sudo zpool status -v <POOL>
+
+        # 2. Check SMART on every disk in the pool; find the one
+        #    that's reporting reallocated/pending sectors
+        for d in $(sudo zpool status <POOL> | awk '/ONLINE|DEGRADED/ && /sd/ {print $1}'); do
+          echo "=== $d ==="
+          sudo smartctl -a /dev/$d | grep -E 'SMART overall|Reallocated|Current_Pending|Health'
+        done
+
+        # 3. If a disk's SMART confirms failure -> replace it
+        #    (escalate to smart_failing or zfs_pool_unhealthy
+        #    DEGRADED workflow)
+
+        # 4. After replacement, clear pool errors + re-scrub
+        sudo zpool clear <POOL>
+        sudo zpool scrub <POOL>
+        zpool status <POOL>   # one-shot; re-run to monitor
+      description: |
+        Errors-found path. The pool's checksum or repair errors are
+        a real corruption signal. Find the failing disk via SMART,
+        replace it (cross-link to smart_failing's flow), clear
+        errors, re-scrub.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: scrub_never_run
+        op: eq
+        value: true
+      command: |
+        # Case 2: Pool has NEVER BEEN SCRUBBED.
+        # Hygiene gap. Start a scrub + schedule periodic ones.
+
+        # 1. Kick off a one-shot scrub now
+        sudo zpool scrub <POOL>
+
+        # 2. Watch progress (scrubs can take hours)
+        zpool status <POOL>   # one-shot; re-run to monitor
+
+        # 3. Schedule monthly scrubs via systemd timer
+        # On Ubuntu/Debian: zfsutils-linux package ships zfs-scrub-monthly@.timer
+        sudo systemctl enable --now zfs-scrub-monthly@<POOL>.timer
+        sudo systemctl list-timers | grep zfs-scrub
+        # On RHEL family: same systemd unit ships with zfsutils
+      description: |
+        Never-scrubbed path. Start an immediate scrub and enable
+        monthly scrubs. Common after a fresh pool import or first-
+        time setup where the operator forgot to enable scrubs.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: days_since_scrub
+        op: gt
+        value: 30
+      command: |
+        # Case 3: Last scrub > 30 DAYS AGO.
+        # Stale; restart scrub schedule + run one-shot now.
+
+        # 1. Kick off an immediate scrub
+        sudo zpool scrub <POOL>
+
+        # 2. Re-check the scheduled timer (may have been disabled,
+        #    masked, or never enabled; same flow as case 2)
+        sudo systemctl is-enabled zfs-scrub-monthly@<POOL>.timer || \
+          sudo systemctl enable --now zfs-scrub-monthly@<POOL>.timer
+        sudo systemctl list-timers | grep zfs-scrub
+
+        # 3. Watch the current scrub
+        zpool status <POOL>   # one-shot; re-run to monitor
+      description: |
+        Stale-scrub path. Same as never-scrubbed but the systemd
+        timer is presumably already installed; check it's enabled
+        and not masked. Run one-shot scrub now to catch up.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: none of scrub_errors / scrub_never_run /
+        # days_since_scrub is populated in the evidence. Shouldn't
+        # happen given the evaluator's emission logic but defensive.
+        # Run the full diagnostic suite and classify manually.
+        sudo zpool status -v <POOL>
+        sudo zpool history <POOL> | grep -E 'scrub|scan' | tail -10
+      description: |
+        Missing-evidence fallback. None of the three condition-
+        attributes populated; run the diagnostic and classify the
+        case manually before proceeding.
+
+  validation:
+    command: |
+      sudo zpool status -v <POOL> | grep -E 'errors:|scan:'
+      sudo systemctl is-active zfs-scrub-monthly@<POOL>.timer
+    description: |
+      After fix, confirm: errors row is "No known data errors";
+      scan row shows the recent scrub completed without errors;
+      the monthly timer is active. The validation only passes
+      when all three lines are clean.
+
+  rollback:
+    available: true
+    command: |
+      sudo zpool scrub -s <POOL>      # cancel an in-progress scrub
+      sudo systemctl disable --now zfs-scrub-monthly@<POOL>.timer
+      sudo zpool clear <POOL>          # CLEARS the recorded error counters; it
+      #                                  does not restore them. Only run this once
+      #                                  the underlying fault is understood.
+    note: |
+      Most actions in this rule are reversible. A scrub in progress
+      can be stopped (`zpool scrub -s`). The monthly timer can be
+      disabled. `zpool clear` cannot be un-cleared, but error
+      counters re-populate on the next I/O if the underlying issue
+      persists. The ONLY irreversible step is disk replacement
+      (in case 1); same rollback note as smart_failing.
+
+  impact:
+    blast_radius: |
+      Scrub competes with normal I/O; typical 10-30% perf hit
+      during scrub; configurable via `vfs.zfs.scrub_delay` sysctl.
+      Pool stays online + serving throughout. No outage; the
+      scrub is non-destructive read-and-verify.
+    estimated_duration: |
+      Scrub: 1-24+ hours depending on pool size + load. Diagnostic
+      + timer setup: 10 minutes. Disk replacement (case 1 only):
+      see smart_failing (5 min swap + hours resilver).
+    irreversible_steps: false
+
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: research-derived
+    source_note: |
+      Desk-researched from zpool(8) + zfs(8) man pages and OpenZFS
+      documentation. systemd timer names (zfs-scrub-monthly@.timer)
+      verified for zfsutils-linux on Debian/Ubuntu; RHEL-family
+      ships the same unit name via the openzfs package. Not
+      deliberately re-triggered on the validation fleet (would
+      require corrupting a ZFS pool deliberately, which is risky).
+
+      Pattern library 2026-05-18: Category 3.5 (ZFS). Trigger splits into read/write/checksum tiers and hygiene case extraction (zfs_scrub_overdue separate rule per spec §3.7) deferred until Crucible exposes per-vdev counter triple.

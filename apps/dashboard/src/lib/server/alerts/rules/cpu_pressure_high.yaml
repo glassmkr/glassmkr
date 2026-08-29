@@ -1,0 +1,89 @@
+# cpu_pressure_high; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_FOLLOWUP_C1_C6_ACTIVATION_2026-05-19.md §2.1.
+#
+# PSI classifier rule. Fires when /proc/pressure/cpu shows sustained
+# stall time above threshold (some.avg60 > 20% sustained 5+ min OR
+# some.avg300 > 10% sustained 15+ min). Parent for cpu_high + load_high
+# (those rules declare subordinate_to: cpu_pressure_high in their YAML
+# ; once this rule starts firing, those rules' emissions demote to
+# evidence-only on the same host within the subordination window).
+#
+# Capability gate: snap.psi.cpu must be present (kernel >= 4.20 with
+# CONFIG_PSI=y; Crucible v0.10.4+). Older agents or kernels see no
+# emission from this rule. The EL family ships
+# CONFIG_PSI_DEFAULT_DISABLED=y, so stock CentOS / Alma / Rocky / RHEL
+# have no /proc/pressure until booted with psi=1 (validated on CentOS
+# Stream 9, 2026-06).
+#
+# Provenance: heuristic-from-guide (specific 20% threshold) +
+# vendor-anchor (systemd-oomd reference at threshold of 50% triggers
+# auto-killing; our 20% page threshold is conservative).
+id: cpu_pressure_high
+priority: P2
+title: CPU pressure stall sustained
+summary: PSI reports CPU contention persistently above threshold. Aggregate signal across the host; subordinates cpu_high and load_high to this incident when it fires. Not available on stock RHEL-family kernels (PSI ships disabled there; enable with the psi=1 boot parameter).
+fix:
+  quick_check:
+    command: |
+      cat /proc/pressure/cpu
+      # What's in R/D state right now:
+      ps -eo pid,state,cpu,comm --sort=-cpu | awk '$2~/R|D/' | head -20
+    description: "PSI's CPU pressure averages (avg10/avg60/avg300) + the processes contending for CPU. The 'some' line tracks any waiter; the 'full' line tracks fully-stalled multitasking."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (read-only triage on /proc and ps)
+    - Awareness of which services run on this host
+  safe_mode:
+    command: |
+      cat /proc/pressure/cpu
+      grep -m1 'model name' /proc/cpuinfo
+      ps -eo pid,user,pcpu,comm --sort=-pcpu | head -20
+    description: |
+      Read-only inspection. /proc/pressure/cpu shows the PSI counters
+      this rule fires on; the ps output identifies likely runaway
+      processes that are the usual root cause.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Identify the heaviest CPU consumer; if a single process, restart
+        # it (after capturing logs); if many threads of one parent, the
+        # parent process likely needs throttling.
+        cat /proc/pressure/cpu
+        ps -eo pid,user,pcpu,nice,comm --sort=-pcpu | head -20
+        # Optional: systemd-cgls to see which slice is consuming
+        systemd-cgls --no-pager | head -40
+      description: |
+        Generic triage. PSI doesn't tell you which process is blocking;
+        ps + cgls let you find it. After remediation, the alert auto-
+        resolves once PSI drops back under threshold.
+  validation:
+    command: |
+      cat /proc/pressure/cpu
+    description: |
+      Confirm the some.avg60 line has dropped below the rule's threshold.
+  rollback:
+    available: false
+    command: null
+    note: |
+      No rollback applicable; this is a diagnostic / triage rule.
+  impact:
+    blast_radius: |
+      No service impact from the alert itself; remediation (restarting
+      a runaway process) has whatever impact that process owner
+      considers acceptable.
+    estimated_duration: |
+      Triage 5-15 min; remediation varies.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - PSI synthetic test fixtures
+    tester: Glassmkr ops
+    research_basis: heuristic-from-guide
+    source_note: |
+      PSI exposed since Linux 4.20 (Documentation/accounting/psi.rst).
+      Threshold (some.avg60 > 20%) derived from systemd-oomd default
+      (50% kills); our paging threshold sits below that. New rule
+      added 2026-05-19 with Crucible C2 (PSI collection); capability-
+      gated on snap.psi.cpu presence.

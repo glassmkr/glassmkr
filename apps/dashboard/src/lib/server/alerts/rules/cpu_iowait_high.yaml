@@ -1,0 +1,128 @@
+# cpu_iowait_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B4.
+#
+# Single-severity rule (always warning; evaluator doesn't escalate).
+# No condition_match split. Main variant identifies which device
+# and which process are causing the I/O pressure; fallback covers
+# missing-evidence. Cross-references disk_latency_high (for slow
+# device path) and load_high (for the broader-load lens).
+id: cpu_iowait_high
+priority: P2
+title: CPU I/O wait high
+summary: CPU is spending 20%+ of its time waiting on disk I/O. Indicates storage bottleneck; either an overwhelmed device or runaway I/O from one process.
+fix:
+  quick_check:
+    command: |
+      top -bn1 | head -5
+      # I/O-busy processes (D state) and which devices they hit:
+      sudo iotop -bn1 -o 2>/dev/null | head -20
+      # Per-device latency:
+      sudo iostat -xz 5 2 2>/dev/null | tail -20
+    description: "Top header (cpu/iowait line) + the processes in D state + per-device wait. iowait is always pointing at something ; the iostat tail tells you which device, then iotop tells you which process."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (diagnosis is read-only; intervention may require throttling or killing a process)
+    - sysstat / iotop installed (most distros ship sysstat, iotop usually package-installable)
+    - Awareness of which workloads do heavy I/O (database, backup, log shipping, container image build)
+  safe_mode:
+    command: |
+      iostat -xz 1 3 2>/dev/null
+      sudo iotop -bn 2 -o 2>/dev/null | head -30
+      vmstat 1 3
+      sudo dmesg -T | grep -iE 'io error|i/o error|sata|scsi' | tail -20
+    description: |
+      Read-only inspection. `iostat -xz 1 3` shows per-device
+      r/s, w/s, %util, and await; the device pegged at near 100%
+      %util is the bottleneck. `iotop -bn 2 -o` ranks processes
+      by I/O bandwidth (only-show-doing-IO mode). vmstat's b column
+      counts blocked-on-I/O threads. dmesg tail catches hardware-
+      level I/O errors that are the worst case.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: cpu iowait >20%. Find the device + the process.
+
+        # 1. Which device is the bottleneck?
+        iostat -xz 1 3 2>/dev/null
+        # Look for %util near 100, await >> svctm, r/s+w/s very high.
+
+        # 2. Which process is generating the I/O?
+        sudo iotop -bn 2 -o 2>/dev/null | head -30
+        # If iotop is not installed:
+        # for p in $(ls /proc | grep -E '^[0-9]+$'); do
+        #   r=$(awk '/^read_bytes/ {print $2}' /proc/$p/io 2>/dev/null)
+        #   w=$(awk '/^write_bytes/ {print $2}' /proc/$p/io 2>/dev/null)
+        #   if [ -n "$r$w" ]; then
+        #     echo "$((${r:-0}+${w:-0})) $(cat /proc/$p/comm 2>/dev/null) ($p)"
+        #   fi
+        # done | sort -rn | head -10
+
+        # 3. Hardware-level errors? (worst case)
+        sudo dmesg -T | grep -iE 'io error|i/o error|ata.*error|scsi.*error' | tail -20
+
+        # 4. Intervention paths:
+        #    a) Known batch (backup, log rotation) -> throttle (ionice)
+        #       sudo ionice -c 3 -p <PID>   # idle-class
+        #    b) Runaway app -> restart the service
+        #    c) Database query storm -> kill the query at the DB,
+        #       not the process
+        #    d) Failing disk -> escalate to disk_io_errors / smart_failing
+
+        # 5. Verify
+        iostat -xz 1 3 2>/dev/null
+      description: |
+        Main path: find device, find process, choose intervention
+        (throttle / restart / app-level fix / hardware escalation).
+        ionice is the lightest-touch lever for batch jobs that
+        legitimately need to run but shouldn't dominate I/O.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence missing. Diagnose + classify manually.
+        iostat -xz 1 3 2>/dev/null
+        vmstat 1 3
+      description: |
+        Missing-evidence fallback. Run diagnostic; classify the
+        cause manually before intervention.
+  validation:
+    command: |
+      iostat -xz 1 3 2>/dev/null | head -20
+    description: |
+      After fix, confirm device %util drops below 80% sustained
+      and iowait CPU% drops below 20%. Re-firing the alert is the
+      negative validation.
+  rollback:
+    available: true
+    command: |
+      # ionice change is reversible:
+      sudo ionice -c 0 -p <PID>   # reset to none / inherit
+    note: |
+      ionice is fully reversible. Service restart is not "rolled
+      back". Hardware escalation (smart_failing / disk_io_errors)
+      is irreversible if it leads to disk swap.
+  impact:
+    blast_radius: |
+      ionice tuning is non-disruptive; affects scheduling priority
+      only. Process restart: service-dependent. Diagnostic commands
+      are non-disruptive.
+    estimated_duration: |
+      Diagnosis: 5 minutes. ionice tuning: <1 minute. Service
+      restart: service-dependent. Hardware escalation: hours
+      (see smart_failing).
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from iostat(1), iotop(8), vmstat(8),
+      ionice(1), proc(5) (/proc/PID/io). The ionice idle-class
+      pattern is from Glassmkr ops experience containing nightly
+      backup I/O without affecting daytime workload. Not
+      deliberately re-triggered on validation fleet for this
+      deepening pass.
+
+      Pattern library 2026-05-18: Category 1 (CPU). Sustained-window gate (default 30 min per spec §3.10) deferred until evaluator gains cross-snapshot state; today the rule fires on per-snapshot iowait_percent >= 20%.

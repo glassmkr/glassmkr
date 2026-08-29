@@ -1,0 +1,251 @@
+{
+  "model_version": "v1",
+  "trained_at": "2026-04-19T01:25:36.795788+00:00",
+  "training_data_quarters": [
+    "Q1_2024",
+    "Q1_2025",
+    "Q2_2024",
+    "Q2_2025",
+    "Q3_2024",
+    "Q4_2024"
+  ],
+  "validation_data_quarters": [
+    "Q3_2025",
+    "Q4_2025"
+  ],
+  "validation_metrics": {
+    "auroc": 0.886397,
+    "precision_at_0_8_fpr": 0.048462,
+    "precision_at_0_1_fpr": 0.098296,
+    "n_train_samples": 161987789,
+    "n_val_samples": 60786159,
+    "n_failures_train": 202811,
+    "n_failures_val": 56837,
+    "per_vendor": {
+      "HGST/Hitachi": {
+        "n_rows": 4994000,
+        "n_failures": 9186,
+        "auroc": 0.8301074792703529
+      },
+      "Other": {
+        "n_rows": 266320,
+        "n_failures": 19,
+        "auroc": 0.9976516482437068
+      },
+      "Seagate": {
+        "n_rows": 20892305,
+        "n_failures": 21650,
+        "auroc": 0.9035380802855643
+      },
+      "Toshiba": {
+        "n_rows": 19980802,
+        "n_failures": 19165,
+        "auroc": 0.8524301071311521
+      },
+      "WDC": {
+        "n_rows": 14652732,
+        "n_failures": 6817,
+        "auroc": 0.8746209308616436
+      }
+    }
+  },
+  "feature_names": [
+    "model_id",
+    "model_afr_prior",
+    "drive_age_days",
+    "smart_5_raw",
+    "smart_187_raw",
+    "smart_188_raw",
+    "smart_189_raw",
+    "smart_197_raw",
+    "smart_198_raw",
+    "smart_5_delta_1d",
+    "smart_5_delta_7d",
+    "smart_5_delta_30d",
+    "smart_5_burst_max_7d",
+    "smart_187_delta_1d",
+    "smart_187_delta_7d",
+    "smart_187_delta_30d",
+    "smart_187_burst_max_7d",
+    "smart_188_delta_1d",
+    "smart_188_delta_7d",
+    "smart_188_delta_30d",
+    "smart_188_burst_max_7d",
+    "smart_189_delta_1d",
+    "smart_189_delta_7d",
+    "smart_189_delta_30d",
+    "smart_189_burst_max_7d",
+    "smart_197_delta_1d",
+    "smart_197_delta_7d",
+    "smart_197_delta_30d",
+    "smart_197_burst_max_7d",
+    "smart_198_delta_1d",
+    "smart_198_delta_7d",
+    "smart_198_delta_30d",
+    "smart_198_burst_max_7d"
+  ],
+  "top_features_by_importance": [
+    {
+      "feature": "smart_197_raw",
+      "importance": 0.25343
+    },
+    {
+      "feature": "smart_5_raw",
+      "importance": 0.20128
+    },
+    {
+      "feature": "model_afr_prior",
+      "importance": 0.108146
+    },
+    {
+      "feature": "drive_age_days",
+      "importance": 0.083643
+    },
+    {
+      "feature": "smart_187_raw",
+      "importance": 0.066922
+    },
+    {
+      "feature": "smart_197_delta_30d",
+      "importance": 0.062773
+    },
+    {
+      "feature": "smart_5_delta_30d",
+      "importance": 0.057278
+    },
+    {
+      "feature": "model_id",
+      "importance": 0.054855
+    },
+    {
+      "feature": "smart_198_raw",
+      "importance": 0.052971
+    },
+    {
+      "feature": "smart_188_raw",
+      "importance": 0.019538
+    },
+    {
+      "feature": "smart_197_burst_max_7d",
+      "importance": 0.007835
+    },
+    {
+      "feature": "smart_187_delta_30d",
+      "importance": 0.006693
+    },
+    {
+      "feature": "smart_5_burst_max_7d",
+      "importance": 0.005136
+    },
+    {
+      "feature": "smart_188_delta_30d",
+      "importance": 0.004839
+    },
+    {
+      "feature": "smart_197_delta_7d",
+      "importance": 0.004806
+    },
+    {
+      "feature": "smart_189_raw",
+      "importance": 0.004695
+    },
+    {
+      "feature": "smart_188_burst_max_7d",
+      "importance": 0.001396
+    },
+    {
+      "feature": "smart_187_burst_max_7d",
+      "importance": 0.001265
+    },
+    {
+      "feature": "smart_5_delta_7d",
+      "importance": 0.00086
+    },
+    {
+      "feature": "smart_187_delta_7d",
+      "importance": 0.000585
+    }
+  ],
+  "afr_table_version": "v1",
+  "default_model_afr": 0.015,
+  "model_id_map": {
+    "CT250MX500SSD1": 1,
+    "DELLBOSS VD": 2,
+    "HGST HDS5C4040ALE630": 3,
+    "HGST HMS5C4040ALE640": 4,
+    "HGST HMS5C4040BLE640": 5,
+    "HGST HUH721010ALE600": 6,
+    "HGST HUH721212ALE600": 7,
+    "HGST HUH721212ALE604": 8,
+    "HGST HUH721212ALN604": 9,
+    "HGST HUH728080ALE600": 10,
+    "HGST HUH728080ALE604": 11,
+    "HGST HUS726040ALE610": 12,
+    "HGST HUS728T8TALE6L4": 13,
+    "MTFDDAV240TCB": 14,
+    "MTFDDAV480TCB": 15,
+    "Micron 5300 MTFDDAK480TDS": 16,
+    "ST10000NM001G": 17,
+    "ST10000NM0086": 18,
+    "ST12000NM0007": 19,
+    "ST12000NM0008": 20,
+    "ST12000NM000J": 21,
+    "ST12000NM001G": 22,
+    "ST12000NM003G": 23,
+    "ST12000NM0117": 24,
+    "ST14000NM000J": 25,
+    "ST14000NM0018": 26,
+    "ST14000NM001G": 27,
+    "ST14000NM002J": 28,
+    "ST14000NM0138": 29,
+    "ST16000NM000G": 30,
+    "ST16000NM000J": 31,
+    "ST16000NM001G": 32,
+    "ST16000NM002J": 33,
+    "ST16000NM005G": 34,
+    "ST18000NM000J": 35,
+    "ST24000NM002H": 36,
+    "ST4000DM000": 37,
+    "ST4000DM004": 38,
+    "ST4000DM005": 39,
+    "ST500LM012 HN": 40,
+    "ST500LM021": 41,
+    "ST500LM030": 42,
+    "ST6000DX000": 43,
+    "ST8000DM002": 44,
+    "ST8000DM005": 45,
+    "ST8000NM000A": 46,
+    "ST8000NM0055": 47,
+    "Seagate BarraCuda 120 SSD ZA250CM10003": 48,
+    "Seagate BarraCuda 120 SSD ZA500CM10003": 49,
+    "Seagate BarraCuda SSD ZA2000CM10002": 50,
+    "Seagate BarraCuda SSD ZA250CM10002": 51,
+    "Seagate BarraCuda SSD ZA500CM10002": 52,
+    "Seagate FireCuda 120 SSD ZA500GM10001": 53,
+    "Seagate IronWolf ZA250NM10002": 54,
+    "Seagate SSD": 55,
+    "TOSHIBA HDWF180": 56,
+    "TOSHIBA MD04ABA400V": 57,
+    "TOSHIBA MG07ACA14TA": 58,
+    "TOSHIBA MG07ACA14TEY": 59,
+    "TOSHIBA MG08ACA16TA": 60,
+    "TOSHIBA MG08ACA16TE": 61,
+    "TOSHIBA MG08ACA16TEY": 62,
+    "TOSHIBA MG09ACA16TE": 63,
+    "TOSHIBA MG10ACA20TE": 64,
+    "TOSHIBA MG11ACA24TE": 65,
+    "TOSHIBA MQ01ABF050": 66,
+    "TOSHIBA MQ01ABF050M": 67,
+    "WD Blue SA510 2.5 250GB": 68,
+    "WDC WD5000BPKT": 69,
+    "WDC WD5000LPCX": 70,
+    "WDC WD5000LPVX": 71,
+    "WDC WDS250G2B0A": 72,
+    "WDC WUH721414ALE6L4": 73,
+    "WDC WUH721816ALE6L0": 74,
+    "WDC WUH721816ALE6L4": 75,
+    "WDC WUH722222ALE6L4": 76,
+    "WDC WUH722626ALE6L4": 77,
+    "WUH721816ALE6L4": 78
+  }
+}

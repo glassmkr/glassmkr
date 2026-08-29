@@ -1,0 +1,146 @@
+# ipmi_monitoring_unavailable; added 2026-07-29, REPOINTED 2026-07-30.
+#
+# Fires when the host HAS a BMC (the kernel exposes a /dev/ipmi* node) and this
+# snapshot's collection got nothing back from it. While that is true, every
+# IPMI-derived rule is structurally deaf: ipmi_fan_failure, psu_redundancy_loss,
+# ipmi_sel_critical, ipmi_sel_full and the SEL-derived half of ecc_errors. The
+# host reads green on all of them, and remote power control and console access
+# are gone too, so a machine needing recovery cannot be recovered remotely.
+#
+# WHY THE TRIGGER MOVED TWICE IN TWO DAYS. v1 fired on any capability reason
+# except no_bmc_device, which was wrong in both directions: the tooling reasons
+# are emitted before any BMC contact (so a BMC-less VM fired), while
+# no_bmc_device collapses a dead BMC together with a missing wrapper and a
+# timeout (so the real case was suppressed). v2 narrowed to the ipmitool version
+# reason as a holding position. v3, this one, uses the facts crucible 0.14.9 now
+# ships instead: `bmc_device_node`, re-checked every snapshot, plus `probe`, the
+# outcome of that snapshot's own collection. A non-null device node is positive
+# evidence a BMC exists, which no reason code could express, and it replaces the
+# earlier dmi.is_virtual guard because a VM has no /dev/ipmi* at all.
+#
+# There is deliberately NO rule for a low ipmitool version any more. crucible
+# 0.14.9 stopped blocking on it, because the check could not tell a
+# distro-backported 1.8.18 from an unpatched one and was disabling BMC
+# monitoring on hosts that were never exposed. The advisory still rides in the
+# snapshot as `ipmi.detection.ipmitool_below_cve_floor` for anyone who wants it.
+#
+# Remediation ORDER is load-bearing: confirm by hand, then rule out our own
+# access path, and only then consider touching the BMC. `ipmitool mc reset cold`
+# is deliberately NOT presented as a step to run: some BMCs do not recover
+# cleanly and hang past the reset, which on a remote machine is worse than the
+# fault being fixed. Our own /docs/troubleshooting/ipmi already says not to reset
+# without vendor confirmation, and an earlier draft of this file contradicted
+# that by putting the reset in a fallback command chain.
+id: ipmi_monitoring_unavailable
+priority: P3
+manual_resolve: false
+title: BMC present but unreadable
+summary: The kernel exposes an IPMI device on this host, so it has a BMC, but the agent read nothing from it. Two different faults look identical from here; the BMC may be silent, or the agent's own privileged access path may be broken, so run the quick check before escalating to hardware. Fan failure, PSU redundancy loss, SEL critical, SEL full and the SEL-derived ECC counts are all inactive while this lasts, and the host will read healthy on every one of them regardless of its real hardware state. If the BMC itself is down then remote power control and console access are unavailable too, so plan on-site help if the machine also needs recovery.
+fix:
+  quick_check:
+    command: |
+      # Does the BMC answer at all when asked directly?
+      sudo ipmitool mc info 2>&1 | head -20
+      # Is the device node the agent saw still there?
+      ls -l /dev/ipmi0 /dev/ipmi/0 /dev/ipmidev/0 2>/dev/null
+    description: "`ipmitool mc info` separates the two possibilities immediately. If it identifies the BMC, the BMC is fine and the agent's access path is at fault, which is a host-side fix. If it fails the same way the agent did, the BMC itself is not responding and no amount of host-side work will help. The device-node listing confirms the kernel still sees the controller; if the node has disappeared, suspect the ipmi kernel modules rather than the BMC."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access with sudo (every diagnostic step is read-only)
+    - Run the quick check FIRST; the remedy is completely different depending on whether the BMC answers a direct query
+    - "For a genuinely unresponsive BMC: your hardware vendor's guidance, plus the ability to arrange on-site or out-of-band recovery, since remote power and console are unavailable"
+  safe_mode:
+    command: |
+      # Read-only throughout. Nothing here mutates the BMC or the SEL.
+      sudo ipmitool mc info 2>&1 | head -20
+      ls -l /dev/ipmi* 2>/dev/null || echo "no /dev/ipmi* device present"
+      lsmod | grep -E 'ipmi_devintf|ipmi_si|ipmi_msghandler' || echo "ipmi kernel modules not loaded"
+      # Is the agent's privileged wrapper intact? A missing or broken wrapper
+      # looks exactly like an unresponsive BMC from the agent's side.
+      ls -l /usr/local/sbin/crucible-collect 2>/dev/null || echo "wrapper absent"
+      sudo -n /usr/local/sbin/crucible-collect ipmi-sensor 2>&1 | head -5
+    description: |
+      Distinguishes the three causes that present identically. If `mc info`
+      answers but the wrapper invocation fails, the fault is the agent's sudo
+      path. If both fail while the device node exists, the BMC is not answering.
+      If the device node is gone and the modules are unloaded, the kernel
+      interface is the problem, not the BMC.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Step 1: rule out OUR access path before blaming the hardware. Keyless
+        # and idempotent; repairs the privileged wrapper and config ownership.
+        sudo glassmkr-crucible init
+        sudo systemctl restart glassmkr-crucible
+
+        # Step 2: if the device node was missing, reload the kernel interface.
+        # Harmless when the modules are already loaded.
+        sudo modprobe ipmi_devintf ipmi_si ipmi_msghandler 2>/dev/null || true
+        ls -l /dev/ipmi0 2>/dev/null
+
+        # Step 3: confirm whether the BMC answers now.
+        sudo ipmitool mc info 2>&1 | head -20
+      description: |
+        Fixes the two host-side causes and re-tests. If `mc info` answers after
+        this, monitoring returns on the next snapshot and the alert auto-resolves.
+        If it still fails, the BMC is genuinely unresponsive and the remaining
+        options are vendor-specific: STOP here rather than resetting it blind.
+        A cold reset (`sudo ipmitool mc reset cold`) recovers some BMCs and hangs
+        others past the operation, so confirm with your hardware vendor first; on
+        a remote machine a hung BMC is worse than an unresponsive one. Escalate
+        for out-of-band or on-site recovery instead if you are unsure, and expect
+        remote reinstall and remote power control to stay unavailable until the
+        BMC is back.
+  validation:
+    command: |
+      sudo ipmitool mc info | head -5
+      systemctl is-active glassmkr-crucible
+    description: |
+      Positive validation is `mc info` identifying the BMC with the agent active.
+      The next snapshot then repopulates ipmi.sensors and ipmi.fans and brings
+      ipmi_fan_failure, psu_redundancy_loss and the SEL rules back into service,
+      at which point this alert auto-resolves with no manual close. If the BMC is
+      still silent there is nothing to validate on the host: the alert correctly
+      stays until the hardware is recovered.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Nothing here needs rolling back. `glassmkr-crucible init` and `modprobe`
+      are both idempotent and restore intended state rather than changing it, and
+      no step alters BMC state. If a vendor-directed cold reset is performed later
+      it is outside this workflow and is not reversible, which is exactly why it is
+      not offered as a step above.
+  impact:
+    blast_radius: |
+      All steps here: no workload impact, no reboot, no BMC state change.
+      `glassmkr-crucible init` restarts only the agent. `modprobe` loads kernel
+      modules that are normally already present. Nothing touches the SEL.
+    estimated_duration: |
+      Under 10 minutes to identify which of the three causes applies and to fix
+      either host-side cause. A genuinely unresponsive BMC needing vendor
+      guidance or on-site recovery is open-ended.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-07-30"
+    tested_on:
+      - a validation host (negative control; BMC healthy, probe ok, rule silent)
+      - a validation host (negative control; BMC healthy after 0.14.9, rule silent)
+      - a Rocky 9 validation host (negative control; BMC healthy after 0.14.9, rule silent)
+    tester: Glassmkr ops (fit study P1-2, post-0.14.9 repoint)
+    source_note: |
+      Fit study gap P1-2 asked for a BMC-unreachable rule. It took three attempts
+      to get the trigger right, because the agent's capability reasons could not
+      express "this host has a BMC": the tooling reasons are emitted before any
+      BMC contact, and no_bmc_device collapses a dead BMC together with a missing
+      wrapper and a timeout. crucible 0.14.9 added the two facts this needs,
+      `bmc_device_node` (re-checked per snapshot) and `probe` (that snapshot's own
+      outcome), and the rule keys on their combination.
+      HONEST LIMIT: no host in the current fleet has an unresponsive BMC, so the
+      positive path is covered by unit tests and by the agent-side A/B that proved
+      the fields populate correctly, NOT by an observed live firing. All 21 fleet
+      hosts serve as negative controls and the rule is silent on every one. Induce
+      the condition on a validation box (stop the BMC responding, or remove the
+      wrapper) before treating the positive path as fleet-proven.
+    research_basis: validation-pending

@@ -1,0 +1,222 @@
+# psu_redundancy_loss; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B6, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator has 2 paths:
+#   - Tier 1 aggregate (Dell-only via Crucible 0.8.0+): emits with
+#     evidence.aggregate_state set to "redundancy_lost" (critical)
+#     or "redundancy_degraded" (warning).
+#   - Tier 2 per-PSU (non-Dell): emits with evidence.path =
+#     "per-psu-fault", always critical.
+#
+# Variants split on aggregate_state (the most-distinctive operator-
+# action axis). The fallback variant catches the per-PSU path AND
+# any other missing-evidence case.
+# R-P2-2 ownership-branch remediation (val-fleet 2026-05-29): this is a
+# vendor-side physical-hardware rule whose remediation assumes chassis
+# access. The customer-facing alert card appends the shared
+# OWNERSHIP_REMEDIATION_NOTE (evaluator.ts, single source of truth) so an
+# operator who cannot physically service the host still has a path:
+#   "If you operate this hardware (owned or colocated): handle the
+#    inspection or swap yourself, or dispatch a remote-hands technician.
+#    If this is rented or provider-managed: file a hardware service ticket
+#    with your provider. Either way, the physical check needs to happen
+#    on-site."
+# Keep this rule's remediation consistent with that note.
+id: psu_redundancy_loss
+priority: P1
+title: PSU redundancy lost
+summary: One or more PSUs are in fault, absent, or degraded state. Single power failure now risks full server outage. Dell BMCs report this via an aggregate sensor; other vendors via per-PSU sensors.
+fix:
+  quick_check:
+    command: |
+      sudo ipmitool sdr type 'Power Supply' 2>/dev/null
+      sudo ipmitool sensor 2>/dev/null | grep -iE 'PS[0-9]|power supply|psu' | head -20
+      # Some PSU SDRs are 'discrete' (Dell) ; check chassis power as well:
+      sudo ipmitool chassis status 2>/dev/null
+    description: "Every PSU sensor (analog reading + discrete state). On Dell, the 'discrete sensor' line carries the redundancy bits; on Supermicro, the per-PSU SDR row shows ok/non-critical/critical directly."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (diagnosis is non-disruptive)
+    - Physical or remote-hands access (PSU swap requires it; most enterprise PSUs are hot-swap so no host downtime)
+    - Replacement PSU on hand matching model + wattage (mismatched PSUs in redundancy pair sometimes refuse to share load)
+    - Awareness of facility power-feed layout (A/B feed redundancy; both PSUs on the same feed defeats redundancy at the rack level)
+  safe_mode:
+    command: |
+      sudo ipmitool sdr type 'Power Supply' 2>/dev/null
+      sudo ipmitool chassis status 2>/dev/null
+      sudo ipmitool sdr 2>/dev/null | grep -iE 'ps[0-9]|psu|power|redundancy'
+      sudo ipmitool sel elist 2>/dev/null | grep -iE 'power|psu' | tail -20
+    description: |
+      Read-only PSU inspection. The first line lists each named PSU
+      sensor with its current status; the third line catches the
+      Dell `PS Redundancy` aggregate sensor and Supermicro `PSU`
+      sensors with different naming. SEL events surface historical
+      PSU faults including transient ones.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: aggregate_state
+        op: eq
+        value: redundancy_lost
+      command: |
+        # Dell aggregate path: redundancy_lost (critical).
+        # The BMC says redundancy is GONE. It does NOT say why, and the two
+        # causes need opposite fixes: a failed supply or feed, or total draw
+        # grown past what the remaining supplies can carry. Vendors raise the
+        # same condition for both. Step 1 tells them apart; do not order
+        # hardware before running it.
+
+        # 1. Is any individual PSU actually faulted?
+        sudo ipmitool sdr type 'Power Supply' 2>/dev/null
+        sudo ipmitool sdr 2>/dev/null | grep -iE 'ps[0-9]|psu|power'
+        # A unit not reporting "ok" / "Presence detected" is a failed supply
+        # or feed: continue to step 2. If EVERY unit reports ok, this is
+        # capacity rather than a fault: go to step 1a and stop there.
+
+        # 1a. All units ok: redundancy lost to LOAD, not to a failure.
+        #     Total draw has grown past what the surviving supplies can carry,
+        #     so N+1 can no longer be honoured. Nothing is broken and there is
+        #     nothing to replace; swapping a healthy PSU changes nothing.
+        sudo ipmitool sensor 2>/dev/null | grep -iE 'pwr consumption|power consumption|total power'
+        sudo ipmitool sdr type 'Current' 2>/dev/null
+        #     Compare measured draw against ONE supply's rated output (the
+        #     rating is on the PSU label and in the chassis quickspecs).
+        #     Draw above that rating is the confirmation.
+        #     Fix is one of: move load off the host, cap power
+        #     (`sudo ipmitool dcmi power set_limit ...` where supported),
+        #     or fit higher-rated supplies. Then stop; steps 2-6 do not apply.
+
+        # 2. Cross-check SEL for the failure event timing
+        sudo ipmitool sel elist 2>/dev/null | grep -iE 'power supply|psu|ps[0-9]' | tail -10
+
+        # 3. Inspect the failed PSU physically:
+        #    - Status LED (typically amber/red for fault, green for OK)
+        #    - Listen for fan noise (failed PSUs often go silent or
+        #      whine at a different pitch)
+        #    - Check both power cords are seated + AC present
+
+        # 4. If AC failure on one feed -> facility ticket, not a
+        #    hardware swap. Verify by swapping the cord to the
+        #    surviving feed temporarily (only if rack has spare
+        #    capacity on that feed).
+
+        # 5. Hot-swap the failed PSU (enterprise chassis):
+        #    - Pull the latch
+        #    - Slide the PSU out
+        #    - Insert replacement; wait for status LED green
+        #    - BMC should clear redundancy_lost within ~30s
+
+        # 6. Verify recovery
+        sudo ipmitool sdr type 'Power Supply' 2>/dev/null
+        sudo ipmitool sdr 2>/dev/null | grep -i 'PS Redundancy'
+      description: |
+        Dell aggregate path - redundancy_lost. Identify failed PSU,
+        diagnose AC vs unit fault, hot-swap (enterprise) or schedule
+        downtime (consumer). The BMC aggregate is the authoritative
+        signal here; per-PSU sensors confirm which one.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: aggregate_state
+        op: eq
+        value: redundancy_degraded
+      command: |
+        # Dell aggregate path: redundancy_degraded (warning).
+        # BMC sees degradation that hasn't yet escalated to full
+        # redundancy loss. Often: one PSU is showing wear (fan
+        # speed off, voltage drift) but still carrying load.
+
+        # 1. Identify which PSU is reporting degradation
+        sudo ipmitool sdr type 'Power Supply' 2>/dev/null
+        sudo ipmitool sdr 2>/dev/null | grep -iE 'ps[0-9]|psu'
+
+        # 2. Vendor-specific deep inspection (Dell example)
+        sudo ipmitool delloem powermonitor powerconsumption 2>/dev/null
+        sudo ipmitool delloem powermonitor powersupplyrating 2>/dev/null
+
+        # 3. SEL for slow-burn signals
+        sudo ipmitool sel elist 2>/dev/null | grep -iE 'power|psu' | tail -10
+
+        # 4. Plan replacement at next maintenance window; no
+        #    emergency. Degraded means "watch this PSU, it's
+        #    likely the next to fail".
+      description: |
+        Dell aggregate path - redundancy_degraded. Identify the
+        degrading PSU, plan replacement, no emergency. Often a
+        precursor to redundancy_lost within days-to-weeks.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Per-PSU fault path (non-Dell or unknown aggregate state).
+        # Iterate the named PSU sensors and identify which is faulted.
+
+        # 1. Walk all PSU-like sensors
+        sudo ipmitool sdr 2>/dev/null | grep -iE 'ps[0-9]|psu|power supply'
+
+        # 2. Look at each one's full status string (status column
+        #    can be "0x01" hex bitmask on some BMCs; consult vendor
+        #    docs to decode)
+        sudo ipmitool sdr type 'Power Supply' 2>/dev/null
+
+        # 3. Inspect the SEL
+        sudo ipmitool sel elist 2>/dev/null | grep -iE 'power supply|psu' | tail -10
+
+        # 4. Physical check + replacement (same as Dell critical
+        #    path, sections 3-6).
+      description: |
+        Per-PSU path (non-Dell): walk individual PSU sensors,
+        identify failed unit, swap. The Crucible Phase 7 P2 #29
+        gap (discrete hex-bitmask status sensors) may cause some
+        BMCs to underreport faults; if SDR looks "all ok" but the
+        alert fired, dig deeper with vendor-specific commands.
+  validation:
+    command: |
+      sudo ipmitool sdr 2>/dev/null | grep -iE 'ps[0-9]|psu|power|redundancy'
+      sudo ipmitool sdr type 'Power Supply' 2>/dev/null
+    description: |
+      After fix, confirm:
+      - Aggregate redundancy sensor reports "fully_redundant" (Dell)
+      - All per-PSU sensors report "ok" or healthy status
+      - No new PSU events in SEL since the swap
+      Re-firing the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      PSU swap is not reversible; the old PSU is failing; reinstalling
+      it just re-triggers the alert. If the replacement is itself
+      faulty (rare), the second swap is a forward-fix.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Hot-swap PSU
+      replacement (enterprise chassis): no service impact. Cold-swap
+      (consumer chassis or rare enterprise failure modes): full
+      host outage during swap. AC feed swap test: brief load
+      consolidation onto one feed; risk if remaining feed is
+      undersized.
+    estimated_duration: |
+      Diagnosis: 5-10 minutes. PSU hot-swap: 2-5 minutes physical
+      + 30s BMC reconciliation. Cold-swap: 10-30 minutes incl.
+      POST. Facility ticket (if AC feed is the root cause):
+      hours-to-days depending on facility SLA.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from ipmitool(1) sdr/sel/chassis/delloem,
+      IPMI 2.0 spec Table 42-3 (PSU status discrete sensor
+      encoding). The two-tier Dell aggregate vs per-PSU model
+      mirrors the evaluator's psu_redundancy_state classification
+      from Crucible 0.8.0+. Not deliberately re-triggered on
+      validation fleet for this deepening pass (would require
+      pulling a live PSU, which is service-impacting on non-
+      redundant test boxes).
+
+      Pattern library 2026-05-18: Category 5 (power). AC-loss and presence transitions covered by a separate psu_input_lost rule (deferred to next audit). Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

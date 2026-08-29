@@ -1,0 +1,192 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  # Round-2 s6: the ground-truth drift check runs on every push to the pivot
+  # branch, not only on PRs to main.
+  #
+  # main is here because deploy.yml deploys EVERY push to main and this repo
+  # has no required status checks: an admin bypass or direct push reaches
+  # production with no CI having run on the committed revision (Codex
+  # 2026-08-29 #5). The push run cannot gate that deploy (they start
+  # together), but it makes the breakage visible on the commit instead of
+  # only in production, and it is the run a rollback decision reads.
+  push:
+    branches: [main, oss-pivot]
+
+# Least-privilege default (security audit 2026-05-22, T-101/T-103). This
+# workflow only reads the repo and runs checks; it never writes back to
+# GitHub, so contents:read is the tightest correct scope. Repo default is
+# already read; the explicit block is defense-in-depth.
+permissions:
+  contents: read
+
+jobs:
+  build-and-check:
+    name: Build + Check
+    runs-on: ubuntu-latest
+    steps:
+      # Actions SHA-pinned (T-103 tag-mutation defense). Comment shows the
+      # semver the SHA resolved to on 2026-05-26; bump deliberately.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      # Cache the SvelteKit sync output + Vite's deps cache. Both are
+      # rebuilt cold on every run otherwise, costing ~10s/run combined.
+      # Key on pnpm-lock.yaml hash (covers svelte-kit version bumps via
+      # lockfile churn) + the svelte/vite config file hashes (covers
+      # config-driven invalidation). 2026-05-17 CI audit.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            apps/dashboard/.svelte-kit
+            apps/dashboard/node_modules/.vite
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/dashboard/svelte.config.js', 'apps/dashboard/vite.config.ts') }}
+          restore-keys: |
+            ${{ runner.os }}-svelte-kit-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-svelte-kit-
+      - run: pnpm install --frozen-lockfile
+      # `turbo check` and `turbo test` declare `dependsOn: ^build` in
+      # turbo.json, so they trigger a build implicitly. Dropping the
+      # explicit `pnpm turbo build` step here removes the redundant
+      # invocation (Turbo's local cache deduped it, but the step still
+      # paid setup overhead). 2026-05-17 CI audit.
+      - run: pnpm turbo check
+      - run: pnpm turbo test
+      - run: pnpm validate:rules
+      - run: pnpm validate:rules:test
+      # Pins the deploy-time nginx symlink prune. Not a lint, but it is the only
+      # automated check on logic that runs `sudo rm` against prod nginx.
+      - run: pnpm test:nginx-prune
+      - run: pnpm lint:bola
+      - run: pnpm lint:bola:test
+      - run: pnpm lint:tier-gating
+      - run: pnpm lint:emdash
+      - run: pnpm lint:deploy-prebuild-sync
+      - run: pnpm lint:migrate-noop:test
+      - run: pnpm lint:clickhouse-params
+      - run: pnpm lint:clickhouse-params:test
+      - run: pnpm lint:fallback-version
+      - run: pnpm lint:fallback-version:test
+      # Catches a rule with no gen-rules CATEGORY entry HERE rather than at the
+      # prod deploy. `pnpm turbo check` above does not run the site prebuild, so
+      # gen-rules never executes in CI; without this step that failure surfaces
+      # only when deploy.sh builds the site (#548, #596 -> hotfix #597).
+      - run: pnpm lint:rule-category
+      - run: pnpm lint:rule-category:test
+      # Keeps the advertised "N alert rules" copy equal to the real rule count.
+      # Reconciled by hand three times (62 -> 65 -> 68 -> 70) and stragglers
+      # survived every pass, including a "62" on /docs/rules itself.
+      - run: pnpm lint:rule-count
+      - run: pnpm lint:rule-count:test
+      # An HTML comment that quotes its own close marker publishes its
+      # remaining text; /docs/changelog shipped 974 characters of internal
+      # notes that way.
+      - run: pnpm lint:comment-leak
+      - run: pnpm lint:comment-leak:test
+      # No active surface may sell the retired paid tier. Everything this gate
+      # refuses was live at least once after the registry said hosted is free.
+      - run: pnpm lint:plan-language
+      - run: pnpm lint:plan-language:test
+      # Parser fixtures for the per-method credential/privilege derivation
+      # (requireProGatedAuth blind spot, Codex 2026-08-29 #9).
+      - run: pnpm gen-openapi:test
+
+  # DCO sign-off (round-2 s1.3, 2026-08-24): every PR commit must carry
+  # Signed-off-by. Contribution policy is DCO, not CLA; see CONTRIBUTING.md.
+  dco:
+    name: DCO sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - name: Check Signed-off-by on every PR commit
+        run: |
+          set -euo pipefail
+          MISSING=0
+          for sha in $(git rev-list --no-merges "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"); do
+            if ! git log -1 --format=%B "$sha" | grep -Eqi "^Signed-off-by: .+ <.+@.+>"; then
+              echo "missing Signed-off-by: $sha $(git log -1 --format=%s "$sha")" >&2
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -eq 1 ]; then
+            echo "Add sign-offs with: git rebase --signoff origin/main (see CONTRIBUTING.md)" >&2
+            exit 1
+          fi
+          echo "all commits signed off"
+
+
+  # Round-2 s6 + launch gate 11: ground-truth drift, third-party-notices
+  # regeneration, and a CycloneDX SBOM artifact, on every PR and every
+  # pivot-branch push. scripts/launch-integrity.mjs is deliberately NOT run
+  # here: it fails by design while NON-SHIPPING placeholders exist, so it
+  # belongs to session starts and launch gate 5, not per-push CI.
+  pivot-integrity:
+    name: Ground truth + notices + SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - name: Ground-truth drift check
+        run: node scripts/check-ground-truth.mjs
+      - name: Evidence exhibit manifest (redesign spec 7.4)
+        run: node scripts/check-exhibits.mjs
+      # The OpenAPI document is generated from the routes now
+      # (scripts/gen-openapi.mjs). It was hand-written with no test and had
+      # drifted to describing 9 of 51 routes while calling the API proprietary.
+      # Depth, not only coverage: a document can list every route and still be
+      # useless if the bodies, response schemas, error shape or security
+      # declarations are absent. The runtime checks need a live origin, which
+      # PR CI does not have; --allow-skips is the EXPLICIT waiver for that
+      # (without it, skipped runtime checks exit 2 as incomplete). The runtime
+      # half runs post-deploy against production, manually:
+      #   node scripts/check-openapi-depth.mjs https://app.glassmkr.com --probes public
+      # (--probes all fires unauthenticated mutations; never against prod.)
+      - name: OpenAPI depth check
+        run: node scripts/check-openapi-depth.mjs --allow-skips
+      - name: OpenAPI drift check
+        # Fails on a fictional path, a missing operationId, a proprietary
+        # licence claim, no self-host server, ANY undocumented contract route,
+        # placeholder prose, a served file that no longer matches the
+        # generator, or an error-code reference that has drifted from the code.
+        run: node scripts/check-openapi-drift.mjs
+      # Rendered-output checks. The static checks above grep source, which
+      # cannot see a value a component renders (the homepage eyebrow read
+      # "GLASSMKR AGPL" from product-facts while every source literal was
+      # correct). These ask the served page what it actually says.
+      - name: Rendered-output drift check
+        run: |
+          set -euo pipefail
+          # pnpm install does not fetch Playwright's browser binary
+          pnpm --filter @glassmkr/site exec playwright install --with-deps chromium
+          pnpm --filter @glassmkr/site build
+          pnpm --filter @glassmkr/site preview --port 4173 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4173/ >/dev/null && break
+            sleep 2
+          done
+          node scripts/check-rendered.mjs http://localhost:4173
+      - name: Third-party notices regenerate + drift (gate 11)
+        run: |
+          set -euo pipefail
+          pnpm licenses list --prod --json | node scripts/gen-third-party-notices.mjs
+          git diff --exit-code THIRD_PARTY_NOTICES.md
+      - name: SBOM (CycloneDX, gate 11)
+        run: npx --yes @cyclonedx/cdxgen -t pnpm -o sbom.cdx.json --no-recurse
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          if-no-files-found: error

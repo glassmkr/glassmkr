@@ -1,0 +1,104 @@
+# mce_uncorrected; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_FOLLOWUP_C1_C6_ACTIVATION_2026-05-19.md §1.2.
+#
+# Fires on any uncorrected MCE (Machine Check Exception) event reported
+# by EDAC. Hard-fault evidence: the CPU detected a memory error it
+# could not correct, and the kernel may have killed the process or
+# panicked. Replace the affected DIMM.
+#
+# Capability gate: snap.ecc_edac.edac_uncorrected_total must be present
+# (Crucible v0.10.4+ with EDAC driver loaded). Older agents and hosts
+# without EDAC fall through to ipmi_sel_critical for BMC-witnessed
+# events.
+#
+# Incident grouping: pairs with ecc_errors when both fire in the same
+# 5-min window. Both rules declare incident_group: memory_hardware_fault;
+# the first to fire creates the row and subsequent siblings attach.
+id: mce_uncorrected
+priority: P0
+# Forensic rule: the MCE already fired. EDAC counters persist; the
+# alert requires operator close after DIMM replacement or explicit
+# acknowledgement that the event is tolerated.
+manual_resolve: true
+incident_group:
+  group_id: memory_hardware_fault
+  correlation_window_seconds: 300
+title: Uncorrected machine check exception
+summary: EDAC reports an uncorrected memory error. Replace the affected DIMM.
+fix:
+  quick_check:
+    command: |
+      sudo mcelog --client 2>/dev/null | tail -40
+      # Fallback if mcelog isn't installed:
+      sudo journalctl -k --since "24 hours ago" 2>/dev/null | grep -iE 'machine check|MCE|Hardware Error' | tail -30
+    description: "Decoded MCE records from the running mcelog daemon (with DIMM/CPU/bank attribution) + the kernel-log fallback. Uncorrected MCEs are hard hardware faults; if you see one, treat the component as failed."
+  verdict_prior: vendor-side
+  prerequisites:
+    - Acknowledge the data-loss risk; uncorrected MCEs may have already
+      corrupted in-flight data
+    - Schedule a maintenance window to replace the DIMM
+    - Hardware replacement parts on hand (matching DIMM model/speed)
+  safe_mode:
+    command: |
+      # Read EDAC summary + per-DIMM detail
+      sudo ras-mc-ctl --summary 2>/dev/null || sudo edac-util -v 2>/dev/null
+      cat /sys/devices/system/edac/mc/mc*/ce_count 2>/dev/null
+      cat /sys/devices/system/edac/mc/mc*/ue_count 2>/dev/null
+      # Cross-reference with IPMI SEL if available
+      sudo ipmitool sel list | grep -iE 'ecc|memory' | tail -10
+    description: |
+      Identify which DIMM (label / location) is reporting the
+      uncorrected error. EDAC labels typically match BIOS DIMM
+      slot names (CPU1_DIMM_A1 etc.). Cross-reference with IPMI SEL
+      to confirm the same DIMM is logged at the BMC level.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Replacement procedure is hardware-specific; the FIX here is
+        # to identify the DIMM and stage the swap. Do not attempt a
+        # software-only workaround for an uncorrected MCE; the DIMM
+        # is failing.
+        sudo ras-mc-ctl --summary 2>/dev/null
+        sudo ras-mc-ctl --errors 2>/dev/null | tail -20
+        # Confirm: the affected DIMM is the one with non-zero ue_count
+        # in the per-DIMM EDAC entries.
+      description: |
+        Diagnostic only. Replacement is a maintenance-window operation
+        with vendor-specific steps. Coordinate with the datacenter
+        operator if remote-hands service is required.
+  validation:
+    command: |
+      cat /sys/devices/system/edac/mc/mc*/ue_count 2>/dev/null
+    description: |
+      Post-replacement: confirm new DIMM reports ue_count = 0; alert
+      auto-resolves on next snapshot.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Hardware replacement is irreversible from the software side. If
+      the wrong DIMM is replaced, the alert continues to fire because
+      the faulting DIMM is still in place.
+  impact:
+    blast_radius: |
+      DIMM replacement requires host downtime; coordinate with
+      service-level dependencies. Pre-replacement: data on the host
+      may be compromised; consider draining VMs/services if possible.
+    estimated_duration: |
+      Software-side identification: 5 min. Hardware replacement +
+      reboot: 30-90 min depending on host accessibility.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - EDAC synthetic test fixtures
+    tester: Glassmkr ops
+    research_basis: fleet-tested
+    source_note: |
+      rasdaemon is the canonical 2025-2026 RAS event collector; EDAC
+      driver is upstream-Linux. P0 priority matches the pattern
+      library: hard-fault evidence is the highest tier. Incident
+      group memory_hardware_fault pairs this with ecc_errors so a
+      single hardware fault produces one incident, not multiple
+      parallel alerts.

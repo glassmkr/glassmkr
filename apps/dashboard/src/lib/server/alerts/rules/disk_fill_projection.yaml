@@ -1,0 +1,202 @@
+# disk_fill_projection; new rule shipped 2026-05-19 per
+# CC_SPEC_CROSS_SNAPSHOT_LIBRARY_2026-05-19.md §3.1.
+#
+# Cross-snapshot linear-projection rule. Companion to disk_space_high,
+# which uses an absolute % threshold. Per ChatGPT adversarial review:
+# "absolute percent is a weak threshold (100 TB at 90% has 10 TB of
+# headroom; 100 GB at 90% is a real problem). Better: linear
+# projection from rate-of-change." This rule does the projection.
+#
+# Pages P1 when linear regression on available_bytes over the last 6
+# snapshots (~30 minutes at default cadence) projects exhaustion
+# within 24 hours. Warns P2 when projected within 7 days. Mounts that
+# are growing (negative-slope-of-available > 0) or flat skip emission.
+#
+# Capability gate: requires snap.disks[].available_gb (always present;
+# in the Crucible schema from day 1). No agent-version dependency.
+#
+# Pre-pass: declares a `cross_snapshot` block so the alert ingest path
+# loads the last 6 snapshots (timestamp + disks) before evaluation.
+# See evaluator.ts disk_fill_projection rule for the consumer.
+id: disk_fill_projection
+priority: P1
+title: Disk fill projection imminent
+summary: Linear projection on filesystem available_bytes indicates exhaustion within 24h (P1) or 7d (P2). Companion to disk_space_high (absolute %).
+cross_snapshot:
+  window:
+    count: 6
+  columns:
+    - timestamp
+    - disks
+  parsed: true
+fix:
+  quick_check:
+    # Codex 2026-05-22B F7: replaced `sudo find / -xdev ...` with a bounded
+    # du-based recipe. The find walk was a full-tree scan even on multi-TB
+    # root filesystems and could take minutes to return. The du recipe is
+    # ~O(directories) and stops at depth 2, which is good enough to surface
+    # the runaway growth source. Operators wanting the deeper file-by-file
+    # view can copy the commented-out `find` line manually.
+    command: |
+      df -h
+      du -shx /* 2>/dev/null | sort -hr | head -10
+      # Depth-2 view scoped to the busiest top-level dir from above:
+      du -hx -d2 /var 2>/dev/null | sort -hr | head -20
+      # If you need to find specific large files (slow on big trees):
+      # sudo find / -xdev -type f -size +1G 2>/dev/null | head -20
+    description: "Current free space + top 10 largest top-level directories + a bounded depth-2 view of /var (typical growth hotspot). The full trend warning fires when LR projects a fill date inside the window; this shows you which growth is responsible right now. The full filesystem walk is commented for cases where the depth-2 view does not localize the culprit."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access
+    - Operator authority to delete files OR to extend the volume
+    - Awareness of what services write to this mount
+  safe_mode:
+    command: |
+      df -h <MOUNT>
+      df -i <MOUNT>
+      sudo du -xh -d 1 <MOUNT> 2>/dev/null | sort -rh | head -20
+    description: |
+      Read-only inspection. df confirms current usage; du finds the
+      heaviest directories. Run before deleting anything. The
+      projection slope in the alert evidence tells you the rate of
+      fill (bytes/day); pair with the largest contributors to
+      identify the source.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # ====== Step 1: classify by growth rate ======
+        # The alert evidence field is `slope_bytes_per_day` (bytes/day; the
+        # alert title/message also shows it in human units). As GB/day that
+        # is slope_bytes_per_day / 1073741824:
+        #   < 1 GB/day  -> slow growth; cleanup probably sufficient
+        #   1-50 GB/day -> moderate; cleanup + verify the rate drops
+        #   >= 50 GB/day -> fast; cleanup AND plan a volume extension
+        # Caveat: a single large file written once (a stray core dump, a test
+        # image, a botched dd/fallocate) produces an artificially steep slope
+        # and a "full in hours" projection even though nothing is actively
+        # growing. Before choosing extend-over-cleanup, use the du in Step 2
+        # to confirm it is sustained growth and not one big file you can just
+        # delete.
+
+        # ====== Step 2: identify the largest accumulators ======
+        sudo du -xh -d 1 <MOUNT> 2>/dev/null | sort -rh | head -20
+        # Then drill into the biggest:
+        sudo du -xh -d 1 <MOUNT>/<biggest-dir> 2>/dev/null | sort -rh | head -20
+        # Before deleting any single large file, confirm no process still
+        # holds it open -- deleting an open file frees no space until the
+        # holder exits or is signalled:
+        sudo lsof -- <the-large-file> 2>/dev/null || true
+
+        # ====== Step 3: cleanup by category ======
+        #
+        # 3a. Systemd journal (most common heavyweight on Linux)
+        sudo journalctl --disk-usage
+        sudo journalctl --vacuum-size=500M     # cap at 500 MB total
+        # OR sudo journalctl --vacuum-time=7d  # keep last 7 days
+        # Persistent config in /etc/systemd/journald.conf
+        # (SystemMaxUse=500M then `systemctl restart systemd-journald`)
+
+        # 3b. Container runtime cleanup
+        # Docker:
+        sudo docker system df               # see what's used
+        sudo docker system prune -af        # remove all unused images/containers
+        sudo docker volume prune -f         # remove unused volumes
+        sudo docker image prune -af --filter "until=168h"  # >7d old images
+        # Podman:
+        podman system prune -af
+        # containerd / k8s nodes:
+        sudo crictl rmi --prune
+
+        # 3c. Package cache + downloads
+        # Debian / Ubuntu:
+        sudo apt-get clean && sudo apt-get autoclean
+        sudo apt-get autoremove --purge
+        sudo journalctl --rotate
+        # RHEL / AlmaLinux / Rocky / Fedora:
+        sudo dnf clean all
+        sudo dnf autoremove
+
+        # 3d. Core dumps
+        ls -la /var/lib/systemd/coredump/ 2>/dev/null
+        sudo find /var/lib/systemd/coredump/ -type f -mtime +7 -delete
+        sudo coredumpctl list  # human-readable summary
+
+        # 3e. Swap files left behind by old containers
+        sudo find / -xdev -name "*.swp" -o -name "swap*" -size +100M 2>/dev/null
+
+        # 3f. Old kernels (Debian / Ubuntu)
+        sudo apt-get autoremove --purge  # also clears old kernels
+        # Manual on RHEL family:
+        sudo dnf remove $(dnf repoquery --installonly --latest-limit=-2 -q)
+
+        # ====== Step 4: volume extension (when cleanup isn't enough) ======
+        #
+        # LVM (most bare-metal Debian/RHEL setups):
+        sudo vgs                              # check VG free space
+        sudo lvextend -L +50G /dev/mapper/<vg>-<lv>    # add 50 GB
+        sudo resize2fs /dev/mapper/<vg>-<lv>           # ext4
+        # OR sudo xfs_growfs <MOUNT>                   # xfs
+        #
+        # Cloud providers (online resize, no downtime):
+        #   - AWS EBS: Console -> EC2 -> Volumes -> Modify Volume; then
+        #     sudo growpart /dev/nvme0n1 1 && sudo resize2fs/xfs_growfs <MOUNT>
+        #   - GCP PD: Console -> Compute -> Disks -> Edit size; same growpart+resize
+        #   - Hetzner / OVH / other providers: usually requires raising a ticket for
+        #     bare-metal; cloud-VPS providers have a console-driven resize flow.
+        #
+        # ZFS pool extension (if mount is on ZFS):
+        sudo zpool add <pool> <new-device>    # add a vdev
+        # OR sudo zpool autoexpand on; then physical disk replacement
+
+        # ====== Step 5: confirm projection re-flattens ======
+        # After cleanup or extension, the slope drops. Rule auto-resolves
+        # when the 6-snapshot regression slope of available_bytes goes
+        # non-negative. Check the trend in the dashboard's metrics view.
+      description: |
+        Five-step deep diagnosis. Step 1 classifies by growth rate
+        (fast-vs-slow drives the action: cleanup vs extension).
+        Steps 2-3 cover targeted cleanup by category (journal /
+        containers / packages / coredumps / kernels). Step 4 covers
+        LVM + cloud + ZFS extension paths. Step 5 closes the loop
+        on auto-resolution. Companion to disk_space_high (which
+        fires on absolute %); this rule fires on rate-of-change.
+  validation:
+    command: |
+      df -h <MOUNT>
+    description: |
+      Confirm available space recovered. The rule will auto-resolve
+      on the next snapshot once the 6-point regression slope is
+      non-negative.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Deleting files is not reversible from the host side. If
+      important data was removed, restore from backup. Volume
+      extension is reversible only via shrink, which on most file
+      systems requires a full data move first.
+  impact:
+    blast_radius: |
+      Pure projection signal; no direct service impact from the alert.
+      Cleanup actions may interrupt services that depend on the
+      removed files. Volume extension is non-disruptive on cloud
+      providers; on bare metal it depends on the LVM/storage layout.
+    estimated_duration: |
+      Triage 5-15 min; cleanup or extension varies (5 min to 1 h).
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic projection test fixtures (vitest)
+    tester: Glassmkr ops
+    research_basis: operator-pattern
+    source_note: |
+      Pattern library 2026-05-18 Category 8 (Filesystem and capacity).
+      Rate-of-fill is the primary signal; absolute % is the fallback
+      (disk_space_high covers absolute). Threshold split: 24h pages
+      P1 (hard incident horizon); 7d pages P2 (planning horizon).
+      Per ChatGPT adversarial review on absolute % thresholds being
+      weak on large volumes. Window of 6 snapshots chosen so the
+      regression has enough points to denoise without slewing through
+      diurnal patterns; revisit if false-positive rate grows.

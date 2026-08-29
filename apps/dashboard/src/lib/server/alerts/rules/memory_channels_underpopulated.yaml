@@ -1,0 +1,83 @@
+# memory_channels_underpopulated; DIMM-topology Tier 1, shipped 2026-07-04 per
+# CC_SPEC_DIMM_POPULATION_2026-07-04.md.
+#
+# Fires from SMBIOS Type 17 facts (snap.memory_topology, Crucible 0.13.19+):
+# fewer populated memory channels than the board exposes, or DIMMs running
+# below their rated speed (2DPC / rank downclock). No tunable threshold; the
+# firmware either reports empty channels or it does not. Advisory by design:
+# the host is healthy, it is just leaving memory bandwidth unused (an
+# 8-channel EPYC with 4 DIMMs runs at roughly half its ~205 GB/s peak).
+# The fix is physical (install or move DIMMs), so the variants below are
+# inspection + planning commands, not remediation scripts. Ack when the
+# population is an intentional capacity/cost tradeoff.
+#
+# Tier 2 (controller/quadrant balance, "the wrong 4 slots") is deliberately a
+# separate future rule; see the spec.
+id: memory_channels_underpopulated
+priority: P3
+title: Memory channels under-populated
+summary: The board exposes more memory channels than have DIMMs installed (or DIMMs run below rated speed), so peak memory bandwidth is reduced. On EPYC-class boards the alert also flags placement, when the installed DIMMs double up on adjacent channels (one memory-controller group) instead of spreading one per group; the same DIMM count placed wrong idles controllers and weakens interleaving. Not a fault; a hardware-population advisory. Fix is physical DIMM installation or rebalancing during a maintenance window, per the board manual's population table.
+
+fix:
+  quick_check:
+    command: |
+      sudo dmidecode -t 17 | grep -E 'Locator:|Size:|Speed' | paste - - - - 2>/dev/null || sudo dmidecode -t 17
+    description: "Per-slot population from firmware. 'No Module Installed' rows are empty slots; the channel letter lives in the locator (DIMMA1, DIMM_P0_A0, CPU1_DIMM_A2 by vendor). Compare distinct populated channels against what the board exposes; the alert evidence carries the same numbers plus a per-socket split."
+  verdict_prior: investigation
+  prerequisites:
+    - "Nothing is broken: this is a bandwidth advisory. No urgency beyond scheduling."
+    - "Physical access (or remote-hands) during a maintenance window; DIMM changes need the host powered off."
+    - "The board manual's DIMM-population table for your DIMM count (vendors specify exact slot order; wrong slots can cost as much as missing ones)."
+    - "Matching DIMMs for the empty channels (same type/speed/rank as installed; mixing forces the slowest common speed)."
+  safe_mode:
+    command: |
+      # Read-only: what the firmware reports today.
+      sudo dmidecode -t 17 | grep -cE '^\s*Size: [0-9]'         # populated DIMMs
+      sudo dmidecode -t 17 | grep -c 'Memory Device$'            # total slots
+      sudo dmidecode -t 17 | grep -E 'Configured Memory Speed|^\s*Speed:' | sort | uniq -c
+      # NUMA view of what the OS sees per node:
+      numactl --hardware 2>/dev/null | head -20
+    description: "Slot counts, rated-vs-configured speed spread, and the per-NUMA-node memory the OS ended up with. All read-only."
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Capture the current layout (paste into the maintenance ticket)
+        sudo dmidecode -t 17 > /tmp/dimm-layout-$(hostname).txt
+
+        # 2. Identify the empty channels (alert evidence lists them; cross-check)
+        grep -B2 'No Module Installed' /tmp/dimm-layout-$(hostname).txt | grep Locator
+
+        # 3. Plan against the board manual's population table for the target
+        #    DIMM count, then schedule a maintenance window (host powered off,
+        #    DIMMs installed or moved per the table).
+
+        # 4. After boot, confirm the firmware sees every channel populated and
+        #    at rated speed; the alert auto-resolves on the next snapshot.
+        sudo dmidecode -t 17 | grep -E 'Size:|Configured Memory Speed'
+      description: "Inspection and planning; the remediation itself is physical DIMM installation per the board manual's population table. Distro-independent (firmware facts)."
+  validation:
+    command: |
+      sudo dmidecode -t 17 | grep -E '^\s*Size:' | grep -vc 'No Module'
+      sudo dmidecode -t 17 | grep -E 'Configured Memory Speed|^\s*Speed:' | sort | uniq -c
+    description: "After the maintenance window: populated-DIMM count matches the plan and configured speed equals rated speed. The alert re-firing on the next snapshot is the negative validation."
+    expected_exit: 0
+  rollback:
+    available: true
+    command: null
+    note: "Physically reversible (move DIMMs back), but there is no software rollback. If the new population misbehaves (rare; usually a seating issue), reseat or revert to the prior layout in the same maintenance window."
+  impact:
+    blast_radius: "Zero while planning (all commands read-only). The DIMM change itself needs the host powered off: full downtime for the window, typically 15-30 minutes including POST and memory training (large-DIMM hosts can train for several minutes on first boot)."
+    estimated_duration: "Inspection: 5 minutes. Maintenance window for physical work: 15-30 minutes."
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-07-04"
+    tested_on:
+      - "Gigabyte dual EPYC 7302 (AlmaLinux 10): 4 of 8 channels per socket, fires"
+      - "ASUS EPYC 9754 (Ubuntu 26.04): 8 of 12 channels, fires"
+      - "EPYC 7443 (Debian 13): 8 of 8 channels, silent"
+      - "EPYC 9355P (Ubuntu 26.04): 12 of 12 channels, silent"
+      - "Supermicro Xeon E-2388G (Rocky 10 / Debian 13): 2 of 2 channels, silent"
+    tester: "glassmkr-validation-fleet"
+    source_note: "Channel counts and bandwidth impact from AMD EPYC 7003/9004 memory-population guidance and Intel Xeon Scalable platform docs; detection is firmware-reported SMBIOS Type 17, validated live across 4 vendors on the validation fleet (spec CC_SPEC_DIMM_POPULATION_2026-07-04)."
+    research_basis: "fleet-tested"

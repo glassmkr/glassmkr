@@ -1,0 +1,19 @@
+{
+  "name": "@glassmkr/ui",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "svelte": "./src/lib/index.ts",
+  "exports": {
+    ".": "./src/lib/index.ts",
+    "./base.css": "./src/lib/base.css"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "svelte": "^5.28.0",
+    "typescript": "^5.8.0"
+  }
+}

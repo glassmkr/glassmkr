@@ -1,0 +1,103 @@
+# Paths that must NOT reach the public repository at the flip.
+#
+# The public repo is a fresh squashed history, so exclusion is a curation step
+# rather than a git filter. This file makes that step mechanical instead of
+# remembered: scripts/launch-integrity.mjs fails if internal-only material
+# exists outside these paths, and the flip procedure removes these paths from
+# the squashed tree before the first public commit.
+#
+# One entry per line, repo-relative prefixes, "#" comments allowed.
+
+# Internal specifications, archived session handoffs, and launch material.
+# Internal planning and operator-personal material. Verified 2026-08-25.
+docs/internal/
+
+# The pivot ledger itself. Already excluded from git via .git/info/exclude;
+# listed here so the flip procedure double-checks rather than assumes.
+OSS_PIVOT_STATE.md
+
+# Internal working documents at the repo root. Found by the first staged-tree
+# rehearsal (2026-08-25): these are session handoffs, Codex review prompts,
+# migration notes, and dated recon files. They are engineering exhaust, not
+# product documentation, and several name internal hosts and workflows.
+# Verified against the root listing; SELF_HOSTING.md, CONTRIBUTING.md,
+# THIRD_PARTY_NOTICES.md, LICENSE, and README stay.
+CODEX_P1_VERIFICATION.md
+CODEX_REVIEW_PROMPT.md
+CODEX_REVIEW_PROMPT_20260422.md
+MERGE_AND_DEPLOY_2026_05.md
+NEXT_SESSION_PROMPT.md
+PERF_BASELINE_INPUTS.md
+PHASE_1_ZOD_REBASE.md
+RECON_2026-05-09.md
+box_reachability_2026_05_07.md
+code_review.md
+roadmap.md
+
+# Found by the gate 1 scan of the SQUASHED tree (2026-08-26). The top-level
+# docs/internal/ exclusion above does not cover these: they live under
+# apps/dashboard/docs/ and would have shipped.
+#
+# Internal security analysis. SECURITY.md is the public artifact; these are not.
+apps/dashboard/docs/security/
+# Internal engineering notes.
+apps/dashboard/docs/internal/
+
+# Operator runbooks and queues. Internal by nature; they name hosts and
+# operational detail that has no public purpose.
+ops/
+
+# macOS directory metadata.
+.DS_Store
+
+# Glassmkr's own production runbooks. Not self-hosting guidance: operational
+# procedures for the hosted service, written against its actual infrastructure
+# and naming it throughout. A self-hoster's equivalent material is in
+# SELF_HOSTING.md. Found by the pre-flip sweep 2026-08-27.
+docs/runbooks/
+
+# Local agent tooling configuration. Machine-specific, names internal hosts, and
+# is nobody else's business.
+.claude/
+
+# Validation-campaign records. These document our own estate: host-by-host
+# inventories of distro, kernel, firmware and hardware vendors across the fleet.
+# Useful to us, reconnaissance to anyone else, and nothing a self-hoster needs.
+apps/dashboard/docs/validation/
+
+# Deployment procedures for infrastructure we operate, naming the hosts that run
+# it. Self-hosting instructions are in SELF_HOSTING.md.
+infrastructure/glitchtip/DEPLOY.md
+infrastructure/nginx/README.md
+
+# Validation evidence and fleet inventories kept next to the dashboard code.
+# Same class as apps/dashboard/docs/validation/: per-host records naming machines,
+# hardware vendors and internal server identifiers. Found by the positive sweep
+# on 2026-08-27, not by this list, which is the reason the sweep exists.
+apps/dashboard/docs/val-fleet-inventory.md
+apps/dashboard/docs/ecc-errors-validation-evidence.md
+apps/dashboard/docs/ecc-field-discovery.md
+apps/dashboard/docs/psu-redundancy-loss-validation-evidence.md
+apps/dashboard/docs/cpu-temperature-high-validation-evidence.md
+
+# Pre-flip launch gates. Tooling for our own flip, worthless to anyone after it,
+# and they carry validation-box names as defaults.
+scripts/gate-installer-live.sh
+scripts/gate-release-binaries.sh
+scripts/gate9-upgrade-path.sh
+scripts/gate10-compose-failure-matrix.sh
+
+# The infrastructure-disclosure gate itself. It has to name the hosts it hunts
+# for, so it cannot pass its own check, and a file whose job is describing what
+# must not ship has no business shipping. It caught itself on the first run.
+scripts/gate-infra-disclosure.sh
+apps/dashboard/docs/psu-redundancy-loss-current-state.md
+
+
+# The hosted service's deploy pipeline. It SSHes to our production host with
+# repository secrets the public repository will never hold, so on the public
+# repo it can only ever be a red X on every push, and it documents our
+# operational shape besides. Self-hosters deploy from SELF_HOSTING.md; public
+# CI (ci.yml, integration, e2e, the secret scan) ships and runs fine without
+# repository secrets. Added at the flip, 2026-08-29.
+.github/workflows/deploy.yml

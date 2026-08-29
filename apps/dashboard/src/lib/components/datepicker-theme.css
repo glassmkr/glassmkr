@@ -1,0 +1,291 @@
+/* ============================================================
+ * flatpickr theme — matches the dashboard's design tokens.
+ * Loaded once via DatePicker.svelte's import side-effect.
+ *
+ * Rules target flatpickr's generated DOM, which lives at
+ * document.body level (not inside any component scope), so
+ * everything here is intentionally unscoped.
+ *
+ * Token mapping (from packages/ui/src/lib/base.css):
+ *   --bg              page background           → calendar pane
+ *   --surface         input/card background     → buttons
+ *   --bg-elevated     elevated card             → footer
+ *   --bg-hover        hover background          → cell hover
+ *   --surface-border  card border               → divider, pane border
+ *   --accent          #F5A623 amber             → selection
+ *   --accent-hover    #F5A623 lighter amber     → selection hover
+ *   --text-primary    high-contrast body text   → day numbers
+ *   --text-secondary  muted body text           → header label
+ *   --text-tertiary   lowest-contrast text      → weekday labels
+ * ============================================================ */
+
+/* ---------- Panel ---------- */
+.flatpickr-calendar {
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  width: auto;
+  padding: 4px;
+}
+.flatpickr-calendar.arrowTop::before,
+.flatpickr-calendar.arrowTop::after,
+.flatpickr-calendar.arrowBottom::before,
+.flatpickr-calendar.arrowBottom::after {
+  display: none; /* The plain pane reads cleaner than the floating-tooltip arrow. */
+}
+
+/* ---------- Month / year nav ---------- */
+.flatpickr-months {
+  padding: 4px 4px 8px;
+}
+.flatpickr-months .flatpickr-month {
+  background: transparent;
+  color: var(--text-primary);
+  height: 36px;
+}
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+  color: var(--text-secondary);
+  fill: var(--text-secondary);
+  padding: 8px;
+}
+.flatpickr-months .flatpickr-prev-month:hover,
+.flatpickr-months .flatpickr-next-month:hover {
+  color: var(--accent);
+  fill: var(--accent);
+}
+.flatpickr-months .flatpickr-prev-month svg,
+.flatpickr-months .flatpickr-next-month svg {
+  fill: inherit;
+}
+.flatpickr-current-month {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 0;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: var(--font-sans);
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months:hover {
+  background: var(--bg-hover);
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months .flatpickr-monthDropdown-month {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+.flatpickr-current-month input.cur-year {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: var(--font-sans);
+}
+.flatpickr-current-month .numInputWrapper:hover,
+.flatpickr-current-month .numInputWrapper {
+  background: transparent;
+}
+.flatpickr-current-month .numInputWrapper span.arrowUp::after { border-bottom-color: var(--text-secondary); }
+.flatpickr-current-month .numInputWrapper span.arrowDown::after { border-top-color: var(--text-secondary); }
+
+/* ---------- Weekday header row (M T W T F S S) ---------- */
+.flatpickr-weekdays {
+  background: transparent;
+  height: 32px;
+}
+.flatpickr-weekdaycontainer { background: transparent; }
+.flatpickr-weekday {
+  /* Match the keys-table column-header treatment from
+     settings/keys/+page.svelte: 11px uppercase tertiary text. */
+  background: transparent !important;
+  color: var(--text-tertiary) !important;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Day cells ----------
+ * flatpickr lays cells edge-to-edge in a 7-column flex row; if we paint
+ * the background directly on .flatpickr-day, the today-border and the
+ * selected-fill of adjacent cells touch (see screenshot bug, 2026-05-16).
+ * Fix: use background-clip with a transparent border so the colored
+ * fill is inset from the cell's geometric edges, AND add a 2px content
+ * inset via `box-shadow inset` for clarity. Net effect: ~2px gutter
+ * between any two colored cells. */
+.flatpickr-day {
+  color: var(--text-primary);
+  background-clip: padding-box;
+  border-radius: 4px;
+  border: 2px solid transparent;     /* transparent inset → visual gutter */
+  font-family: var(--font-sans);
+  font-size: 13px;
+  /* MUST stay >= 39px. flatpickr's .dayContainer is a fixed 307.875px flex-wrap
+     row; a cell narrow enough that 8 fit (<= 307.875/8 = 38.48px) makes the grid
+     wrap 8-per-row while the weekday header stays 7 columns, so every row drifts
+     a day and the 8th orphans below. A prior 38px value did exactly that
+     (2026-07-14: Jul 15 rendered under Mon instead of Wed). 39px is flatpickr's
+     own default: 7x39=273 fit, 8x39=312 do not. */
+  max-width: 39px;
+  height: 36px;
+  line-height: 32px;                 /* 36 - 2*2 border = 32 to keep text centered */
+}
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.flatpickr-day.today {
+  /* Today gets a 1px amber ring drawn via inset shadow, leaving the
+     transparent 2px border intact so the colored ring stays inset
+     from the cell geometry. */
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text-primary);
+}
+.flatpickr-day.today:hover {
+  background: var(--accent-muted);
+}
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover,
+.flatpickr-day.selected:focus,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+  box-shadow: none;                  /* override .today ring when both apply */
+}
+/* Disabled / prev-next month numbers — bump contrast to ~45% so they're
+   legible but still clearly secondary. flatpickr's default 0.15-0.20
+   opacity is borderline invisible on the dark theme. */
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay,
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover {
+  color: var(--text-tertiary);
+  opacity: 0.45;
+  background: transparent;
+}
+.flatpickr-day.prevMonthDay:hover,
+.flatpickr-day.nextMonthDay:hover {
+  background: var(--bg-hover);
+  opacity: 0.7;
+}
+
+/* ---------- Time picker ----------
+ * flatpickr renders the time picker BELOW the calendar grid (not beside
+ * it — that would require restructuring flatpickr's DOM). Use a
+ * horizontal divider so the two sections read as related-but-distinct.
+ * (The first iteration used `border-left` for a vertical divider, which
+ * floated in unused space and produced visual confusion — reverted
+ * 2026-05-16.) */
+.flatpickr-calendar.hasTime .flatpickr-time {
+  border-top: 1px solid var(--surface-border);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+.flatpickr-time {
+  background: transparent;
+}
+/* HH / MM column captions. Each label is a real <div class="fp-time-label">
+   injected via DatePicker.svelte's onReady hook, placed as the first child
+   of each numInputWrapper so it sits directly above the corresponding
+   spinner (block-level → stacks above input in flex-column inside the
+   wrapper). The previous attempt used a single ::before with content
+   "HH    MM" which collapsed to one string and ended up positioned next
+   to the colon separator — that's the bug Simon caught in the screenshot. */
+.flatpickr-time .numInputWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+.fp-time-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  pointer-events: none;
+  margin-bottom: 2px;
+  width: 100%;
+  text-align: center;
+}
+.flatpickr-time input,
+.flatpickr-time .flatpickr-time-separator,
+.flatpickr-time .flatpickr-am-pm {
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+}
+.flatpickr-time input:focus,
+.flatpickr-time input:hover {
+  background: var(--bg-hover);
+}
+.flatpickr-time .numInputWrapper:hover { background: var(--bg-hover); }
+.flatpickr-time .numInputWrapper span.arrowUp::after { border-bottom-color: var(--text-secondary); }
+.flatpickr-time .numInputWrapper span.arrowDown::after { border-top-color: var(--text-secondary); }
+
+/* ---------- Custom footer (Clear / Today / Done) ---------- */
+.fp-custom-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 6px;
+  margin-top: 6px;
+  border-top: 1px solid var(--surface-border);
+}
+.fp-footer-btn {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.fp-footer-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
+}
+.fp-footer-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Done = primary action, matches the .btn-primary pattern elsewhere. */
+.fp-footer-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.fp-footer-done:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+/* Clear = subtle/destructive-lite, keeps to the left visually. */
+.fp-footer-clear {
+  color: var(--text-secondary);
+}
+.fp-footer-clear:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* ---------- Year input arrows ---------- */
+.flatpickr-monthDropdown-months,
+.flatpickr-current-month .cur-year {
+  font-family: var(--font-sans);
+}

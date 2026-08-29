@@ -1,0 +1,213 @@
+/* Shared styling for all /vs/<competitor> comparison pages
+ * (CONTENT_TRANCHE_2 spec, 2026-05-17). Imported by each page's
+ * +page.svelte so the visual rhythm is consistent across the 8
+ * comparison pages without per-page CSS duplication.
+ *
+ * Page-specific overrides can be added inline if needed; this
+ * file holds the structural defaults.
+ */
+
+.vs-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Hero */
+.vs-hero {
+  padding: 72px 0 48px;
+}
+.vs-eyebrow {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  opacity: 0.75;
+  margin: 0 0 20px;
+}
+.vs-hero h1 {
+  font-size: clamp(28px, 4.2vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--text-primary);
+  margin: 0 0 18px;
+}
+.vs-subhead {
+  font-size: clamp(15px, 1.6vw, 17px);
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin: 0 0 24px;
+}
+.vs-verified {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* Sections */
+.vs-section {
+  padding: 48px 0;
+  border-top: 1px solid var(--surface-border);
+}
+.vs-section h2 {
+  font-size: clamp(22px, 2.8vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+  margin: 0 0 18px;
+}
+.vs-section h3 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 24px 0 10px;
+}
+.vs-section p {
+  font-size: 15.5px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+}
+.vs-section p:last-child { margin-bottom: 0; }
+.vs-section a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.vs-section a:hover {
+  text-decoration-thickness: 2px;
+}
+.vs-section code {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  background: rgba(245, 166, 35, 0.06);
+  color: var(--accent);
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+}
+
+/* TL;DR callout */
+.vs-tldr {
+  background: rgba(245, 166, 35, 0.04);
+  border-left: 2px solid var(--accent);
+  padding: 20px 22px;
+  border-radius: 0 6px 6px 0;
+  margin: 24px 0 0;
+}
+.vs-tldr p { font-size: 15px; line-height: 1.7; }
+
+/* Tables */
+.vs-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 14.5px;
+}
+.vs-table th,
+.vs-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--surface-border);
+  vertical-align: top;
+  line-height: 1.55;
+}
+.vs-table th {
+  font-weight: 600;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.vs-table td:first-child {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.vs-table td {
+  color: var(--text-secondary);
+}
+
+/* Pricing grid (for the per-host scaling tables) */
+.vs-pricing-table {
+  font-family: var(--font-mono, monospace);
+  font-size: 13.5px;
+}
+.vs-pricing-table th,
+.vs-pricing-table td {
+  text-align: right;
+}
+.vs-pricing-table th:first-child,
+.vs-pricing-table td:first-child {
+  text-align: left;
+}
+
+/* Footnotes */
+.vs-footnotes {
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid var(--surface-border);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.7;
+}
+.vs-footnotes ol {
+  padding-left: 24px;
+  margin: 0;
+}
+.vs-footnotes li {
+  margin-bottom: 8px;
+}
+.vs-footnotes a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  /* Citation links are bare URLs, and some vendor doc paths run past 400px
+     with no break opportunity in them. On a 390px screen that made the whole
+     page pan sideways: /vs/netdata by 77px, /vs/cloudwatch by 73px. A long
+     source URL is worth keeping visible in full, so wrap it rather than
+     truncate it. */
+  overflow-wrap: anywhere;
+}
+
+/* "Last verified" footer block */
+.vs-footer-note {
+  margin: 40px 0 0;
+  padding: 20px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.015);
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 720px) {
+  .vs-hero { padding: 56px 0 36px; }
+  .vs-section { padding: 36px 0; }
+  .vs-table {
+    font-size: 13.5px;
+  }
+  .vs-table th,
+  .vs-table td {
+    padding: 8px 10px;
+  }
+}
+
+/* Footnote markers. A superscript reference renders about 8px wide and 15px
+   tall, which is the smallest tap target on the site, and these are the
+   citations that let a reader check a comparison claim. Inline-block with
+   padding gives a 24px target without moving the baseline or opening up the
+   line height around it. */
+.vs-section sup a,
+.vs-tldr sup a,
+.vs-page sup a {
+  display: inline-block;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 6px;
+  text-align: center;
+  line-height: 24px;
+  margin: -6px 0;
+  vertical-align: middle;
+}

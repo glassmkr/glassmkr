@@ -1,0 +1,96 @@
+# gpu_driver_or_firmware_drift; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §1.5.
+#
+# Fires when multiple GPUs of the same model on a single host report
+# different vbios versions. Within-host drift indicates a failed
+# firmware update or mixed-batch installation; both are operationally
+# relevant.
+#
+# Cross-host fleet drift (different driver_version across hosts in
+# the same customer's fleet) is the spec's primary motivation but
+# requires per-customer cross-snapshot aggregation that doesn't exist
+# in the per-snapshot evaluator. Deferred to a follow-up rule once
+# the cross-snapshot library has a per-customer-fleet primitive.
+#
+# Capability gate: tier1.available + tier1.gpus.length >= 2.
+id: gpu_driver_or_firmware_drift
+priority: P3
+title: GPU vbios drift within host
+summary: "Multiple GPUs of the same model on this host report different vbios versions. Within-host vbios drift typically indicates a failed firmware update or mixed-batch installation."
+fix:
+  quick_check:
+    command: |
+      nvidia-smi --query-gpu=index,uuid,name,driver_version,vbios_version --format=csv
+      # Compare against the rest of the fleet from the dashboard server list.
+    description: "Per-GPU driver + vBIOS version. The alert fires when one GPU on a host is on a different driver or vBIOS from the others, or when the host as a whole drifts from the fleet baseline. Compare against the dashboard's fleet-wide view."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access on the host
+    - Vendor firmware tooling (nvflash for NVIDIA-direct; OEM-specific tools for chassis-vendor flashing)
+    - Maintenance window for firmware re-flash
+  safe_mode:
+    command: |
+      nvidia-smi --query-gpu=index,name,uuid,serial,vbios_version --format=csv
+      nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits
+    description: |
+      Read-only inspection. CSV output makes per-GPU vbios comparison
+      easy. Identify which GPU is the outlier.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Capture the current vbios per GPU:
+        nvidia-smi --query-gpu=index,name,uuid,vbios_version --format=csv
+        # 2. Decide the fleet baseline. Usually the newer version,
+        #    but sometimes a rollback is correct (e.g. if the newer
+        #    vbios was deployed in error). Coordinate with vendor
+        #    support.
+        # 3. Reflash the outlier GPU. Vendor-specific:
+        #    - Direct NVIDIA (RTX/Quadro/data-center retail):
+        #      sudo nvflash --save /tmp/<gpu>-current.rom -i <index>
+        #      sudo nvflash <new.rom> -i <index>
+        #    - OEM chassis (Supermicro / Dell / HPE): use the OEM
+        #      vbios deployment path; never use stock nvflash on
+        #      OEM-shipped GPUs.
+        # 4. Validate post-reflash:
+        nvidia-smi --query-gpu=index,vbios_version --format=csv
+      description: |
+        vbios reflash is vendor-specific. Direct nvflash works on
+        retail / data-center GPUs from NVIDIA but is not supported
+        on OEM-shipped GPUs (Supermicro / Dell / HPE GPUs require
+        the OEM's deployment tooling).
+  validation:
+    command: |
+      nvidia-smi --query-gpu=index,name,vbios_version --format=csv
+    description: |
+      All GPUs of the same model report the same vbios_version. Rule
+      auto-resolves on next snapshot.
+  rollback:
+    available: true
+    command: |
+      sudo nvflash <previous.rom> -i <index>
+    note: |
+      vbios is reversible IF you saved the previous version BEFORE
+      reflashing. Always save the current vbios first (nvflash
+      --save). OEM tooling has its own rollback semantics.
+  impact:
+    blast_radius: |
+      Alert itself is informational. Reflashing requires the GPU to
+      be idle and may require a host reboot. Customer-facing impact
+      depends on whether the affected GPU is actively serving.
+    estimated_duration: |
+      Triage 5-15 min. Reflash + reboot: 15-30 min.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-20"
+    tested_on:
+      - Synthetic multi-GPU vbios fixtures
+    tester: Glassmkr ops
+    research_basis: validation-pending
+    source_note: |
+      Pattern library 2026-05-18 + new GPU category. Inventory
+      hygiene tier (P3). Within-host vbios drift is the v1
+      detection; cross-host fleet driver/vbios drift is deferred
+      until the cross-snapshot library has a per-customer-fleet
+      aggregation primitive. Crucible v0.13.0 surfaces vbios_version
+      per GPU via nvidia-smi --query-gpu.

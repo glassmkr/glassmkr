@@ -1,0 +1,186 @@
+# nvme_wear_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B1, refactored same-day per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md to use the new
+# condition_match dimension.
+#
+# Migration <dynamic> marker resolved: the original TS evaluator had
+# a `${percentage_used >= 95 ? "Replace immediately." : "Schedule
+# replacement within the next maintenance window."}` template literal.
+# Now expressed as 2 condition_match variants on the percentage_used
+# attribute plus a missing-evidence fallback. The 95% threshold
+# matches the evaluator's severity-critical boundary; the alert
+# itself fires at 85% (config-tunable via nvme_wear_percent) so an
+# alert can be at warning (85-94) or critical (>=95) state.
+id: nvme_wear_high
+priority: P2
+title: SSD wear high
+summary: "A solid-state drive's write-endurance indicator is at or above the configured threshold. This covers both NVMe (percentage-used) and SATA SSDs (Percent_Lifetime_Remain / Wear_Leveling_Count, which Crucible maps into the same percentage-used signal). Plan replacement before the drive enters read-only protection mode at 100%. The rule id stays nvme_wear_high for history; it is not NVMe-only. Use nvme-cli for NVMe devices (/dev/nvmeXnY) and smartctl for SATA SSDs (/dev/sdX); smartctl -a works for both."
+
+fix:
+  quick_check:
+    command: |
+      # Identify the alerted unit by SERIAL first: /dev/ letters can move
+      # across reboots when identical drives are present.
+      for d in /dev/nvme?n? /dev/sd?; do
+        [ -e "$d" ] || continue
+        echo "=== $d ==="
+        sudo smartctl -i $d | grep -iE 'model|serial'
+        sudo smartctl -A $d | grep -iE 'percentage_used|percent_lifetime|wear_leveling|available_spare|media_errors|critical_warning'
+      done
+    description: "Walk every drive and print identity (model + serial) plus the wear/health attributes. Match the SERIAL from the alert evidence, not the device letter: letters move across reboots, and two identical drives can carry very different wear (a validation session compared the wrong twin of an MX500 pair and wrongly concluded the alert overstated wear 25x; the alerted twin really was at 80%). Percentage_used >=85% is the warning band on NVMe; on SATA SSDs the same signal is Percent_Lifetime_Remain / Wear_Leveling_Count."
+  verdict_prior: vendor-side
+  prerequisites:
+    - "Replacement drive on hand, matching the interface of the alerted unit (NVMe U.2/M.2/AIC, or SATA 2.5in/M.2)"
+    - Maintenance window declared (SSD replacement may require power-down; NVMe M.2 and many SATA bays are not hot-swap, enterprise U.2/SATA backplanes are)
+    - Recent backup verified (data migration during replacement is destructive if mishandled)
+    - Warranty status checked (some vendors RMA an SSD at high wear under warranty)
+
+  safe_mode:
+    command: |
+      # smartctl -a works for BOTH SATA SSDs and NVMe; run it first.
+      sudo smartctl -a {{device}}
+      sudo smartctl -a {{device}} | grep -iE 'percentage_used|percent_lifetime|wear_leveling|data units written|power_on_hours'
+      # NVMe also exposes a dedicated wear log; skip it for SATA (it errors there).
+      case "{{device}}" in /dev/nvme*) sudo nvme smart-log {{device}} ;; esac
+      lsblk {{device}}
+    description: |
+      Read-only endurance inspection. Confirms current wear
+      (percentage_used on NVMe / Percent_Lifetime_Remain on SATA),
+      total data written (TBW estimate), power-on hours, and the
+      drive's partition layout. Run before deciding replace-now vs
+      plan-replacement. The nvme smart-log line runs only for an NVMe
+      device path; on a SATA SSD smartctl already carries the wear.
+
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percentage_used
+        op: gte
+        value: 95
+      command: |
+        # Imminent-replacement workflow (wear >= 95%; critical band).
+        # Drive may enter read-only protection mode at 100%. Treat
+        # as if failure is hours-to-days away.
+
+        # 1. Confirm current wear + write volume (smartctl covers SATA + NVMe;
+        #    add the NVMe wear log only for an NVMe device path).
+        sudo smartctl -a {{device}}
+        case "{{device}}" in /dev/nvme*) sudo nvme smart-log {{device}} ;; esac
+
+        # 2. Inventory the drive's contents + RAID/LVM membership
+        lsblk {{device}}
+        cat /proc/mdstat
+
+        # 3. Establish RAID membership. Read-only; this runs.
+        ARRAY=$(lsblk -no PKNAME,TYPE {{device}} 2>/dev/null | awk '$2 ~ /^raid/ {print "/dev/"$1; exit}')
+        MEMBER=$(lsblk -no NAME,TYPE {{device}} 2>/dev/null | awk '$2=="part"{print "/dev/"$1; exit}')
+        if [ -n "$ARRAY" ]; then echo "member $MEMBER belongs to $ARRAY"; else echo "not a RAID member: skip the mdadm steps"; fi
+        #
+        #    The two commands below are commented DELIBERATELY. Failing a disk
+        #    out of an array removes redundancy from a machine that is already
+        #    down a drive, and naming the wrong array pulls a healthy disk from
+        #    an unrelated one. The only undo is a full rebuild.
+        #
+        #    Do not assume the RAID member is the whole device: on some hosts
+        #    it is a partition, which is why $MEMBER is derived above rather
+        #    than written as a p1 suffix. Confirm both values before running.
+        #
+        # sudo mdadm --manage "$ARRAY" --fail "$MEMBER"
+        # sudo mdadm --manage "$ARRAY" --remove "$MEMBER"
+
+        # 4. Power down (NVMe rarely supports hot-swap on consumer
+        #    chassis; enterprise U.2 backplanes do). Replace drive
+        #    physically. Power up.
+
+        # 5. Add replacement back to RAID + watch rebuild
+        # sudo mdadm --manage "$ARRAY" --add "$MEMBER"   # the NEW drive's member path
+        cat /proc/mdstat   # one-shot; re-run to monitor
+      description: |
+        Imminent path (wear >= 95%). Replace as soon as the
+        maintenance window allows; the drive's controller may
+        force read-only mode at any point near 100%.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percentage_used
+        op: lt
+        value: 95
+      command: |
+        # Planned-replacement workflow (wear 85-94%; warning band).
+        # Drive has months-to-quarters of life left; schedule
+        # replacement during the next regular maintenance window.
+
+        # 1. Check projected end-of-life: divide remaining wear
+        #    headroom by recent wear rate.
+        sudo smartctl -a {{device}} | grep -iE 'percentage_used|data units written'
+
+        # 2. Order replacement, confirm warranty status with vendor.
+
+        # 3. At maintenance window: same flow as the imminent variant
+        #    (fail/remove from RAID, power down, swap, re-add).
+      description: |
+        Planned path (wear 85-94%). Diagnose write rate, order
+        replacement, swap during next maintenance window. No
+        emergency action needed.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: percentage_used is missing or null (drives without
+        # SMART support, agent before NVMe enrichment lands, etc.).
+        # Treat as planned-replacement; operator can re-classify after
+        # running the diagnostic command below. smartctl -a covers SATA + NVMe.
+        sudo smartctl -a {{device}}
+        case "{{device}}" in /dev/nvme*) sudo nvme smart-log {{device}} ;; esac
+      description: |
+        Missing-evidence fallback. percentage_used is undefined in the
+        alert evidence; run the diagnostic to read it directly, then
+        proceed with the imminent or planned variant as appropriate.
+
+  validation:
+    command: |
+      # smartctl covers SATA + NVMe; add the NVMe wear log for NVMe paths.
+      sudo smartctl -a {{device}} | grep -iE 'percentage_used|percent_lifetime|wear_leveling'
+      case "{{device}}" in /dev/nvme*) sudo nvme smart-log {{device}} | grep -iE 'percentage_used|critical_warning' ;; esac
+    description: |
+      After replacement, confirm the wear indicator is low (single-
+      digits on a fresh drive) and, for NVMe, critical_warning is 0.
+      Then re-check RAID state via /proc/mdstat if applicable.
+
+  rollback:
+    available: false
+    command: null
+    note: |
+      Drive replacement is not reversible. The drive's data is
+      gone the moment the controller is powered down for swap.
+      Data was migrated to the replacement (via RAID rebuild or
+      backup restore); the validation step confirms the migration
+      landed. There is no rollback to the worn drive.
+
+  impact:
+    blast_radius: |
+      Service impact varies by chassis. Hot-swap-capable enterprise
+      U.2/M.2 backplane: same as smart_failing (no service impact;
+      brief RAID rebuild). Consumer-grade M.2: requires power-down
+      so the host is offline for ~5 minutes.
+    estimated_duration: |
+      Power-down chassis: 5-15 minutes (BIOS POST + boot). Hot-swap
+      chassis: 1-2 minutes. RAID rebuild (if applicable): 5-30 min
+      for NVMe (typically faster than SATA SSD rebuilds).
+    irreversible_steps: true
+
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: vendor-anchor
+    source_note: |
+      Desk-researched from nvme-cli(1) + smartctl(8) man pages and
+      Glassmkr ops experience with NVMe replacements. Wear-band
+      split (95% imminent vs 85-94% planned) derived from the TS
+      evaluator's severity boundary (drive.percentage_used >= 95
+      => critical). Not deliberately re-triggered on validation
+      fleet for this deepening pass.
+
+      Pattern library 2026-05-18: Category 3 (storage). Available Spare trigger (per spec §3.3) added as a separate rule nvme_critical_warning in Phase 4 (capability-gated on Crucible shipping nvme_critical_warning byte decode). Today the rule fires only on percentage_used wear-band thresholds.

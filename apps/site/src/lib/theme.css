@@ -1,0 +1,81 @@
+/* Glassmkr marketing-site theme layer (CC_SPEC_SITE_VISUAL_REDESIGN).
+ *
+ * The shared cool+amber color palette now lives in packages/ui/base.css and is
+ * consumed by BOTH the marketing site and the dashboard. This file holds only
+ * the site-specific layer, imported AFTER base.css in the site +layout:
+ *   - the fluid type scale (the data-dense dashboard keeps base.css's fixed scale),
+ *   - body copy at --text-secondary with headings kept at --text-primary,
+ *   - the ambient glow tuned to the amber accent,
+ *   - the bespoke lucide stroke weight.
+ */
+
+:root {
+  /* Fluid type scale, Major Third (site-only; overrides base.css's fixed scale). */
+  --text-hero: clamp(2.75rem, 1.9rem + 4.25vw, 5rem);
+  --text-h1: clamp(2.2rem, 1.7rem + 2.2vw, 3.4rem);
+  --text-h2: clamp(2rem, 1.6rem + 2vw, 3rem);
+  --text-h3: clamp(1.4rem, 1.25rem + 0.75vw, 1.85rem);
+  --text-body: 1.0625rem;
+  --text-small: 0.875rem;
+
+  /* One shadow only. */
+  --shadow-soft: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.25);
+}
+
+/* Site feel: body copy at --text-secondary, headings stay primary with slightly
+   tighter tracking. (tabular-nums is set globally in base.css.) */
+body {
+  color: var(--text-secondary);
+}
+h1, h2, h3, h4 {
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+/* Site ambient glow, tuned to the amber accent. */
+.ambient::before {
+  background: radial-gradient(ellipse, rgba(245, 166, 35, 0.05) 0%, transparent 70%);
+}
+
+/* Lucide icons: bespoke default stroke weight, away from the template default. */
+svg.lucide {
+  stroke-width: 1.5;
+}
+
+/* Blog + docs code blocks: wrap long lines instead of scrolling horizontally.
+   Per-post <style> blocks set overflow-x:auto; wrapping means it never triggers.
+   Applies to every article that uses .post / .docs-content, so no per-post edit. */
+.post pre,
+.docs-content pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Blog + docs tables: scroll inside their own box instead of pushing the page
+   sideways. A table has a min-content width its cells decide, so on a phone a
+   four-column comparison table ran 82px past the article and took the whole
+   document with it: one post scrolled horizontally as a page, which moves the
+   text out from under the reader's thumb on every swipe.
+   Same reasoning as the pre rule above, and same reason it lives here rather
+   than in each post: per-post <style> blocks set widths that never trigger. */
+.post table,
+.docs-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* A link that is the ONLY child of its paragraph is a standalone call to
+   action, not a link inside a sentence. WCAG excepts the inline case because
+   the surrounding text sets the size; there is no surrounding text here, so the
+   24px floor applies. These were 17 to 20px tall and appeared as
+   "Self-host in 10 minutes" and similar across the comparison and vertical
+   pages, which is why this is one rule rather than a fix per page. */
+p > a:only-child {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}

@@ -1,0 +1,126 @@
+# disk_io_errors; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B1.
+#
+# Fires when the kernel reports any I/O errors against block devices
+# in dmesg. Causes range from a failing drive (most common) through
+# a flaky cable/controller (sometimes) to a bus/PSU issue (rare).
+# The deepened workflow starts with non-destructive triage to
+# distinguish drive failure from controller/cable from filesystem,
+# then triggers the appropriate replacement path.
+id: disk_io_errors
+priority: P1
+# Forensic / post-incident: kernel I/O error lines are discrete dmesg
+# events. A flaky drive may not produce a fresh error every snapshot
+# even while it's still failing, so silence is not "resolved"; only
+# operator confirmation (drive swap, cable reseat, controller replaced)
+# is. Closing manually with a stated cause prevents premature
+# auto-clear of an intermittent fault.
+manual_resolve: true
+title: Disk I/O errors
+summary: Kernel logged I/O errors against one or more block devices. Indicates failing storage hardware, a flaky cable/controller, or filesystem corruption. Investigate immediately to prevent data loss.
+
+fix:
+  quick_check:
+    command: |
+      sudo dmesg -T --level=err,crit | grep -iE 'I/O error|end_request|sense key|ata.*hard reset' | tail -30
+    description: "Kernel I/O error log over the recent ring buffer. If empty, the alert may be a controller-level fault; check `lspci -nn | grep -iE 'SATA|RAID|NVMe|SAS'` next."
+  verdict_prior: vendor-side
+  prerequisites:
+    - Recent backup verified (the affected drive may be on the verge of total failure)
+    - Maintenance window declared if replacement is anticipated
+    - Console / out-of-band access available (filesystem errors may break SSH session)
+
+  safe_mode:
+    command: |
+      sudo dmesg -T | grep -iE 'I/O error|end_request|sector' | tail -40
+      for d in ${DEVICES}; do sudo smartctl -a /dev/$d 2>&1 | head -40; done
+      sudo lsblk -o NAME,MOUNTPOINT,FSTYPE,STATE
+      mount | grep -E '(ro,|^/dev/)'
+    description: |
+      Read-only triage. Pulls the actual I/O error lines from
+      dmesg, checks SMART status for each affected device,
+      shows the block-device tree, and confirms whether any
+      filesystem has been remounted read-only. Run before any
+      destructive action. Substitute `${DEVICES}` with the
+      space-separated list from the alert evidence (e.g. "sda sdb").
+
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Confirm the failure mode from dmesg + SMART
+        sudo dmesg -T | grep -iE 'I/O error|end_request' | tail -40
+        for d in ${DEVICES}; do
+          echo "=== /dev/$d ==="
+          sudo smartctl -a /dev/$d
+        done
+
+        # 2. Check the controller is OK (errors are not the host bus)
+        sudo lspci -nn | grep -iE 'SATA|RAID|NVMe|SAS'
+        sudo dmesg -T | grep -iE 'ata.*hard reset|link is slow' | tail -10
+
+        # 3. If SMART confirms drive is failing -> escalate to
+        #    smart_failing fix workflow for replacement.
+
+        # 4. If SMART is clean -> cable/controller issue. Try:
+        #    - Reseat the SATA cable (chassis-specific)
+        #    - Move drive to a different port on the controller
+        #    - Check for kernel/firmware bugs against the controller model
+
+        # 5. Once root cause is addressed, clear the kernel error
+        #    counter (informational; the underlying issue must be
+        #    fixed first):
+        sudo dmesg -C
+      description: |
+        Distro-agnostic triage flow. Distinguishes drive failure
+        (SMART confirms degradation -> replace) from cable/
+        controller issue (SMART clean, errors persist on the
+        same port across drives -> reseat or move port).
+
+  validation:
+    command: |
+      # After fix: 24h dmesg watch for fresh errors
+      sudo dmesg -T --since '1 hour ago' | grep -iE 'I/O error|end_request' | wc -l
+    description: |
+      Zero new I/O error lines in dmesg in the hour after the fix
+      is evidence the underlying issue is resolved. Run periodically
+      for 24h to be confident; transient issues sometimes return
+      under load.
+
+  rollback:
+    available: false
+    command: null
+    note: |
+      No rollback path for fix actions. If drive was replaced -
+      same as smart_failing (irreversible). If cable was reseated -
+      that's already done. If a controller port was moved - the
+      original port may be marginal; document and don't move back.
+
+  impact:
+    blast_radius: |
+      Triage commands are read-only (no impact). Drive replacement
+      impact mirrors smart_failing. Cable reseat / port move
+      requires powering down the host (5-10 min outage) unless
+      the chassis supports hot-swap on the affected drive bay.
+    estimated_duration: |
+      Triage: 5 minutes. Drive replacement (if needed): see
+      smart_failing (5 min swap + RAID rebuild). Cable / port
+      reseat: 10-20 min including chassis access.
+    irreversible_steps: false
+
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: research-derived
+    source_note: |
+      Desk-researched from smartctl(8) + dmesg(1) man pages and
+      Glassmkr ops experience with kernel-logged I/O errors.
+      Triage flow modeled on the standard "is it the drive, the
+      cable, or the controller" decision tree. Not deliberately
+      re-triggered on the validation fleet for this deepening pass
+      (would require artificially corrupting a disk or pulling a
+      cable mid-IO, both destructive).
+
+      Pattern library 2026-05-18: Category 3 (storage). Event-typed split (scsi_medium_error / nvme_controller_reset / pcie_aer per spec §3.1) deferred until Crucible C18 ships structured dmesg event parsing. Today the rule uses the legacy io_errors.count trigger.

@@ -1,0 +1,160 @@
+# disk_space_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B3, using the condition_match
+# dimension added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md.
+#
+# Evaluator emits severity=critical when percent_used >= 95, otherwise
+# warning. Variants split on the same boundary so the fix-now path
+# (when the filesystem is about to fill) is distinct from the plan-
+# cleanup path (still has headroom). All commands are distro-agnostic
+# POSIX; the deepening pass adds explicit apt/dnf cleanup suggestions
+# but kept both inline rather than introducing a distro split.
+id: disk_space_high
+priority: P2
+title: Disk space high
+summary: Filesystem usage at or above the configured threshold (default 85%). At 100% services that write to this filesystem will fail; at >=95% the buffer is hours-not-days.
+fix:
+  quick_check:
+    command: |
+      df -h --output=source,fstype,size,used,avail,pcent,target | awk 'NR==1 || $6+0 >= 80'
+    description: "df with the percentage column promoted for awk filtering. Header plus every filesystem at >=80% usage. The full FIX has per-mount cleanup recipes."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (no maintenance window; cleanup is non-disruptive for most workloads)
+    - "For critical path (>=95%): operator authority to delete files (or to extend the volume) without further approval"
+    - Awareness of what services write to this mount (rotating logs, container layers, DB data dirs, etc.)
+  safe_mode:
+    command: |
+      df -h <MOUNT>
+      df -i <MOUNT>
+      sudo du -xh -d 1 <MOUNT> 2>/dev/null | sort -rh | head -20
+    description: |
+      Read-only inspection. `df -h` confirms current usage; `df -i`
+      confirms this isn't actually an inode issue masquerading as
+      disk-full; `du -x` (don't cross filesystems) finds the largest
+      directories at the top level. Run before deleting anything.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent_used
+        op: gte
+        value: 95
+      suggested_action: |
+        sudo du -xhd1 {{mount}} 2>/dev/null | sort -rh | head -20
+      command: |
+        # Critical path (>=95% full). Filesystem may fill within
+        # hours. Free space NOW; investigate root cause after.
+
+        # 1. Confirm current usage + find biggest consumers
+        df -h <MOUNT>
+        sudo du -xh -d 2 <MOUNT> 2>/dev/null | sort -rh | head -30
+
+        # 2. Quick wins; rotated logs + package caches
+        sudo journalctl --vacuum-size=500M
+        # Debian/Ubuntu:
+        sudo apt-get clean
+        sudo apt-get autoremove --purge      # no -y: read the list before agreeing
+        # RHEL family:
+        sudo dnf clean all
+        sudo dnf autoremove                  # no -y: read the list before agreeing
+
+        # 3. Old logs in /var/log
+        sudo find /var/log -type f -name '*.gz' -mtime +14 -delete
+        sudo find /var/log -type f -name '*.[0-9]' -mtime +14 -delete
+
+        # 4. Docker/containerd cruft (if present)
+        if command -v docker >/dev/null; then sudo docker system prune -af --volumes; fi
+        if command -v podman >/dev/null; then sudo podman system prune -af --volumes; fi
+
+        # 5. Verify
+        df -h <MOUNT>
+      description: |
+        Critical (>=95%) path. Reclaim space immediately. Default
+        order: journal vacuum, package cache, rotated logs, container
+        layers. Each step is safe; none deletes user data. If still
+        critical after these, escalate to per-app log audit or
+        emergency volume extension.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent_used
+        op: lt
+        value: 95
+      suggested_action: |
+        sudo du -xhd1 {{mount}} 2>/dev/null | sort -rh | head -20
+      command: |
+        # Warning path (85-94%). Plan cleanup; no emergency.
+
+        # 1. Identify what's growing
+        df -h <MOUNT>
+        sudo du -xh -d 2 <MOUNT> 2>/dev/null | sort -rh | head -30
+
+        # 2. Check log/cache growth rate over the last week
+        sudo find <MOUNT> -xdev -type f -mtime -7 -size +100M 2>/dev/null | head -20
+
+        # 3. Schedule one of:
+        #    - log rotation tuning (logrotate cadence)
+        #    - container image GC (docker/podman system prune)
+        #    - volume extension if growth is legitimate workload
+      description: |
+        Warning (85-94%) path. Investigate growth pattern, schedule
+        cleanup or extension; no emergency action needed. The
+        critical-path commands all work here too if operator chooses
+        to act preemptively.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      suggested_action: |
+        sudo du -xhd1 {{mount}} 2>/dev/null | sort -rh | head -20
+      command: |
+        # Fallback: percent_used not present in evidence. Run
+        # diagnostic + classify manually.
+        df -h <MOUNT>
+        sudo du -xh -d 1 <MOUNT> 2>/dev/null | sort -rh | head -20
+      description: |
+        Missing-evidence fallback. Run the diagnostic and classify
+        the case manually before proceeding with cleanup.
+  validation:
+    command: |
+      [ "$(df --output=pcent {{mount}} 2>/dev/null | tail -1 | tr -dc '0-9')" -lt 85 ]
+    expected_exit: 0
+    description: |
+      Definition of done: exit 0 means {{mount}} is back under the 85%
+      warning threshold. Re-run after freeing space.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Deleted files are not recoverable from this workflow's actions
+      (no snapshot/restore step). The recommended commands target
+      logs, caches, and rotated archives; all reproducible from
+      future runtime. If user data was deleted in error, restore
+      from backup. There is no in-band rollback.
+  impact:
+    blast_radius: |
+      Cleanup commands are read/delete on the affected filesystem.
+      Journal vacuum + package cache prune + log rotation are
+      non-disruptive (services keep running). Docker/podman prune
+      removes stopped containers + dangling images; running
+      workloads are not affected. No outage; no I/O pause.
+    estimated_duration: |
+      Cleanup: 1-10 minutes depending on prune scope. Volume extension
+      (if needed): 5-30 minutes including LVM resize + filesystem
+      grow. Operator inspection of `du` output: 5 minutes.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from df(1), du(1), journalctl(1), apt(8),
+      dnf(8), docker(1), podman(1). All cleanup commands are
+      standard ops practice across Debian-family and RHEL-family
+      hosts. Re-verified on validation fleet's `gmk-val-2` (Debian 12)
+      by deliberately filling /var to 95% with a sparse file and
+      walking through the critical-path sequence; cleanup returned
+      mount to 62% in 8 minutes.
+
+      Pattern library 2026-05-18: Category 8 (filesystem capacity). Companion rule disk_fill_projection adds the rate-of-fill primary signal. Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

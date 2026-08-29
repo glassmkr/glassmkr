@@ -1,0 +1,35 @@
+{
+  "alert": {
+    "alert_type": "os_end_of_life",
+    "evidence": {
+      "cycle": "12",
+      "extended_support_active": null,
+      "extended_support_ends": "2028-06-30",
+      "in_extended_window": true,
+      "product": "debian",
+      "standard_support_ends": "2026-07-11",
+      "support_source": null
+    },
+    "first_seen": "2026-08-26T12:03:26.163Z",
+    "last_seen": "2026-08-27T06:42:52.531Z",
+    "message": "Standard security support for Debian GNU/Linux 12 (bookworm) ended on 2026-07-11. Extended support (ESM/EUS) may be available until 2028-06-30, but enrollment on this host could not be verified. If it is not enrolled, it is receiving no base-system security updates.",
+    "recommendation": "Confirm extended-support enrollment (Ubuntu: \"pro security-status\"; RHEL: check for enabled EUS/ELS repos). Then upgrade the OS, or enrol to keep receiving security fixes until 2028-06-30.",
+    "severity": "warning",
+    "title": "Debian GNU/Linux 12 (bookworm) past standard support"
+  },
+  "host": {
+    "active_alerts": 4,
+    "crucible_version": "1.0.1",
+    "hardware": "Supermicro SYS-530MT-H8TNR",
+    "hostname": "val-debian",
+    "ipmi_sensors": 26,
+    "os_type": "debian",
+    "os_version": "GNU/Linux 12 (bookworm)"
+  },
+  "rule": {
+    "category": "Security & Patching",
+    "id": "os_end_of_life",
+    "priority": "P2",
+    "quick_check_command": "cat /etc/os-release | grep -E '^(NAME|VERSION|VERSION_ID)='"
+  }
+}

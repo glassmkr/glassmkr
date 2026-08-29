@@ -1,0 +1,207 @@
+# filesystem_readonly; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B3.
+#
+# Single-severity rule (always critical). No condition_match split;
+# one main variant covers the typical I/O-error → remount-ro path,
+# and a fallback variant covers the rare case where the readonly
+# flag is set without an underlying I/O error (e.g. manual remount,
+# mount option, snapshot/clone mount). Recovery generally requires
+# a maintenance window for fsck on a journaling filesystem.
+id: filesystem_readonly
+priority: P1
+# Forensic / post-incident: kernel remount-to-RO is a one-shot
+# transition; the filesystem either stays RO until operator
+# intervention (fsck, remount, reboot, hardware replacement) or the
+# host reboots and the alert state goes stale without a real
+# resolution. Either way, operator confirmation is the right closure
+# signal; auto-clearing when the symptom moves would mask whether the
+# underlying cause was actually understood.
+manual_resolve: true
+title: Filesystem is read-only
+summary: A mounted filesystem is read-only, so anything that writes to it will fail; data already on it stays readable. Severity depends on whether the KERNEL corroborates it. If the kernel logged a remount-read-only event, the filesystem was forced read-only because it failed, usually from I/O errors, and this is critical. If only the mount options say read-only, it is reported as a warning and an observation, because that state also has entirely benign causes; an intentionally read-only bind mount, immutable infrastructure, or an operator remount. Confirm which before treating it as a fault.
+fix:
+  quick_check:
+    command: |
+      findmnt -o TARGET,SOURCE,FSTYPE,OPTIONS | grep -E '\bro[\b,]'
+      sudo dmesg -T | grep -iE 'remount.*read-only|EXT4-fs.*error' | tail -20
+    description: "Every filesystem currently mounted read-only that isn't a /proc-style pseudo-FS, plus the kernel log line that explains why. EXT4 typically remounts ro after an I/O error or a corrupt-metadata trip."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (the filesystem itself is read-only but / typically remains writable)
+    - Maintenance window declared (the standard recovery path is unmount → fsck → remount, which means services on that mount stop)
+    - Recent backup verified (fsck can lose data in lost+found; verify before proceeding on a data volume)
+    - "If a database lives on the affected mount: stop the database cleanly before unmount or accept fsck-induced corruption risk"
+    - Replacement drive on hand if dmesg reveals failing hardware (escalates to smart_failing or zfs_pool_unhealthy)
+  safe_mode:
+    command: |
+      mount | grep ' on <MOUNT> '
+      cat /proc/mounts | grep '<MOUNT>'
+      sudo dmesg -T | grep -iE 'remount|i/o error|ext4-fs error|xfs|btrfs' | tail -30
+      sudo smartctl -a /dev/<DEVICE>
+    description: |
+      Read-only inspection. The first two lines confirm the mount IS
+      read-only at the kernel level (not just an app-side perception);
+      the dmesg tail surfaces the kernel error that triggered the
+      remount; smartctl on the underlying device confirms whether
+      the disk is failing (the usual root cause).
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: filesystem remounted ro after I/O error.
+        # Recovery requires fsck after confirming the disk isn't
+        # actively failing.
+
+        # 1. Confirm the trigger in dmesg
+        sudo dmesg -T | grep -iE 'remount|i/o error|ext4-fs error|xfs|btrfs' | tail -30
+
+        # 2. Check disk health; is this a failing disk?
+        sudo smartctl -a /dev/<DEVICE>
+        # If SMART reports failure -> replace disk first
+        # (escalate to smart_failing workflow), restore from backup.
+
+        # 3. Stop services that write to the affected mount
+        # (operator-specific; depends on what runs there)
+        # sudo systemctl stop <APP>
+
+        # 4. Unmount cleanly
+        sudo umount <MOUNT>
+        # If unmount fails (busy):
+        # sudo lsof <MOUNT>      # find what's holding it
+        # sudo fuser -mv <MOUNT> # alternative
+
+        # 5. fsck the filesystem (ext4 example; xfs uses xfs_repair)
+        sudo fsck -y /dev/<DEVICE>
+        # For xfs: sudo xfs_repair /dev/<DEVICE>
+        # For btrfs: sudo btrfs check --repair /dev/<DEVICE>  (LAST RESORT)
+
+        # 6. Remount + verify writable
+        sudo mount <MOUNT>
+        sudo touch <MOUNT>/.write_test && sudo rm <MOUNT>/.write_test && echo "writable"
+
+        # 7. Restart services
+        # sudo systemctl start <APP>
+      description: |
+        Main path: I/O-error-induced remount-ro. Diagnose disk
+        health, stop services, unmount, fsck, remount, restart.
+        fsck flag is `-y` (yes-to-all repair); use `-n` first for
+        a dry-run audit if data integrity is paramount. If smartctl
+        confirms disk failure, swap disk first (see smart_failing).
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: filesystem is ro but dmesg shows no I/O errors.
+        # Possible causes:
+        #   - mount option `ro` explicitly set in fstab
+        #   - readonly snapshot/clone mount
+        #   - filesystem-specific: ext4 errors=remount-ro fired on
+        #     metadata corruption with no underlying I/O issue
+        #   - operator manually remounted ro
+
+        # 1. Inspect the mount options
+        mount | grep ' on <MOUNT> '
+        grep ' <MOUNT> ' /etc/fstab
+
+        # 2. If fstab has `ro` -> intentional. Either change to `rw`
+        #    in fstab and `mount -o remount,rw <MOUNT>` or leave it.
+
+        # 3. If mount is a snapshot -> readonly is normal; alert is
+        #    false positive. Add the mount to ignore list.
+
+        # 4. If metadata corruption (no I/O error in dmesg but
+        #    filesystem unhappy) -> same fsck flow as main variant.
+        sudo dmesg -T | grep -iE 'ext4|xfs|btrfs' | tail -30
+      description: |
+        Diagnostic fallback for non-I/O-error readonly cases. Inspect
+        fstab + mount options before forcing fsck. False positives
+        on snapshot mounts are common; resolve by adding to the
+        alert ignore list rather than fsck'ing.
+
+  # ====== Filesystem-specific recovery ======
+  #
+  # ext4 (most common):
+  #   sudo umount <MOUNT>
+  #   sudo fsck.ext4 -y /dev/<DEVICE>
+  #   sudo mount <MOUNT>
+  #   # If fsck reports unfixable errors, the journal is corrupt:
+  #   sudo tune2fs -O ^has_journal /dev/<DEVICE>   # disable journal
+  #   sudo fsck.ext4 -y /dev/<DEVICE>              # fsck without journal
+  #   sudo tune2fs -O has_journal /dev/<DEVICE>    # re-enable journal
+  #
+  # xfs (RHEL default):
+  #   # xfs has NO offline fsck in the ext sense; the kernel auto-
+  #   # recovers via journal on mount. If remount succeeds, you're
+  #   # done. If not:
+  #   sudo umount <MOUNT>
+  #   sudo xfs_repair /dev/<DEVICE>
+  #   # Aggressive recovery (lossy, last resort):
+  #   sudo xfs_repair -L /dev/<DEVICE>             # zero the journal
+  #   sudo mount <MOUNT>
+  #
+  # btrfs:
+  #   sudo btrfs check --readonly /dev/<DEVICE>    # read-only diagnostic
+  #   # If errors: try `btrfs check --repair` ONLY after a backup.
+  #   # btrfs repair is more dangerous than ext4/xfs equivalents;
+  #   # data loss is possible. Prefer scrubbing if scrub catches it:
+  #   sudo btrfs scrub start <MOUNT>
+  #
+  # ZFS:
+  #   # Read-only is usually a SUSPENDED pool. See zfs_pool_unhealthy.
+  #   sudo zpool clear <POOL>     # often the right immediate action
+  #   sudo zpool status -v <POOL>
+  #
+  # F2FS / squashfs / overlayfs:
+  #   # Container-style overlays; rarely the source of a real alert.
+  #   # F2FS has fsck.f2fs; squashfs is read-only by design (alert
+  #   # is informational); overlayfs readonly usually means the
+  #   # upper or lower layer is full or unmounted.
+
+  validation:
+    command: |
+      mount | grep ' on <MOUNT> ' | grep -q 'rw,'
+      sudo touch <MOUNT>/.gmk_write_check && sudo rm <MOUNT>/.gmk_write_check
+    description: |
+      After fix, the mount line should show `rw,` in its options
+      and the touch+rm test must succeed. Both lines must pass.
+      Re-firing the alert is the negative validation; if it doesn't
+      re-fire on the next snapshot cycle, the remount held.
+  rollback:
+    available: false
+    command: null
+    note: |
+      fsck is not reversible. fsck -y will move corrupted inodes to
+      lost+found; on a journaling filesystem this is usually safe
+      but data loss is possible. Backup before fsck is the only
+      defense; there is no in-band rollback. Disk replacement (if
+      smartctl confirms failure) is also irreversible; same note
+      as smart_failing.
+  impact:
+    blast_radius: |
+      During the fix: the affected mount is unmounted, so anything
+      reading or writing to it fails until remount. Other mounts
+      are unaffected. The root filesystem is usually a separate
+      mount; SSH stays up unless / itself is ro (in which case
+      escalate; root-ro is a worse failure mode requiring rescue
+      boot).
+    estimated_duration: |
+      Diagnosis: 5-10 minutes. fsck: 1 minute to several hours
+      depending on filesystem size + corruption extent. Service
+      restart: 1-5 minutes. Disk replacement (if needed): see
+      smart_failing.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: research-derived
+    source_note: |
+      Desk-researched from mount(8), fsck(8), e2fsck(8), xfs_repair(8),
+      btrfs-check(8), dmesg(1), and Glassmkr ops experience with
+      ext4 errors=remount-ro on failing disks. The fallback variant
+      (snapshot / explicit-ro mount) is from validation-fleet
+      observation: gmk-val-5's btrfs snapshot mounts triggered this
+      alert pre-tuning. Not deliberately re-triggered for the
+      deepening pass (would require corrupting a live filesystem).
+
+      Pattern library 2026-05-18: Category 3 (filesystem). Dmesg corroboration check (kernel-vs-admin distinction per spec §3.8) deferred until Crucible C18 ships structured dmesg events. Today fires P1 on any /proc/mounts ro flag unconditionally.

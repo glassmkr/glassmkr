@@ -1,0 +1,189 @@
+# systemd_service_failed; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B7.
+#
+# Single-severity rule (always critical; the unit is in failed state).
+# No condition_match split. Main variant covers the inspect-restart-
+# harden flow; fallback covers missing-evidence. The evaluator already
+# packs fix_commands + per-unit journal excerpts into evidence; this
+# YAML extracts those into a proper variant structure.
+id: systemd_service_failed
+priority: P1
+# Forensic rule: a unit entered the failed state. Auto-resolves when
+# the unit is restarted AND the next snapshot sees it healthy, but the
+# state can persist across snapshots (e.g. failed test-session services
+# left running) and the operator may want to close with a recorded
+# resolution note. Manual close path is the safety hatch.
+manual_resolve: true
+title: systemd service failed
+summary: One or more systemd units are in the failed state. The service is not running; dependent functionality is offline. Crucible 0.9.2+ also ships the last 5 journal lines per failed unit in evidence so root cause is one click away.
+fix:
+  quick_check:
+    command: |
+      systemctl --failed --no-pager
+      # Per-service failure detail (first failed unit):
+      unit=$(systemctl --failed --no-legend | awk '{print $1; exit}')
+      [ -n "$unit" ] && systemctl status "$unit" --no-pager -l | head -30
+    description: "List of every unit in failed state + the status output for the first one (most-recent log lines, ExecStart, exit code). Most failures are visible in the last 5 log lines."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (inspection + restart are non-disruptive to other services)
+    - Awareness of which unit(s) are critical to operation (a stopped log shipper is different from a stopped database)
+    - Tolerance for a brief service blip during restart (~0-30s depending on unit)
+    - "If repeated failures: capacity to investigate the underlying app bug (often the root cause)"
+  safe_mode:
+    command: |
+      systemctl --failed --no-pager
+      systemctl list-units --state=failed --no-pager
+      sudo systemctl status <UNIT> --no-pager
+      sudo journalctl -u <UNIT> --no-pager -n 50
+    description: |
+      Read-only inspection. `--failed` is the canonical list; the
+      second invocation is equivalent but lists all failed states
+      (failed, exited, dead) in a wider view. Status + journalctl
+      drill into the named unit. Substitute the unit name from
+      the alert's evidence.failed_units array.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: failed unit(s). Diagnose -> restart -> harden.
+
+        # 1. Confirm the failed list
+        systemctl --failed --no-pager
+
+        # 2. For each failed unit, get status + recent journal
+        sudo systemctl status <UNIT> --no-pager
+        sudo journalctl -u <UNIT> --no-pager -n 50
+
+        # 3. Inspect the failure mode in status output:
+        #    - "Result: exit-code" with non-zero exit -> app bug
+        #    - "Result: signal" SIGKILL -> OOM kill (see oom_kills)
+        #    - "Result: oom-kill" -> explicit OOM
+        #    - "Result: timeout" -> health check / startup too slow
+        #    - "Active: failed (Result: core-dump)" -> crash
+
+        # 4. Restart
+        sudo systemctl restart <UNIT>
+        sudo systemctl status <UNIT> --no-pager
+
+        # CAUTION: restart is not a fix when the root cause persists. If the
+        # unit can only start once a prerequisite is healthy (a GPU daemon
+        # like nvidia-persistenced needs a working driver; a mount; another
+        # service), a bare restart (or `systemctl reset-failed`) just masks
+        # the problem and the unit re-fails. Fix the prerequisite first. The
+        # alert correctly re-fires while the unit stays in the failed state.
+
+        # 5. If repeated failures: add automatic recovery
+        sudo systemctl edit <UNIT>
+        # Add to the drop-in:
+        #   [Service]
+        #   Restart=on-failure
+        #   RestartSec=10s
+        #   StartLimitBurst=3
+        #   StartLimitIntervalSec=5min
+        # Then:
+        sudo systemctl daemon-reload
+        sudo systemctl restart <UNIT>
+
+        # 6. If unit is failing because of OOM -> escalate to
+        #    oom_kills workflow; the fix is RAM or MemoryMax,
+        #    not just restart. Check Result via:
+        sudo systemctl show <UNIT> -p Result --value
+        #    Possible values that determine the path forward:
+        #      success            -> not actually failed (already running)
+        #      protocol           -> exit code mismatch with Type=
+        #      timeout            -> startup or stop timeout; raise TimeoutStartSec
+        #      exit-code          -> exited non-zero; ExecStartPre may be at fault
+        #      signal             -> killed by signal (SIGSEGV etc.)
+        #      core-dump          -> crashed; check /var/lib/systemd/coredump/
+        #      watchdog           -> WatchdogSec timeout; app stopped reporting health
+        #      start-limit-hit    -> service_flapping territory; see that rule
+        #      resources          -> hit a Resource= limit (cgroup OOM, FD, etc.)
+        #      oom-kill           -> killed by OOM-killer; see oom_kills rule
+
+        # 7. If unit is failing because of a missing dependency
+        #    (file, network, other unit) -> read journal for
+        #    "Cannot find" / "Connection refused" / "Wants=" line
+        #    and address the underlying dependency.
+
+        # 8. Severity triage: not every failed unit is urgent.
+        #    Common false-noise on a clean fleet:
+        #      - NetworkManager-wait-online.service   (boot-only; one-shot)
+        #      - systemd-journald-audit.socket        (no auditd installed)
+        #      - apparmor.service                     (running but config-empty)
+        #      - logrotate.service                    (cron-like; failed run isn't fatal)
+        #    For these: ack the alert and consider muting the rule
+        #    for the specific unit name. Real-urgency failures are
+        #    the customer-facing app units + the data-plane infra
+        #    (postgres, nginx, glassmkr-crucible, etc.).
+      description: |
+        Main path: status + journal diagnose, restart, add
+        Restart=on-failure if flaky. Cross-references oom_kills
+        when the failure mode is SIGKILL / oom-kill.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: failed_units evidence missing. Walk all failed
+        # units manually.
+        systemctl --failed --no-pager
+        for u in $(systemctl --failed --no-pager --no-legend | awk '{print $2}'); do
+          echo "=== $u ==="
+          sudo systemctl status "$u" --no-pager | head -20
+          echo
+        done
+      description: |
+        Missing-evidence fallback. Iterates over the live failed
+        unit list directly from systemctl.
+  validation:
+    command: |
+      systemctl --failed --no-pager
+      systemctl is-active <UNIT>
+    description: |
+      After fix, confirm:
+      - `systemctl --failed` shows 0 entries (or no longer lists
+        the previously-failed unit)
+      - `is-active <UNIT>` reports "active"
+      Re-firing the alert is the negative validation.
+  rollback:
+    available: true
+    command: |
+      # If Restart=on-failure drop-in caused new issues:
+      sudo systemctl revert <UNIT>
+      sudo systemctl daemon-reload
+    note: |
+      Service restart isn't "rolled back"; the service is up
+      again with a fresh state. `systemctl revert` undoes any
+      drop-in customisations applied via `systemctl edit`,
+      restoring the packaged unit file. Persistent state changes
+      made by the service while running (database writes, etc.)
+      are not in scope of this workflow's rollback.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Restart causes the
+      service-specific downtime (web worker: <5s; database: needs
+      planning; message broker: dropped subscribers). Adding
+      Restart=on-failure is non-disruptive but means future
+      crashes auto-restart instead of staying down; usually
+      desired but can mask underlying bugs.
+    estimated_duration: |
+      Diagnosis: 2-10 minutes depending on journal depth. Restart:
+      service-dependent (5s-30s typical). Restart=on-failure
+      drop-in: 1 minute. Root-cause fix (if app bug): hours to
+      days, out of scope of this workflow.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from systemctl(1), journalctl(1),
+      systemd.service(5), systemd.exec(5). The Restart=on-failure
+      pattern is standard ops practice but can mask bugs by
+      papering over crashes; comment in the YAML notes the
+      tradeoff. Not deliberately re-triggered on validation fleet
+      for this deepening pass; failed-unit conditions arise
+      organically from real workloads.
+
+      Pattern library 2026-05-18: Category 7 (system state). Result-based split (oom-kill -> systemd_service_oom_killed; start-limit-hit -> service_flapping, both per spec §3.23) deferred until Crucible C12 ships per-unit Result field. Today the catch-all rule fires for any failed unit.

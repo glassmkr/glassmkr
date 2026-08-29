@@ -1,0 +1,157 @@
+# load_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B4.
+#
+# Single-severity rule (always warning; the evaluator never
+# escalates to critical). No condition_match split. Main variant
+# walks the standard "is it CPU, I/O, or runaway-fork" triage
+# decision tree; fallback covers missing-evidence.
+#
+# Load average is famously ambiguous; high load with low CPU
+# usually means I/O wait (escalate to cpu_iowait_high) or kernel-
+# uninterruptible-sleep (D-state) processes. The workflow surfaces
+# both possibilities directly.
+id: load_high
+priority: P3
+# Subordinate to cpu_pressure_high (PSI classifier). When the PSI rule
+# is firing on the same host within the correlation window, this rule's
+# emission demotes to evidence-only; load average is famously
+# ambiguous and is fallback signal when PSI is unavailable.
+subordinate_to: cpu_pressure_high
+title: Load average high
+summary: 1-minute load average exceeds 2x the CPU core count for several minutes. Usually indicates an I/O bottleneck (high D-state processes) rather than pure CPU saturation.
+fix:
+  quick_check:
+    command: |
+      uptime
+      ps -eo pid,state,user,cpu,comm --sort=-cpu | awk '$2=="D" || $2=="R"' | head -20
+    description: "Load averages + every process in R (running) or D (uninterruptible sleep) state. Sustained D-state processes mean the load is I/O-bound (often correlates with cpu_iowait_high or disk_latency_high)."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (diagnosis is read-only)
+    - Awareness of recent batch / cron schedule (backup windows, log rotation, and DB maintenance routinely spike load)
+    - "For intervention: same prerequisites as cpu_high (kill/restart authority for the guilty process)"
+  safe_mode:
+    command: |
+      uptime
+      cat /proc/loadavg
+      ps auxf | awk '$8 ~ /^[DR]/ { print $0 }' | head -20
+      vmstat 1 5
+      iostat -xz 1 3 2>/dev/null
+    description: |
+      Read-only triage. `uptime` shows 1/5/15min load. /proc/loadavg
+      also includes the "running/total" fraction (e.g. 4/512 means
+      4 runnable threads out of 512 total). The `ps auxf` filter on
+      D (uninterruptible-sleep) and R (running) states surfaces the
+      processes actually contributing to load. `vmstat 1 5` columns
+      r (run queue) and b (blocked) match load's two contributors.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: load_1m > 2x cores. Classify the cause first.
+
+        # 1. What does load consist of right now?
+        uptime
+        cat /proc/loadavg
+        # The 4th field (e.g. "3/512") is running/total; the 5th
+        # is the most-recent PID.
+
+        # 2. Who's in D-state (I/O wait, contributes to load
+        # without using CPU)?
+        ps auxf | awk '$8 ~ /^D/ { print $0 }'
+
+        # 3. Who's running (R-state, contributes to load AND uses CPU)?
+        ps auxf | awk '$8 ~ /^R/ { print $0 }' | head -10
+
+        # 4. CPU vs I/O classification
+        vmstat 1 5
+        # r >> cores -> CPU saturation (see cpu_high)
+        # b > 0     -> I/O blocking (see cpu_iowait_high)
+
+        # 5. Per-disk I/O if I/O-bound
+        iostat -xz 1 3 2>/dev/null
+        # %util near 100 on any device = that's the bottleneck
+
+        # 6. Decision tree:
+        #    - CPU saturation -> cpu_high workflow
+        #    - I/O bottleneck -> cpu_iowait_high workflow
+        #    - Fork bomb / runaway processes -> kill the parent
+
+        # 7. Optional immediate mitigation: lower workload
+        # e.g. throttle a cron job, pause a backup, scale-down
+        # workers temporarily.
+      description: |
+        Main path: classify whether load is CPU-bound, I/O-bound,
+        or fork-bomb. Cross-references cpu_high and cpu_iowait_high
+        for the focused fixes; this rule is the disambiguation
+        front door.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence missing or unclear. Run the diagnostic
+        # suite + classify manually.
+        uptime
+        vmstat 1 5
+        ps auxf | awk '$8 ~ /^[DR]/ { print $0 }' | head -20
+      description: |
+        Missing-evidence fallback. Use when evidence shape is
+        incomplete; runs the triage diagnostic directly.
+  validation:
+    command: |
+      # Assert the condition the rule fires on, rather than printing load and
+      # leaving the reader to judge. Warning fires at load_1m >= cores * 1.5,
+      # so that is what clearing means.
+      #
+      # Missing inputs must fail, not pass: an earlier version of this check
+      # ran where nproc and /proc/loadavg were absent, read both as empty,
+      # and cheerfully reported "OK, 0 cores". A validation that succeeds
+      # when it cannot see anything is worse than no validation.
+      CORES=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null)
+      LOAD=$(awk '{print $1}' /proc/loadavg 2>/dev/null)
+      case "$CORES" in ''|*[!0-9]*) echo 'CANNOT VERIFY: core count unavailable'; exit 1 ;; esac
+      case "$LOAD" in ''|*[!0-9.]*) echo 'CANNOT VERIFY: /proc/loadavg unavailable'; exit 1 ;; esac
+      awk -v l="$LOAD" -v c="$CORES" 'BEGIN {
+        t = c * 1.5
+        if (l < t) { printf "OK: load_1m %.2f is below the %.2f warning threshold (%d cores)\n", l, t, c; exit 0 }
+        printf "STILL FIRING: load_1m %.2f >= %.2f (%d cores)\n", l, t, c; exit 1
+      }'
+      # Context for the sustained-recovery judgement below:
+      cat /proc/loadavg
+    description: |
+      After fix, confirm load_1m trending down toward load_15m
+      (not just temporarily lower; sustained recovery). For a
+      cleared transient spike, just check that load_1m dropped
+      back under 2x cores. Re-firing the alert is the negative
+      validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      No state changes from diagnosis. If a process was killed,
+      restart isn't a "rollback"; the service runs again with
+      a fresh state. If a workload was throttled / paused, the
+      throttle is itself the reversible op (un-pause when ready).
+      No persistent state changes were made by this workflow.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Process kill /
+      restart impact is service-dependent (same as cpu_high).
+      Throttling a batch job extends its runtime but doesn't
+      lose its work.
+    estimated_duration: |
+      Triage: 5-10 minutes (longest of the CPU-family rules
+      because the classification step has 3 outcomes).
+      Intervention varies by path.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    source_note: |
+      Desk-researched from uptime(1), proc(5) (/proc/loadavg),
+      ps(1) (D/R state columns), vmstat(8), iostat(1). The CPU
+      vs I/O vs fork-bomb classification is from Brendan Gregg's
+      Linux performance guidance and matches Glassmkr ops triage
+      practice. Not deliberately re-triggered on validation fleet
+      for this deepening pass.

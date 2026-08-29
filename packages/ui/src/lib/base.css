@@ -1,0 +1,503 @@
+/* Fonts are self-hosted per app via @fontsource (each app imports the weights
+   it needs in its +layout); no Google Fonts or other third-party CDN. All
+   three faces are SIL Open Font License 1.1, which matters for an AGPL-3.0-only
+   self-hosting project: nobody redistributing Glassmkr inherits a font
+   licensing problem.
+
+   Three voices (GLASSMKR_REDESIGN_FINAL_SPEC section 9.4):
+     IBM Plex Sans   interface and body: navigation, buttons, prose, forms,
+                     documentation, dashboard UI.
+     Commit Mono     anything machine-readable: commands, metrics, timestamps,
+                     provenance, hostnames, versions, rule ids, hardware
+                     identifiers, table cells holding machine data.
+     Source Serif 4  editorial ONLY: blog article titles, dek, long-form body
+                     and section headings. Never in the product, docs UI,
+                     navigation, buttons, or pricing. Loaded only on the routes
+                     that use it.
+   If everything were mono the machine-readable distinction would disappear;
+   if the serif escaped the blog it would stop meaning "this is an essay". */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  /* === Design Tokens ===
+     The canonical palette is the --g-* set below (final spec section 9.2).
+     The legacy names that follow are kept as aliases so every existing
+     component keeps working: one source of truth, two spellings, rather than
+     a big-bang rename that would touch hundreds of call sites for no visual
+     gain. New code should use --g-*. */
+
+  /* Canonical: ground and surfaces */
+  --g-bg: #0a0a09;
+  --g-surface-1: #10110f;
+  --g-surface-2: #151612;
+
+  /* Canonical: text */
+  --g-text: #f2f0e9;
+  --g-text-muted: #a8a49a;
+  /* Raised from #77746c on 2026-08-27. That value measured 4.24:1 on the base
+   * background, 4.06:1 on surface-1 and 3.89:1 on surface-2, all below the 4.5:1
+   * required for normal text, and it is the token used for metadata, captions
+   * and table labels across both the site and the app. #847f76 is the smallest
+   * step that clears 4.5:1 on ALL THREE surfaces (4.98, 4.76, 4.57), so the
+   * restrained look survives the fix. Check the darkest surface, not just the
+   * page background: the previous value passed nothing and looked like it passed
+   * because only the base was ever measured. */
+  --g-text-subtle: #847f76;
+
+  /* Canonical: hairline structure (borders do the work shadows used to) */
+  --g-border: rgba(242, 240, 233, 0.12);
+  --g-border-strong: rgba(242, 240, 233, 0.22);
+
+  /* Canonical: brand. Kept visibly distinct from --g-warning so amber never
+     reads as a health state. */
+  --g-brand: #e1843b;
+  --g-brand-hover: #f19a54;
+
+  /* Canonical: semantics. Reserved for system state, never decoration. */
+  --g-healthy: #69c28e;
+  --g-warning: #e2b94b;
+  --g-critical: #e36b6b;
+  --g-info: #7ea3d8;
+
+  --g-focus: #f2f0e9;
+
+  --g-radius-1: 2px;
+  --g-radius-2: 4px;
+
+  /* --- Legacy aliases (existing components read these) --- */
+  --bg: var(--g-bg);
+  --bg-base: var(--g-bg);
+  --surface: var(--g-surface-1);
+  --bg-surface: var(--g-surface-1);
+  --bg-elevated: var(--g-surface-2);
+  --bg-hover: #1c1d19;
+
+  --surface-border: var(--g-border);
+  --border-default: var(--g-border);
+  --border-subtle: rgba(242, 240, 233, 0.07);
+
+  --text-primary: var(--g-text);
+  --text-secondary: var(--g-text-muted);
+  --text-tertiary: var(--g-text-subtle);
+
+  --accent: var(--g-brand);
+  --accent-hover: var(--g-brand-hover);
+  --accent-glow: rgba(225, 132, 59, 0.15);
+  --accent-muted: rgba(225, 132, 59, 0.15);
+  /* A 10x6 chevron for appearance:none selects, stroked in the secondary text
+     grey (#a8a49a) so it reads as a control, not content. One token so every
+     select draws the identical arrow with the identical inset. */
+  --select-chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a8a49a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --warm: var(--g-brand);
+
+  --green: var(--g-healthy);
+  --green-bg: rgba(105, 194, 142, 0.10);
+  --yellow: var(--g-warning);
+  --yellow-bg: rgba(226, 185, 75, 0.10);
+  --red: var(--g-critical);
+  --red-bg: rgba(227, 107, 107, 0.10);
+  --blue: var(--g-info);
+  --blue-bg: rgba(126, 163, 216, 0.08);
+
+  /* Status aliases */
+  --status-healthy: var(--green);
+  --status-warning: var(--yellow);
+  --status-critical: var(--red);
+  --status-info: var(--blue);
+  --status-offline: #6B7280;
+
+  /* Glass */
+  --glass-bg: rgba(18, 20, 23, 0.7);
+  --glass-border: rgba(245, 166, 35, 0.10);
+  --glass-blur: 16px;
+  --glass-gradient: linear-gradient(135deg, rgba(236,238,241,0.04) 0%, rgba(236,238,241,0.01) 50%, rgba(236,238,241,0.03) 100%);
+
+  /* Typography (three voices; see the header comment) */
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'Commit Mono', 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', monospace;
+  /* Editorial only. The stack falls back to a real serif so an article still
+     reads as an article if the face fails to load. */
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+  /* Type scale */
+  --text-hero: 3.5rem;
+  --text-h1: 2.5rem;
+  --text-h2: 1.75rem;
+  --text-h3: 1.25rem;
+  --text-body: 1rem;
+  --text-small: 0.875rem;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Radius: 2px or 4px only (final spec 9.8). --radius-full stays for status
+     dots and true circles, never buttons. */
+  --radius-sm: var(--g-radius-1);
+  --radius-md: var(--g-radius-2);
+  --radius-lg: var(--g-radius-2);
+  --radius-full: 9999px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container { max-width: 960px; margin: 0 auto; padding: 0 var(--space-6); }
+.container-narrow { max-width: 780px; margin: 0 auto; padding: 0 var(--space-6); }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+.btn:hover { background: var(--bg-hover); color: var(--text-primary); text-decoration: none; }
+/* Primary CTA. Amber-tinted-default + solid-amber-hover state model
+   per CC_HOMEPAGE_BUTTON_HIERARCHY.md. The page already uses amber
+   liberally for accents, so a solid-amber-default button blends into
+   the baseline; this version *interrupts* the baseline only on hover.
+   Used by every "primary action" button across forge / site / ops. */
+.btn-primary {
+  background: var(--accent-glow);
+  color: var(--accent);
+  border-color: rgba(245, 166, 35, 0.4);
+  font-weight: 500;
+}
+.btn-primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-base);
+}
+.btn-primary:active {
+  filter: brightness(0.9);
+  transform: translateY(1px);
+}
+.btn-primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary { transition: none; }
+  .btn-primary:active { transform: none; }
+}
+.btn-ghost { background: transparent; border-color: transparent; }
+.btn-ghost:hover { background: var(--bg-surface); }
+.btn-small { padding: 4px 10px; font-size: 12px; }
+.btn-danger { color: var(--red); border-color: rgba(239, 68, 68, 0.3); }
+.btn-danger:hover { background: var(--red-bg); }
+
+/* Click + in-flight feedback shared by every .btn (dashboard / site / ops).
+   :active gives an immediate tactile press the moment the button is clicked.
+   aria-busy="true" is the accessible hook a handler sets while its async action
+   is running: the button shows a spinner and stops taking clicks, so a slow
+   action (deleting a server, sending a test notification) is visibly underway
+   and cannot be double-fired. :disabled reads as dimmed + not-allowed while
+   still allowing a native title tooltip to explain why. */
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn[aria-busy="true"] {
+  cursor: progress;
+  pointer-events: none;
+  opacity: 0.9;
+}
+.btn[aria-busy="true"]::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn:active { transform: none; }
+  .btn[aria-busy="true"]::before { animation-duration: 1.6s; }
+}
+
+/* Cards */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--border-default); }
+
+/* Tags / Badges */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.tag-green { background: var(--green-bg); color: var(--green); }
+.tag-yellow { background: var(--yellow-bg); color: var(--yellow); }
+.tag-red { background: var(--red-bg); color: var(--red); }
+.tag-blue { background: var(--blue-bg); color: var(--blue); }
+/* Accent tag for non-status uses (priority labels, etc.) */
+.tag-accent { background: var(--accent-muted); color: var(--accent); }
+
+/* Labels */
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* Code */
+code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-surface);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums;
+}
+pre {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  overflow-x: auto;
+  font-size: 13px;
+}
+pre code { background: none; padding: 0; }
+/* Inline code carries identifiers with no space in them:
+   `config_overrides.unexpected_reboot_decay_hours` measures 343px, wider than
+   half a phone, and a line box has no way to break it. On /docs/changelog that
+   pushed the document to 718px in a 390px viewport. This adds a break
+   opportunity only where there is no other one, so ordinary code is untouched. */
+code { overflow-wrap: anywhere; }
+/* And the general case, because inline code was only the loudest instance: a
+   documentation site is full of long unbreakable tokens (paths, flags, package
+   names, bare URLs in link text) and a line box has no way to break any of
+   them. break-word rather than anywhere, so it only engages when the word
+   alone will not fit and ordinary prose wraps exactly as before. */
+body { overflow-wrap: break-word; }
+/* A command block inside a surface that is already an object does not need a
+   second border one pixel inside the first. The homepage rendered 27 bordered
+   elements, and seven of them were this: a bordered pre inside a bordered
+   quickstart, terminal, alert surface or mini surface. A border should mark a
+   real object, not repeat one. */
+.quickstart > pre,
+.term pre,
+.alert-surface pre,
+.mini-surface pre,
+.exhibit pre {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Wide-table scroller.
+ *
+ * A technical table that is wider than a phone must scroll inside its own
+ * container, never widen the document. An external audit measured /vs/collectd
+ * forcing the page to 466px and Privacy to 463px at a 390px viewport, which
+ * makes the whole page drift sideways under the reader's thumb while they are
+ * trying to read body text.
+ *
+ * The wrapper is tabbable and labelled so a keyboard user can reach the scroll
+ * area, and it carries a fade on the right edge as the affordance that there is
+ * more table off-screen. min-width on the table keeps columns readable rather
+ * than letting them crush to fit.
+ */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+  margin: var(--space-4) 0;
+}
+.table-scroll > table { min-width: 34rem; margin: 0; }
+.table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .table-scroll::after {
+    content: "";
+    position: sticky;
+    right: 0;
+    top: 0;
+    float: right;
+    width: 24px;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--bg-base));
+  }
+}
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; }
+th {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-small);
+}
+tr:hover { background: var(--bg-surface); }
+
+/* Forms */
+input, select, textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-small);
+  transition: border-color 0.15s;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Every select draws the SAME chevron with the SAME 10px of air after it. The
+   user agent's arrow sits at an inset the page cannot style, which is how the
+   fleet sort select and the profile select ended up with visibly different
+   gaps before their right borders. Component rules that compact the padding
+   must keep >= 28px on the right so the text stays clear of the chevron. */
+select {
+  appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
+  color-scheme: dark;
+}
+
+/* Ambient background */
+.ambient {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.ambient::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  left: 40%;
+  width: 600px;
+  height: 500px;
+  background: radial-gradient(ellipse, rgba(245, 166, 35, 0.03) 0%, transparent 70%);
+  animation: drift 10s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient::before { animation: none; opacity: 0.5; }
+}
+@keyframes drift {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.05); }
+}
+
+/* Glass edge decorations */
+.glass-edges {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.glass-edge {
+  position: absolute;
+  background: linear-gradient(180deg, rgba(245,240,232,0.02) 0%, transparent 100%);
+}
+.glass-edge:nth-child(1) {
+  width: 1px; height: 35vh; top: 0; left: 15%;
+  transform: rotate(10deg); opacity: 0.5;
+}
+.glass-edge:nth-child(2) {
+  width: 1px; height: 45vh; top: 8%; right: 20%;
+  transform: rotate(-7deg); opacity: 0.35;
+  background: linear-gradient(180deg, transparent 0%, rgba(245,240,232,0.02) 40%, transparent 100%);
+}
+.glass-edge:nth-child(3) {
+  width: 60px; height: 1px; top: 45%; left: 10%;
+  transform: rotate(-4deg); opacity: 0.2;
+  background: linear-gradient(90deg, transparent, rgba(245, 166, 35,0.04), transparent);
+}
+
+/* Glass panel utility */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .glass-panel { background: var(--bg-surface); }
+}
+
+/* Utility */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); border: 0;
+}
+.text-center { text-align: center; }
+.mt-1 { margin-top: var(--space-2); }
+.mt-2 { margin-top: var(--space-4); }
+.mt-3 { margin-top: var(--space-6); }
+.mt-4 { margin-top: var(--space-8); }
+.mb-1 { margin-bottom: var(--space-2); }
+.mb-2 { margin-bottom: var(--space-4); }
+.mb-3 { margin-bottom: var(--space-6); }
+.gap-1 { gap: var(--space-2); }
+.gap-2 { gap: var(--space-4); }
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+
+@media (max-width: 600px) {
+  .container, .container-narrow { padding: 0 var(--space-4); }
+}

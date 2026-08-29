@@ -1,0 +1,15 @@
+
+# Generated per-page docs Markdown (scripts/docs-md.mjs, regenerated at prebuild)
+static/docs/
+
+# Generated LLM corpus (scripts/gen-rules.mjs, regenerated at prebuild). Kept
+# out of git per the single-source-of-truth design in gen-rules.mjs: committing
+# them let the copies go stale and pulled doc-example placeholder tokens (e.g. a
+# sample API password) into the gitleaks per-PR diff. rules.json stays tracked
+# because it is imported as a module at build/check time.
+static/llms.txt
+static/llms-full.txt
+static/docs/llms.txt
+static/docs/rules/llms.txt
+static/docs/api/llms.txt
+static/docs/mcp/llms.txt

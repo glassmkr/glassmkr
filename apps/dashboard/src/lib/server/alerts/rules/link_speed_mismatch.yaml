@@ -1,0 +1,159 @@
+# link_speed_mismatch; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B5.
+# Threshold tightened 2026-05-21: requires the negotiated speed to be
+# at least 2x below the highest advertised mode. The original "any
+# gap fires" version produced false positives on multi-mode high-end
+# NICs (Mellanox ConnectX advertises both 40 GbE and 56 GbE Ethernet
+# modes; an operator running 40 GbE on a PCIe 3.0 x8 slot read as
+# "downgraded"). 2x threshold preserves real catches (1 Gbps NIC stuck
+# at 100 Mbps = 10x; 10 GbE stuck at 1 GbE = 10x) and skips the
+# operator-choice case (40 -> 56 GbE = 1.4x).
+#
+# Single-severity rule (always warning). No condition_match split.
+# Main variant walks the cable -> SFP -> switch-port -> autoneg
+# diagnosis chain; fallback covers missing-evidence.
+#
+# Common causes when the rule fires: damaged cable (one twisted pair
+# down -> drops to 100M), wrong SFP for the link distance, switch
+# port hardcoded to a slower speed, autoneg disabled on one side only.
+# Less common but possible: PCIe slot bandwidth bottleneck, deliberate
+# operator choice on a multi-mode NIC.
+id: link_speed_mismatch
+priority: P2
+title: Link speed mismatch
+summary: "Network interface negotiated a speed at least 2x below the NIC's highest advertised mode. Usually physical-layer or autoneg; sometimes PCIe slot bound; rarely a deliberate operator choice on multi-mode NICs (the 2x floor filters the small-gap case)."
+fix:
+  quick_check:
+    command: |
+      for i in $(ls /sys/class/net | grep -vE '^(lo|veth|docker|virbr|cni|flannel)'); do
+        state=$(cat /sys/class/net/$i/operstate 2>/dev/null)
+        [ "$state" = "up" ] || continue
+        echo -n "$i: state=$state "
+        sudo ethtool $i 2>/dev/null | grep -E 'Speed|Duplex|Advertised link modes' | tr '\n' ' '
+        echo
+      done
+    description: "Per-up-interface link state + negotiated speed/duplex + advertised modes (from ethtool, Crucible v0.12.0+). A gigabit port linking at 100 Mb/s is almost always a cable or auto-neg mismatch."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access (diagnosis is non-disruptive)
+    - Physical access on standby (cable / SFP replacement may be needed)
+    - Switch-side access (some fixes require checking / changing the switch port config)
+    - Awareness that fixing autoneg or speed mismatch may cause brief link flap (sub-second outage)
+  safe_mode:
+    command: |
+      sudo ethtool <INTERFACE>
+      sudo ethtool <INTERFACE> | grep -E 'Speed|Duplex|Auto-negotiation|Link detected'
+      sudo ethtool -m <INTERFACE> 2>/dev/null || echo "(no SFP / not a fiber port)"
+      sudo dmesg -T | grep -iE '<INTERFACE>|autoneg|link' | tail -20
+    description: |
+      Read-only inspection. `ethtool` reports the negotiated
+      speed + duplex + autoneg state. `ethtool -m` on fiber ports
+      reports the SFP module's supported speeds + actual link
+      stats. dmesg surfaces autoneg failures and link flaps.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: speed below 1 Gbps. Walk cable -> SFP -> port
+        # -> autoneg.
+
+        # 1. Confirm current negotiation
+        sudo ethtool <INTERFACE> | grep -E 'Speed|Duplex|Auto-negotiation|Advertised|Partner'
+        # Note "Advertised" vs "Partner advertised"; if both ends
+        # don't share a common high-speed mode, negotiation falls
+        # to the highest common (often 100Mb).
+
+        # 2. SFP diagnostics if applicable
+        sudo ethtool -m <INTERFACE> 2>/dev/null | head -30
+        # Check that the SFP's supported speed is >=1G and that
+        # the cable type matches the SFP (SMF vs MMF for fiber;
+        # CAT-rating for copper).
+
+        # 3. Try a hard re-autoneg
+        sudo ethtool -r <INTERFACE>
+        sudo ethtool <INTERFACE> | grep Speed
+
+        # 4. If autoneg won't come back to gigabit:
+        #    a) Swap the cable. CAT5e copper is usually fine to
+        #       1G; CAT5 (no e) can drop. Visually check for
+        #       damage at both ends.
+        #    b) Swap the SFP transceiver.
+        #    c) Try a different switch port.
+        #    d) Check switch-side config:
+        #       - Speed hardcoded? (auto vs forced 100/1000/10000)
+        #       - Duplex hardcoded? (auto vs forced full/half)
+        #       Both sides should match: either both auto, or
+        #       both forced to identical values.
+
+        # 5. As a LAST RESORT, force gigabit on the host side
+        #    (only if you've confirmed both ends support it):
+        # sudo ethtool -s <INTERFACE> speed 1000 duplex full autoneg off
+        # WARNING: forcing autoneg off on only one side commonly
+        # CAUSES a duplex mismatch with collisions.
+
+        # 6. Verify
+        sudo ethtool <INTERFACE> | grep -E 'Speed|Duplex'
+      description: |
+        Main path: confirm negotiation state, check SFP if fiber,
+        force re-autoneg, then escalate to cable / SFP / port /
+        autoneg config. Forcing speed/duplex is last-resort and
+        easy to misconfigure into a duplex mismatch.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: interface / speed_mbps attribute missing.
+        # Diagnose all interfaces manually.
+        for i in $(ls /sys/class/net | grep -v lo); do
+          echo "=== $i ==="
+          sudo ethtool $i 2>/dev/null | grep -E 'Speed|Duplex|Link detected'
+        done
+      description: |
+        Missing-evidence fallback. Walk all interfaces, find the
+        mismatched one manually before applying the main variant.
+  validation:
+    command: |
+      sudo ethtool <INTERFACE> | grep -E 'Speed|Duplex'
+    description: |
+      After fix, Speed should report 1000Mb/s (or higher) and
+      Duplex should be Full. If forcing speed/duplex on the host
+      side, also verify that the switch shows no late collisions
+      (duplex mismatch signature). Re-firing the alert is the
+      negative validation.
+  rollback:
+    available: true
+    command: |
+      # Re-enable autoneg if you forced speed:
+      sudo ethtool -s <INTERFACE> autoneg on
+      # Cable / SFP swap: physically swap back the original part.
+    note: |
+      Speed/duplex/autoneg changes via ethtool are fully reversible
+      and don't survive reboot unless persisted (systemd-networkd
+      LinkConfig= or netplan link-local-addressing). Hardware swap
+      isn't "rolled back"; original parts usually retained.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. `ethtool -r`
+      (re-autoneg) causes a sub-second link flap. Forcing
+      speed/duplex causes a link reset. Cable / SFP / port swap
+      requires a brief link-down (seconds). On bonded interfaces,
+      bond hides the flap.
+    estimated_duration: |
+      Diagnosis: 5-15 minutes (longer if walking switch config).
+      Re-autoneg: <5 seconds. Cable / SFP swap: 1-2 minutes.
+      Switch-side config change: depends on switch admin access.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from ethtool(8), kernel ethtool docs. The
+      "both sides agree on autoneg" requirement is the most
+      common Glassmkr ops trip-up: forcing one side and leaving
+      the other auto causes duplex mismatch + late collisions
+      that look like sporadic packet loss. Not deliberately
+      re-triggered on validation fleet for this deepening pass.
+
+      Pattern library 2026-05-18: Category 4 (network). Advertised-speed filter (suppress on hosts where 100Mbps is the hardware maximum, per spec §3.19) deferred until Crucible C15 ships ethtool advertised modes. Today uses traffic-floor gate as workaround.

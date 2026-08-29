@@ -1,0 +1,129 @@
+# interface_saturation; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B5.
+#
+# Single-severity rule (evaluator only emits warning). No
+# condition_match split. Main variant covers the standard
+# "find what's hogging the link + decide between tuning, shaping,
+# and capacity upgrade" path; fallback covers missing-evidence.
+id: interface_saturation
+priority: P3
+title: Interface near saturation
+summary: Network interface utilization above the configured threshold (default 90% of negotiated speed). Plan bandwidth upgrade or traffic shaping; queue depth growth predicts the next OOMing connection-handling daemon.
+fix:
+  quick_check:
+    command: |
+      sar -n DEV 1 5 2>/dev/null | grep -vE '^Linux|^$|IFACE.*Average'
+      # Or, if sar isn't installed:
+      cat /proc/net/dev | awk 'NR>2 {printf "%-12s rx=%s tx=%s\n", $1, $2, $10}'
+    description: "Per-interface bytes/sec for 5 seconds via sar, with the cumulative /proc/net/dev fallback. Compare against the interface's negotiated speed (ethtool $IFACE | grep Speed) to see how close to saturation."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (diagnosis is non-disruptive; some traffic shaping requires kernel-level changes)
+    - Awareness of the workload mix on this NIC (uplink vs storage vs replication vs user traffic)
+    - "For capacity upgrade: budget for faster NIC + switch port (10G/25G/40G)"
+  safe_mode:
+    command: |
+      ip -s link show <INTERFACE>
+      sudo ethtool <INTERFACE> | grep -E 'Speed|Duplex'
+      sudo iftop -t -s 5 -i <INTERFACE> -L 20 2>/dev/null || nload -t 5000 -i 200 -o 200 <INTERFACE>
+      ss -tuln
+    description: |
+      Read-only inspection. `ip -s link` gives total bytes RX/TX.
+      `ethtool` confirms negotiated speed (a 10G NIC stuck at 1G
+      saturates at a tenth of expected). `iftop` or `nload`
+      shows live per-flow bandwidth; iftop is preferred since
+      it groups by host pair.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: link >=90% utilized. Find the consumer, then
+        # tune / shape / scale.
+
+        # 1. Live traffic breakdown by flow
+        sudo iftop -t -s 10 -i <INTERFACE> -L 30 2>/dev/null
+        # If iftop is not installed: `nload <INTERFACE>` or `nicstat 1`
+
+        # 2. Per-process bandwidth (Linux 5.5+ with bpftrace, or
+        #    just see what's listening + matches the flow targets)
+        sudo nethogs <INTERFACE> 2>/dev/null
+        # Or fall back to lsof:
+        # sudo lsof -i -n -P | head -20
+
+        # 3. Is it expected traffic or anomalous?
+        ip -s link show <INTERFACE>
+
+        # 4. Decision tree:
+        #    a) Expected workload + sustained -> plan NIC + switch
+        #       port upgrade.
+        #    b) Backup / replication burst -> ionice / tc rate-limit:
+        #       sudo tc qdisc add dev <INTERFACE> root tbf rate 800mbit \
+        #         burst 32kbit latency 400ms
+        #    c) Anomalous flow (DDoS / runaway client / bug):
+        #       iptables / nftables rate-limit the source, then
+        #       file a follow-up to fix the root cause.
+        #    d) Negotiated speed wrong (e.g. 10G NIC at 1G) ->
+        #       cross-link to link_speed_mismatch fix.
+
+        # 5. Watch the result
+        ip -s link show <INTERFACE>   # one-shot; re-run to monitor
+      description: |
+        Main path: find the consumer (iftop / nethogs), classify
+        as legitimate growth vs burst vs anomaly, then choose
+        scale / shape / block. Cross-references link_speed_mismatch
+        if the negotiated speed is below spec.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: utilization_percent or interface attribute
+        # missing. Run diagnostic; classify manually.
+        ip -s link show
+        for i in $(ls /sys/class/net | grep -v lo); do
+          echo "=== $i ==="
+          sudo ethtool $i 2>/dev/null | grep -E 'Speed|Duplex'
+        done
+      description: |
+        Missing-evidence fallback. Walk all interfaces; identify
+        the saturated one manually before proceeding.
+  validation:
+    command: |
+      ip -s link show <INTERFACE>
+    description: |
+      After fix, the bytes/sec rate should drop below 90% of the
+      negotiated speed. Compare two `ip -s link` samples 60 seconds
+      apart and compute the delta. Re-firing the alert is the
+      negative validation.
+  rollback:
+    available: true
+    command: |
+      # tc rate-limit is reversible:
+      sudo tc qdisc del dev <INTERFACE> root
+      # iptables rate-limit is reversible by deleting the rule.
+    note: |
+      Traffic shaping (tc) and packet filtering (iptables/nftables)
+      are fully reversible. Hardware upgrade (faster NIC / switch
+      port) isn't "rolled back"; the old NIC is usually retained
+      for spares. No persistent state changes from monitoring.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. tc rate-limiting
+      affects the limited workload by design; choose burst /
+      rate carefully or some legitimate traffic will queue.
+      iptables/nftables rate-limit drops excess packets silently,
+      which causes retries on TCP and packet loss on UDP.
+    estimated_duration: |
+      Diagnosis: 5-10 minutes (longer if classifying anomalous
+      traffic). tc / iptables rule application: 1 minute. Hardware
+      upgrade planning: days to weeks.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    source_note: |
+      Desk-researched from iftop(8), nload(1), nethogs(8),
+      tc(8) (qdisc tbf), iptables(8). The tc tbf example caps at
+      ~80% of 1G to leave headroom; tune to actual link speed.
+      Not deliberately re-triggered on validation fleet for this
+      deepening pass.

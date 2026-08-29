@@ -1,0 +1,114 @@
+# gpu_pcie_link_degraded; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §3.1.
+#
+# Fires when current PCIe gen or width is below the GPU's advertised
+# max. Common on retrofitted chassis where the GPU is installed in a
+# PCIe slot that is physically x16 but electrically x8, or on BIOS
+# settings that lock PCIe Gen below the slot's actual capability.
+#
+# boot_grace_seconds=180 absorbs the post-boot link renegotiation
+# window. Sustained check via boot grace; per-snapshot trigger is
+# acceptable because PCIe link state is stable once negotiated.
+id: gpu_pcie_link_degraded
+priority: P2
+title: GPU PCIe link degraded
+summary: "GPU's current PCIe gen or width is below the GPU's advertised maximum. Host-to-GPU bandwidth is capped below the GPU's capability; meaningful for large-model loading and PCIe-attached weights, catastrophic for training-style workloads."
+fix:
+  quick_check:
+    command: |
+      nvidia-smi --query-gpu=index,uuid,pci.bus_id,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max --format=csv
+      # Confirm with PCIe sysfs (some kernels report different values):
+      for d in /sys/bus/pci/devices/0000:*; do
+        [ -f "$d/current_link_speed" ] || continue
+        echo "$(basename $d): speed=$(cat $d/current_link_speed) width=$(cat $d/current_link_width) max_width=$(cat $d/max_link_width 2>/dev/null)"
+      done | grep -E '\.0[0-9]:'
+    description: "nvidia-smi reports negotiated PCIe gen/width vs the card's max; the sysfs walk corroborates with kernel-side numbers. A Gen 4 x16 card linking at Gen 3 x16 or Gen 4 x8 means a slot, cable, or firmware issue."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the host
+    - "For BIOS changes: maintenance window + console access"
+    - Awareness of the chassis PCIe slot's electrical wiring
+  safe_mode:
+    command: |
+      nvidia-smi --query-gpu=index,name,pci.bus_id,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max --format=csv
+      sudo lspci -vv -s <BDF> | grep -E "LnkSta|LnkCap"
+    description: |
+      Read-only inspection. nvidia-smi shows the GPU's view of the
+      link state; lspci's LnkSta vs LnkCap is the canonical kernel-
+      level view. Discrepancies between the two are themselves
+      diagnostic (driver may report wrong state if it cached an old
+      negotiation).
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Diagnostic order:
+        # 1. lspci -vv to confirm the link is genuinely degraded (not
+        #    a nvidia-smi reporting artefact):
+        sudo lspci -vv -s <BDF> | grep -A1 LnkSta
+        # 2. Verify the chassis slot's electrical width. Some "x16
+        #    mechanical" slots are wired x8; vendor manual + chassis
+        #    datasheet are the canonical sources.
+        # 3. Verify BIOS PCIe Gen settings (Gen5/Gen4 may need
+        #    explicit enable on older platforms).
+        # 4. Reseat the GPU + riser if applicable. PCIe link
+        #    renegotiation often recovers on a clean reseat.
+        #
+        # On HGX systems with PCIe switches, the link from CPU to
+        # switch may also be degraded; check `lspci -t` to see the
+        # tree.
+      description: |
+        PCIe link degradation has three common root causes: physical
+        slot wiring (chassis-design issue, customer-replaceable only
+        in some chassis), BIOS misconfiguration (fix in BIOS), or
+        re-negotiation glitch (fix by reseat / reboot).
+  validation:
+    command: |
+      nvidia-smi --query-gpu=index,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max --format=csv
+      # Cross-check: kernel-side view of the link
+      sudo lspci -vv -s $(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader | head -1) | grep -A2 LnkSta
+      # Look for "LnkSta" line vs "LnkCap"; should match. If LnkSta shows
+      # "(downgraded)" suffix, that's the same condition the rule
+      # detected via nvidia-smi.
+      # PCIe link-training failure events:
+      sudo dmesg | grep -iE 'pcieport.*$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader | head -1)|AER:' | tail -20
+    description: |
+      pcie.link.gen.current and pcie.link.width.current should match
+      their .max counterparts. Rule auto-resolves on next snapshot.
+      Cross-check via `lspci -vv` shows the same data from the
+      kernel's perspective; if nvidia-smi shows max but lspci shows
+      degraded, there's a driver-vs-kernel inconsistency worth
+      filing. The dmesg grep surfaces PCIe AER (Advanced Error
+      Reporting) events that often correlate with link
+      renegotiation failures.
+  rollback:
+    available: true
+    command: |
+      # BIOS changes are reversible via the same BIOS interface.
+      # Reseating is reversible by reseating again.
+    note: |
+      Physical investigation results (slot-wiring discovery) are
+      informational; no rollback needed.
+  impact:
+    blast_radius: |
+      Alert itself is informational. Reseating + BIOS reconfiguration
+      require host downtime; for an active workload that's the
+      operational cost of remediation.
+    estimated_duration: |
+      Triage 10-20 min. Reseat / BIOS reconfig: 15-45 min including
+      reboot.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-20"
+    tested_on:
+      - Synthetic PCIe link-state fixtures
+    tester: Glassmkr ops
+    research_basis: validation-pending
+    source_note: |
+      Pattern library 2026-05-18 + new GPU category. PCIe Gen3 x16 =
+      16 GB/s; Gen4 x16 = 32 GB/s; Gen5 x16 = 64 GB/s. For LLM
+      inference loading large models from disk through the host
+      memory channel, PCIe bandwidth is a measurable bottleneck.
+      Per-snapshot signal because PCIe state is stable once
+      negotiated; 180s boot grace absorbs the post-boot
+      renegotiation window.

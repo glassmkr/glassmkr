@@ -1,0 +1,99 @@
+# mem_pressure_high; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_FOLLOWUP_C1_C6_ACTIVATION_2026-05-19.md §2.2.
+#
+# PSI memory pressure with corroboration. Fires when
+# snap.psi.memory.full.avg10 > 10% sustained 1+ min AND at least one
+# of: snap.vmstat.pswpin_rate > 0 (active paging), MemAvailable falling
+# >5%/min over last 5 min, or a cgroup OOM event in the last 5 min.
+#
+# Subordinate to oom_kills. When OOM is actively firing on the same
+# host, this rule's emission demotes to evidence-only (PR #158 runtime
+# subordination machinery).
+#
+# Capability gates: snap.psi.memory required; pswpin corroborator
+# requires snap.vmstat (both Crucible v0.10.4+). Stock EL-family
+# kernels ship PSI disabled (no /proc/pressure without psi=1).
+#
+# Provenance: heuristic-from-guide + vendor-anchor (PSI doc says
+# memory.full > 10% means "all tasks blocked on memory I/O" - a real
+# pressure indicator, not a workload artifact like high used%).
+id: mem_pressure_high
+priority: P1
+subordinate_to: oom_kills
+title: Memory pressure sustained
+summary: PSI reports memory contention with active paging or rapid MemAvailable decline. Real pressure signal, not used% noise. Not available on stock RHEL-family kernels (PSI ships disabled there; enable with the psi=1 boot parameter).
+fix:
+  quick_check:
+    command: |
+      cat /proc/pressure/memory
+      cat /proc/meminfo | grep -iE 'MemAvailable|SwapFree|Dirty|Writeback'
+      ps -eo pid,user,rss,comm --sort=-rss | head -10
+    description: "PSI's memory pressure averages + the memory headroom metrics (MemAvailable, SwapFree, Dirty pages waiting to flush) + top memory hogs. Memory pressure with high Dirty often means flushing is stuck."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (triage commands are read-only)
+    - Recent backup verified (intervention may involve restarting the
+      leaking service)
+  safe_mode:
+    command: |
+      cat /proc/pressure/memory
+      cat /proc/meminfo | head -10
+      ps -eo pid,user,rss,comm --sort=-rss | head -20
+      grep -E 'pswpin|pswpout' /proc/vmstat
+    description: |
+      Read-only triage. /proc/pressure/memory shows the PSI signal this
+      rule fires on; /proc/meminfo shows MemAvailable + cache; ps -rss
+      identifies the largest memory consumers; pswpin/pswpout from
+      vmstat confirms whether active paging is happening.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Identify the memory hog
+        ps -eo pid,user,rss,comm --sort=-rss | head -20
+        # 2. Inspect for cgroup-limited services (MemoryMax)
+        systemctl status --no-pager $(systemctl list-units --type=service --state=running --no-legend | head -10 | awk '{print $1}') 2>/dev/null | grep -E 'Memory|MemoryMax' | head -20
+        # 3. Optional ZFS ARC check (large ARC can drive pressure on ZFS hosts)
+        cat /proc/spl/kstat/zfs/arcstats 2>/dev/null | grep -E '^size|^c_max' | head
+      description: |
+        Identify the memory pressure source (process, cgroup-limited
+        service, ZFS ARC). Once identified, remediation is process-
+        specific.
+  validation:
+    command: |
+      cat /proc/pressure/memory
+      grep MemAvailable /proc/meminfo
+    description: |
+      memory.full.avg10 should drop below 10% within 60s of pressure
+      relief; MemAvailable should stop falling.
+  rollback:
+    available: false
+    command: null
+    note: |
+      No rollback applicable; diagnostic / triage rule.
+  impact:
+    blast_radius: |
+      Alert itself: none. Remediation (restarting a service) has
+      whatever impact the service owner considers acceptable.
+    estimated_duration: |
+      Triage 5-15 min; remediation varies.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-29"
+    tested_on:
+      # R-P2-4 (2026-05-29): the prior "PSI synthetic test fixtures" entry
+      # was aspirational; no such fixture existed. The behavioral fixture
+      # now lives in evaluator.test.ts ("mem_pressure_high (PSI +
+      # corroborator)") covering the PSI-plus-corroborator predicate,
+      # the no-corroborator and below-threshold negatives, and the
+      # pre-PSI-agent case.
+      - evaluator.test.ts mem_pressure_high behavioral fixture (PSI + corroborator)
+    tester: Glassmkr ops
+    research_basis: heuristic-from-guide
+    source_note: |
+      Combines PSI (kernel 4.20+) with the vmstat pswpin signal for
+      corroboration. Reduces noise vs PSI-alone by requiring two
+      independent signals before paging P1. Subordinate to oom_kills:
+      when OOM is firing, PSI is necessarily high; the OOM event
+      carries the page and this rule demotes to evidence per the
+      pattern library principle 5.

@@ -1,0 +1,179 @@
+# cpu_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B4, using the condition_match
+# dimension (added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md).
+#
+# Evaluator fires at usage >=90% (idle <10%), critical at >=98%.
+# Variants split on the critical boundary. Usage is aggregate
+# across all cores; per-core breakdown via mpstat. High CPU is
+# usually one of: runaway process, legitimate workload that
+# saturated capacity, or kernel-level work (interrupts, soft
+# interrupts); the diagnostic surfaces all three.
+id: cpu_high
+priority: P2
+subordinate_to: cpu_pressure_high
+title: CPU usage high
+summary: Aggregate CPU utilization at or above 90% (idle below 10%). Critical at >=98% (idle <2%). Either a runaway process or workload exceeding capacity.
+fix:
+  quick_check:
+    command: |
+      top -bn1 | head -20
+      # Per-core breakdown (if mpstat available):
+      mpstat -P ALL 1 1 2>/dev/null | tail -n +4
+    description: "Snapshot of top processes by CPU + per-core utilisation. Concentrated load on one core suggests a non-threaded workload; even spread suggests a multi-threaded job or scheduler thrash."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (diagnosis is read-only; intervention may require killing/throttling a process)
+    - "For critical path (>=98%): operator authority to kill or restart the top consumer"
+    - Awareness of which workloads run here (so spikes from cron jobs / batch can be distinguished from true regressions)
+  safe_mode:
+    command: |
+      top -bn1 | head -25
+      ps aux --sort=-%cpu | head -10
+      mpstat -P ALL 1 3 2>/dev/null || sar -u 1 3 2>/dev/null
+      uptime
+    description: |
+      Read-only inspection. `top -bn1` snapshot shows the live
+      ranking + load average + total %us/%sy/%wa/%id at the top.
+      `ps aux --sort=-%cpu` is the same ranking, easier to script.
+      `mpstat -P ALL` shows per-core utilization (often a single
+      thread pinning one core looks like 100/CORES% in the
+      aggregate; per-core makes it obvious).
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: usage_percent
+        op: gte
+        value: 98
+      command: |
+        # Critical path (>=98% CPU). The host is saturated; new
+        # work queues, response times balloon. Intervene NOW.
+
+        # 1. Find the top consumer(s)
+        ps aux --sort=-%cpu | head -10
+        top -bn1 | head -25
+
+        # 2. Is it user CPU or kernel/iowait?
+        mpstat -P ALL 1 3 2>/dev/null || sar -u 1 3 2>/dev/null
+        # High %sy = kernel work (driver issue, GC).
+        # High %wa = I/O bound (escalate to cpu_iowait_high path).
+        # High %us = userspace process; kill or restart.
+
+        # 3. Decision: kill, restart, or wait?
+        #    - If a known cron/batch job: let it finish.
+        #    - If a stuck app: restart (`sudo systemctl restart <UNIT>`).
+        #    - If unrecognized + runaway: kill `kill -TERM <PID>`
+        #      then `kill -KILL <PID>` if it ignores SIGTERM.
+
+        # 4. Confirm relief
+        top -bn1 | head -10
+      description: |
+        Critical (>=98%) path. Identify the top consumer, classify
+        as user vs system vs iowait, decide kill/restart/wait. The
+        cpu_iowait_high alert is the sister-rule for the iowait-
+        dominated subcase; this one focuses on userspace
+        saturation.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: usage_percent
+        op: lt
+        value: 98
+      command: |
+        # Warning path (90-97%). Investigate; plan tuning.
+
+        # 1. Top consumers + trend
+        ps aux --sort=-%cpu | head -10
+        uptime  # load_1m vs load_15m shows direction
+
+        # 2. Is this expected workload growth or a regression?
+        # Check recent deploys / config changes on the affected app.
+
+        # 3. Plan: scale capacity, optimize the hot path, or
+        # accept and move on (some workloads run hot by design).
+      description: |
+        Warning (90-97%) path. Investigate workload pattern;
+        decide between tuning, scaling, or no-action.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: usage_percent missing. Diagnose manually.
+        top -bn1 | head -25
+        ps aux --sort=-%cpu | head -10
+      description: |
+        Missing-evidence fallback. Run diagnostic; classify
+        manually before intervention.
+
+  # ====== Deeper profiling (when ps + top aren't enough) ======
+  #
+  # If the workload looks legitimate but you want to confirm where
+  # the CPU time is actually going (kernel vs user, which symbols),
+  # use these:
+  #
+  # `perf top` (interactive, by-symbol view):
+  #   sudo perf top -F 99
+  #   # Live ncurses; shows hottest functions. Useful for "is the
+  #   # bottleneck in the app or the kernel?". Look for high
+  #   # kernel-side symbols like __x86_indirect_thunk_array (Spectre
+  #   # mitigation overhead); sometimes the fix is BIOS settings,
+  #   # not the workload.
+  #
+  # `perf record` for a flame graph (captures + analyses offline):
+  #   sudo perf record -F 99 -a --call-graph dwarf -g sleep 30
+  #   sudo perf script | stackcollapse-perf.pl | flamegraph.pl > /tmp/flame.svg
+  #   # Open the SVG in a browser; the wide stack bars are the
+  #   # hotspots. Requires flamegraph tools from
+  #   # https://github.com/brendangregg/FlameGraph.
+  #
+  # Per-cgroup CPU view (containers / k8s):
+  #   sudo systemd-cgtop
+  #   # OR `ctop` for container-only.
+  #   # If a single container is hot, check its CPU quota:
+  #   sudo cat /sys/fs/cgroup/<...>/cpu.max
+  #
+  # NUMA imbalance (multi-socket boxes):
+  #   numastat -p $(pgrep -f <app> | head -1)
+  #   # Lots of remote-node memory accesses = NUMA-unaware app =
+  #   # tune CPU affinity (`numactl --cpunodebind=N --membind=N`).
+
+  validation:
+    command: |
+      top -bn1 | head -10
+      uptime
+    description: |
+      After fix, confirm top's aggregate idle climbs back above
+      10% and load_1m starts dropping toward load_15m. Re-firing
+      the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Process kill / restart isn't reversible. The process is
+      gone; restart brings it back fresh. If the kill was a
+      mistake (killed a legitimate batch job that was almost
+      done) the job restarts from its own retry / checkpoint
+      logic; out of band of this workflow.
+  impact:
+    blast_radius: |
+      Kill / restart: service-specific downtime (web worker: <5s;
+      batch job: full re-run; database: requires planning).
+      Diagnostic commands are non-disruptive.
+    estimated_duration: |
+      Diagnosis: 2-5 minutes. Process kill: <5s. Service restart:
+      service-dependent.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from top(1), ps(1), mpstat(1), sar(1),
+      uptime(1). The user/system/iowait classification is
+      standard sysstat practice; cross-references cpu_iowait_high
+      for the I/O-bound subcase. Not deliberately re-triggered on
+      validation fleet for this deepening pass.
+
+      Pattern library 2026-05-18: Category 1 (CPU). Sustained-intervals gate (fire only when threshold breached for 3+ consecutive intervals, ~15 min at 5-min cadence per spec §3.9) deferred until evaluator gains cross-snapshot state; today the rule fires on per-snapshot threshold-breach. subordinate_to: cpu_pressure_high wired in YAML but runtime subordination logic also deferred.

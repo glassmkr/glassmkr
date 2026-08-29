@@ -1,0 +1,140 @@
+# ssh_config_unapplied; added 2026-07-03 from the live blind-remediation
+# campaign (round 2, ssh_root_password).
+#
+# The ssh security fields Crucible reports come from `sshd -T`, which
+# re-parses the ON-DISK config, not the running daemon. So an operator (or
+# an automated remediation) that edits sshd_config to fix root-password
+# login but forgets to reload/restart clears ssh_root_password while the
+# box is still exploitable until the daemon reloads. This rule closes that
+# false-negative: it fires while the on-disk config is newer than the
+# daemon's last (re)load, so a host is never reported all-clear on a
+# staged-but-unapplied SSH change.
+#
+# Capability gate: requires snap.security.ssh.configApplied (Crucible
+# v0.13.16+). Absent on older agents, and the collector defaults it to
+# "applied" whenever it cannot determine the state (no systemd, unreadable
+# /proc), so this rule never false-fires.
+#
+# Single-severity (always warning). distro_match split only for the
+# systemd unit name: Debian/Ubuntu use `ssh`, RHEL family use `sshd`.
+id: ssh_config_unapplied
+priority: P2
+title: SSH config changed but not applied
+summary: sshd_config was modified after the sshd daemon last loaded its configuration. The running daemon is still using the previous config, so any change (including security hardening like disabling root password login) is not yet in effect. Reload or restart sshd to apply.
+fix:
+  quick_check:
+    command: |
+      # What the daemon WOULD load from disk now:
+      sudo sshd -T 2>/dev/null | grep -iE 'permitrootlogin|passwordauthentication'
+      # When the on-disk config last changed vs when sshd last (re)loaded:
+      stat -c '%y  %n' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null
+      systemctl show ssh sshd -p StateChangeTimestamp 2>/dev/null | grep -v '=$'
+    description: "Compares the sshd config mtime against the daemon's last start/reload. If the config is newer, the values from `sshd -T` above are NOT what the running daemon is enforcing; reload/restart to make them live."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (a reload does NOT drop existing sessions; your current connection stays open)
+    - "Working key-based login confirmed for at least one account before applying, in case the staged config tightens auth"
+  safe_mode:
+    command: |
+      # Effective (on-disk) config the daemon would load:
+      sudo sshd -T | grep -iE 'permitrootlogin|passwordauthentication|pubkeyauthentication'
+      # When was each config file last written:
+      stat -c '%y  %n' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null
+      # When did the running sshd last start or reload:
+      systemctl show ssh sshd -p StateChangeTimestamp -p ActiveEnterTimestamp 2>/dev/null | grep -v '=$'
+    description: |
+      Read-only. Confirms the drift: a config file mtime newer than
+      the daemon's StateChangeTimestamp means the on-disk config has
+      not been loaded. Validate the staged config with `sudo sshd -t`
+      before applying so a syntax error does not stop the daemon.
+  variants:
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      suggested_action: |
+        sudo sshd -t && sudo systemctl reload ssh
+      command: |
+        # Debian / Ubuntu. The systemd unit is `ssh`.
+        # 1. Validate the staged config BEFORE applying (a typo here
+        #    would otherwise fail the reload / stop the daemon):
+        sudo sshd -t
+        # 2. Apply. reload re-reads config without dropping sessions:
+        sudo systemctl reload ssh
+        # 3. Confirm the running daemon now matches the file:
+        sudo sshd -T | grep -iE 'permitrootlogin|passwordauthentication'
+      description: |
+        Debian/Ubuntu path. `sshd -t` first so a bad config cannot
+        take the daemon down; then `systemctl reload ssh` applies it
+        while leaving your current session connected. Verify from a
+        new terminal before closing this one if the change tightened
+        authentication.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        # RHEL family. The systemd unit is `sshd`.
+        sudo sshd -t
+        sudo systemctl reload sshd
+        sudo sshd -T | grep -iE 'permitrootlogin|passwordauthentication'
+      description: |
+        RHEL family path. Identical flow to Debian; only the unit
+        name differs (`sshd` vs `ssh`).
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: distro unknown. Detect the systemd unit name.
+        if systemctl list-unit-files | grep -q '^sshd\.service'; then
+          UNIT=sshd
+        else
+          UNIT=ssh
+        fi
+        echo "Using unit: $UNIT"
+        sudo sshd -t
+        sudo systemctl reload "$UNIT"
+        sudo sshd -T | grep -iE 'permitrootlogin|passwordauthentication'
+      description: |
+        Distro-unknown fallback. Detects the systemd unit name, then
+        validates and reloads. If the unit cannot be reloaded, a full
+        `sudo systemctl restart "$UNIT"` also applies the config
+        (restart briefly drops the listener but not established
+        sessions).
+  validation:
+    command: |
+      # After reload, the daemon's last-load time should be newer than
+      # every config mtime, and this alert auto-resolves on the next
+      # snapshot once Crucible sees configApplied flip back to true.
+      systemctl show ssh sshd -p StateChangeTimestamp 2>/dev/null | grep -v '=$'
+      stat -c '%y  %n' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null
+    description: |
+      Confirm the daemon's StateChangeTimestamp is now newer than the
+      config files. Re-firing the alert is the negative validation.
+  rollback:
+    available: false
+    command: null
+    note: |
+      There is nothing to roll back: this rule only asks you to apply
+      a config change you already made on disk. If the applied config
+      itself is wrong, edit sshd_config and reload again (a bad config
+      is caught by `sshd -t` before it can stop the daemon).
+  impact:
+    blast_radius: |
+      A `systemctl reload` does not drop established SSH sessions; the
+      current connection survives. New connections use the newly-loaded
+      config, so if the change tightened authentication, verify a new
+      login works before closing your session.
+    estimated_duration: |
+      Validate + reload: under 1 minute. Verification from a new
+      terminal: 30 seconds.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-07-03"
+    tested_on:
+      - Debian 13 validation host (a rebuilt host); config-vs-runtime drift reproduced and reload confirmed to clear it
+    tester: Glassmkr ops
+    research_basis: operator-pattern
+    source_note: |
+      Added from the live blind-remediation campaign: editing sshd_config
+      to fix ssh_root_password cleared that alert while the running daemon
+      stayed exposed, because `sshd -T` reflects the file, not the daemon.
+      Crucible v0.13.16 detects this by comparing the newest sshd_config*
+      mtime against the sshd unit's StateChangeTimestampMonotonic (which
+      advances on reload too, so the reload path this rule recommends is
+      correctly seen as applied). Pattern library category 7 (system state).

@@ -1,0 +1,134 @@
+# oom_kills; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B4.
+#
+# Single-severity rule (always critical; the kernel killed
+# something). No condition_match split. Main variant covers the
+# typical "find what got killed, restart it, plan permanent fix"
+# path; fallback covers the rare case where evidence is missing
+# but we still want a diagnostic command.
+id: oom_kills
+priority: P1
+# Forensic rule: the kernel OOM event already happened; the host's next
+# snapshot will likely look healthy. There is no automatic snapshot
+# signal to clear this alert; the operator must investigate and close
+# it. See CC_SPEC_MANUAL_RESOLVE_UI_2026-05-22.md.
+manual_resolve: true
+title: OOM killer recently fired
+summary: Kernel out-of-memory killer terminated one or more processes in the recent window. Severe memory pressure or a memory leak. Killed services may be down.
+fix:
+  quick_check:
+    command: |
+      sudo journalctl -k --since "24 hours ago" 2>/dev/null | grep -iE 'oom-killer|killed process|Out of memory' | tail -30
+      # If journalctl is unavailable, fall back to dmesg:
+      sudo dmesg -T 2>/dev/null | grep -iE 'oom-killer|killed process|Out of memory' | tail -30
+    description: "Recent OOM-killer activity from the kernel ring. Each line names the killed process, its PID, and the score that triggered selection. Look for repeating victims (same comm) ; that's the real leaker."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (diagnosing OOM is read-only; restarting killed services may require sudo)
+    - Awareness of which services run here (so the killed PID can be mapped to its systemd unit)
+    - Maintenance window NOT required for the immediate restart; PERMANENT fix (RAM upgrade, memory limit tuning, app patch) may need one
+  safe_mode:
+    command: |
+      sudo dmesg -T | grep -i 'killed process' | tail -20
+      journalctl --since "1 hour ago" -k --no-pager | grep -iE 'oom|killed process' | tail -30
+      systemctl --failed --no-pager
+      free -h
+    description: |
+      Read-only post-mortem. dmesg's "Killed process X (name)" tells
+      you exactly which PID + binary the kernel terminated; the
+      preceding lines show the oom_score table that drove the
+      decision. systemctl --failed surfaces services that exited
+      non-zero (commonly the OOM-killed ones if they were
+      systemd-managed).
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Main path: kernel killed at least one process. Identify
+        # what + restart + plan the permanent fix.
+
+        # 1. Find the OOM events + the killed process(es)
+        sudo dmesg -T | grep -iE 'oom|killed process|out of memory' | tail -40
+        journalctl --since "1 hour ago" -k --no-pager | grep -iE 'oom|killed process' | tail -30
+
+        # 2. Map the killed PID(s) -> systemd unit(s)
+        systemctl --failed --no-pager
+
+        # 3. Restart the killed service(s); replace <UNIT>
+        # sudo systemctl restart <UNIT>
+        # sudo systemctl status <UNIT>
+
+        # 4. Confirm current memory headroom
+        free -h
+        ps aux --sort=-rss | head -10
+
+        # 5. PERMANENT fix paths (pick the one that fits):
+        #    a) Add RAM (best for legitimate workload growth)
+        #    b) Set systemd MemoryMax= or MemoryHigh= on the
+        #       guilty service so it can't take the whole host down
+        #       (sudo systemctl edit <UNIT>: [Service] MemoryMax=4G)
+        #    c) Fix the application memory leak (file a bug)
+        #    d) Tune workload (lower worker counts, smaller batches)
+      description: |
+        Main path: post-mortem the dmesg/journal, map killed PIDs
+        to systemd units, restart, then plan the permanent fix.
+        The systemd MemoryMax option (5b) is the most common
+        operator lever short of adding RAM.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: evidence (oom_kills_recent count) is missing
+        # or zero but the alert still fired (race condition?).
+        # Run the diagnostic; classify manually.
+        sudo dmesg -T | grep -iE 'oom|killed process' | tail -20
+        journalctl -k --no-pager | grep -iE 'oom' | tail -20
+        free -h
+      description: |
+        Missing-evidence fallback. Run diagnostic to confirm there
+        was an OOM event; classify manually before acting.
+  validation:
+    command: |
+      systemctl --failed --no-pager
+      free -h
+      sudo dmesg -T | grep -i 'killed process' | tail -5
+    description: |
+      After restart, confirm: no failed units in `--failed`,
+      free -h shows headroom, and the recent dmesg slice doesn't
+      have a NEW "killed process" event (older ones stay in the
+      ring buffer until reboot; read by timestamp).
+  rollback:
+    available: false
+    command: null
+    note: |
+      OOM kills are not recoverable: the killed process is gone
+      and any in-memory state with it. The restart brings it back
+      fresh. systemd MemoryMax= change is reversible via
+      `systemctl revert <UNIT>`; RAM upgrade is hardware. There
+      is no rollback for the kill itself.
+  impact:
+    blast_radius: |
+      Service(s) that got killed are already down; restart brings
+      them back. systemd MemoryMax= tuning may cause the same
+      service to hit its limit and get killed again under load , 
+      verify the limit is sized for actual working set, not just
+      "less than current usage".
+    estimated_duration: |
+      Diagnosis: 5-10 minutes. Service restart: 5-30 seconds.
+      Permanent fix planning: 30 minutes - days depending on path
+      (config change vs. RAM order vs. app patch).
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from dmesg(1), journalctl(1), systemctl(1),
+      systemd.resource-control(5) (MemoryMax/MemoryHigh). The
+      MemoryMax pattern is from Glassmkr ops experience containing
+      a runaway Postgres worker on services-1 in 2025 without
+      taking the host down. Not deliberately re-triggered for this
+      deepening pass (would require allocating until OOM).
+
+      Pattern library 2026-05-18: Category 2 (RAM and memory). Pattern: "OOM killer fired = always page." Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

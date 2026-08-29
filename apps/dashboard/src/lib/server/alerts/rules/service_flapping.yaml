@@ -1,0 +1,121 @@
+# service_flapping; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C11_C18_ACTIVATION_2026-05-19.md §1.2.
+#
+# Fires when a systemd unit either: (a) hit Result=start-limit-hit
+# (systemd's canonical "I gave up restarting" signal from
+# StartLimitBurst / IntervalSec), OR (b) has NRestarts >= 5 (catches
+# active flapping before systemd's limiter has kicked in).
+#
+# start-limit-hit emits critical; NRestarts threshold emits warning.
+# Both come from the C12 failed_unit_details collector; pre-0.12.0
+# agents see no emission.
+#
+# Spec proposed cross-snapshot library tracking; the NRestarts field
+# is itself cumulative since last successful start, so the per-snap
+# signal is sufficient. If FP rate proves high on services with
+# legitimate restart counts, threshold becomes a config override or
+# moves to a sustained-window primitive in a follow-up.
+id: service_flapping
+priority: P1
+title: systemd service flapping
+summary: "A systemd unit has hit its start-limit (systemd stopped restarting it) OR has restarted 5+ times. A service that can't stabilise consumes resources without delivering value; investigate before bumping restart limits."
+fix:
+  quick_check:
+    command: |
+      # Top flapping units in the last hour:
+      sudo journalctl --since "1 hour ago" -u '*' --no-pager 2>/dev/null | grep -iE 'Started|Stopped|Failed|main process exited' | awk '{print $5}' | sort | uniq -c | sort -rn | head -15
+      # Per-unit restart counter (NRestarts is a good proxy for flapping):
+      systemctl list-units --type=service --no-legend | awk '{print $1}' | while read u; do
+        n=$(systemctl show "$u" -p NRestarts --value 2>/dev/null)
+        [ "${n:-0}" -gt 3 ] 2>/dev/null && echo "$n  $u"
+      done | sort -rn | head -10
+    description: "Two views: which units logged the most start/stop/fail events in the last hour, and which units have a high NRestarts counter. NRestarts is reset on daemon-reload, so a high value is meaningful."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the affected host
+    - Awareness of what the service does and whether its restart count is legitimate (some long-running services restart on config reload)
+    - Authority to read journalctl history
+  safe_mode:
+    command: |
+      systemctl status <UNIT>
+      systemctl show <UNIT> | grep -i -E 'restart|result'
+      journalctl -u <UNIT> --since='-1h' --no-pager | tail -100
+    description: |
+      Read-only inspection. systemctl status shows current state +
+      recent restart count; systemctl show exposes the structured
+      properties (Result, NRestarts, RestartUSec); journalctl shows
+      what happened before each restart attempt.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # First identify root cause from the journal. Common causes:
+        #   - Recent config change broke the service. Compare with
+        #     `etckeeper` or `dpkg --verify <pkg>` (Debian/Ubuntu) /
+        #     `rpm -V <pkg>` (RHEL).
+        #   - Upstream dependency unreachable (database, message
+        #     queue, file mount). Test with `nc -zv <host> <port>`.
+        #   - Resource limit too tight. Check `systemctl cat <UNIT>`
+        #     for LimitNOFILE, MemoryMax; bump if legitimate.
+        #
+        # If start-limit-hit and the service is now stuck:
+        sudo systemctl reset-failed <UNIT>
+        sudo systemctl start <UNIT>
+        # This clears the limiter; the service tries to start once.
+        # If it fails again, you're back where you started.
+        #
+        # If the underlying cause is resolved, bumping the start
+        # limit lets the service tolerate a restart burst on
+        # next deploy:
+        # sudo systemctl edit <UNIT>
+        #   [Service]
+        #   StartLimitBurst=10
+        #   StartLimitIntervalSec=600
+      description: |
+        Two paths. (1) Resolve the root cause via journal-driven
+        diagnosis; reset-failed once, start once. (2) If the
+        underlying behaviour is legitimate (e.g. a service that
+        restarts on config reload several times per hour),
+        StartLimitBurst tuning is appropriate. Increasing the
+        limit without understanding the cause is a workaround that
+        will eventually surface again.
+  validation:
+    command: |
+      systemctl show <UNIT> | grep -E 'Result|NRestarts|ActiveState'
+    description: |
+      Service should report ActiveState=active and Result=success.
+      NRestarts may still show a non-zero historical count; that's
+      fine; the rule re-checks against the current count on the
+      next snapshot.
+  rollback:
+    available: true
+    command: |
+      sudo systemctl revert <UNIT>
+      sudo systemctl daemon-reload
+    note: |
+      systemctl revert undoes drop-in edits (StartLimitBurst,
+      MemoryMax, etc). The unit reverts to its packaged config.
+  impact:
+    blast_radius: |
+      The alert itself has no service impact. A flapping service
+      consumes CPU + log volume each restart cycle; the customer-
+      visible impact is whatever depends on the service being up.
+      Remediation involves restarting the service, which may briefly
+      take it down (it's already not stable, so the bar is low).
+    estimated_duration: |
+      Triage 10-30 min depending on root-cause complexity;
+      remediation varies.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic failed_unit_details fixture with high NRestarts
+    tester: Glassmkr ops
+    research_basis: operator-pattern
+    source_note: |
+      Pattern library 2026-05-18 Category 7 (Services). A unit
+      caught in a restart loop is a high-signal alert that systemd
+      itself surfaces via start-limit-hit, but only once the
+      limiter has tripped. NRestarts >= 5 catches the same pattern
+      earlier. Crucible v0.12.0 ships the underlying data via
+      failed_unit_details (systemctl show -p NRestarts,Result,...).

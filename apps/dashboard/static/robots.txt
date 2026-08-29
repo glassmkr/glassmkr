@@ -1,0 +1,19 @@
+User-agent: *
+# This app serves no /docs or /install routes; both returned 404 while being
+# advertised here. Canonical documentation lives on the marketing site.
+Disallow: /api/
+Disallow: /server/
+Disallow: /settings
+Disallow: /channels
+Disallow: /add-server
+Disallow: /auth/
+Disallow: /webhook/
+# Authenticated machine endpoints. /mcp is the MCP server and /oauth is its
+# authorization flow; both answer 401 rather than 404, so a crawler that finds
+# them keeps trying. /trend-warnings is an authenticated page.
+Disallow: /mcp
+Disallow: /oauth/
+Disallow: /trend-warnings
+
+# LLM and AI agent instructions
+# See https://app.glassmkr.com/llms.txt for API and integration details

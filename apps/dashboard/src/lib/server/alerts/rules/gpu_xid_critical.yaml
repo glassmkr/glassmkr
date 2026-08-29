@@ -1,0 +1,119 @@
+# gpu_xid_critical; new rule shipped 2026-05-20 per
+# CC_SPEC_GPU_RULES_2026-05-19.md §1.1. Part of the GPU first release.
+#
+# Fires when snap.gpu.tier1.xid_events contains a critical-severity
+# XID event in the last 24h window (Crucible's collection window).
+# Per-emission dedup: one alert per (pci_bdf, xid_code) tuple with
+# event count in evidence. Most-severe code: XID 79 (GPU fell off
+# the bus). Other criticals incl. 48 (DBE), 94/95 (contained/
+# uncontained ECC), 119/120 (GSP RPC timeout).
+#
+# Capability gate: snap.gpu.tier1.available === true (Crucible
+# v0.13.0+ with nvidia-smi present).
+#
+# Provenance: validation-pending per Simon's 2026-05-19 ship-ahead-
+# of-fleet-validation decision. Lifts to fleet-tested after 3-5 days
+# of clean data from the 2-3 incoming validation hosts.
+#
+# Incident grouping: gpu_hardware_fault. When this rule fires
+# alongside gpu_uncorrected_ecc or nvlink_link_down on the same host
+# within 5 min, the runtime subordination layer collapses them into
+# one incident.
+id: gpu_xid_critical
+priority: P0
+# Forensic / post-incident: an Xid is a discrete kernel-reported GPU
+# event. The next snapshot won't keep firing it once the dmesg window
+# moves on, so there's no automatic clear path even after the operator
+# resets the GPU / reboots / replaces the card. Manual closure with a
+# stated cause is the right semantic.
+manual_resolve: true
+title: GPU XID critical event
+summary: "NVIDIA XID error classified as critical per NVIDIA's published XID severity table. Hardware-witnessed fault on the GPU; data may be at risk and the workload likely degraded."
+incident_group:
+  group_id: gpu_hardware_fault
+  correlation_window_seconds: 300
+fix:
+  quick_check:
+    command: |
+      sudo dmesg -T | grep -i 'NVRM:.*Xid' | tail -20
+      nvidia-smi
+      nvidia-smi --query-gpu=index,uuid,name,pci.bus_id,ecc.errors.uncorrected.aggregate.total --format=csv
+    description: "Recent XID events from the kernel ring + the nvidia-smi snapshot. Cross-reference the XID line's PCI BDF against the nvidia-smi pci.bus_id column to identify which GPU is the source."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access on the host
+    - Awareness of which workload was running on the affected GPU
+    - "For replacement scenarios: spare GPU on hand and a maintenance window"
+  safe_mode:
+    command: |
+      nvidia-smi -q | head -60
+      sudo dmesg -T | grep -E "NVRM:|Xid" | tail -30
+      nvidia-bug-report.sh --output-file /tmp/nvbugreport-$(hostname).log.gz
+    description: |
+      Read-only inspection. nvidia-bug-report.sh captures everything
+      NVIDIA support will ask for; run it BEFORE rebooting or reseating
+      the GPU. dmesg confirms the XID code and surrounding context.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Look up the XID code in NVIDIA's published table:
+        # https://docs.nvidia.com/deploy/xid-errors/index.html
+        #
+        # XID 79 (most severe): GPU fell off the PCIe bus. Reseat the
+        # card; if it recurs, RMA.
+        # XID 48 / 95: Double-bit ECC / uncontained ECC. VRAM end-of-
+        # life; plan replacement.
+        # XID 94: contained ECC. Memory region blocked but data is
+        # safe; preventive replacement.
+        # XID 119 / 120: GSP RPC timeout. Driver/firmware version
+        # mismatch; verify and reflash vbios.
+        #
+        # General triage:
+        nvidia-smi -q -d ECC,POWER,TEMPERATURE
+        nvidia-smi --query-gpu=index,name,vbios_version --format=csv
+        sudo lspci -vv -s <BDF> | grep -E "LnkSta|DevSta"
+      description: |
+        XID interpretation is per-code; the evidence in the alert
+        names the specific XID. NVIDIA's XID Errors document is the
+        canonical reference; bookmark it.
+  validation:
+    command: |
+      sudo dmesg -T | grep "NVRM: Xid" | tail -5
+      nvidia-smi -q -d ECC | grep -A20 "ECC Errors"
+    description: |
+      After the underlying cause is addressed (replacement, reseat,
+      driver fix), confirm no new XIDs appear in dmesg and ECC
+      counters stop incrementing. The rule auto-resolves once no
+      critical XID is in the 24h window.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Hardware replacement is irreversible. Capture diagnostic
+      bundle before any physical action so vendor support has full
+      context for warranty/RMA.
+  impact:
+    blast_radius: |
+      The XID itself indicates the workload on this GPU has already
+      degraded or failed. Reseating or replacement requires powering
+      down the GPU (and possibly the host); customer-facing impact
+      depends on whether the affected GPU was actively serving
+      inference or training.
+    estimated_duration: |
+      Triage 15-30 min. Reseat: 30-60 min on bare metal. Replacement
+      with RMA: days-to-weeks depending on vendor.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-20"
+    tested_on:
+      - Synthetic dmesg fixtures (Crucible v0.13.0 XID parser, 30 critical codes + 12 warning codes)
+    tester: Glassmkr ops
+    research_basis: validation-pending
+    source_note: |
+      Pattern library 2026-05-18 + new GPU category. XID severity
+      table sourced from NVIDIA XID Errors documentation; Crucible
+      v0.13.0 hardcodes the table and tags each event with severity.
+      Ships as validation-pending per Simon's 2026-05-19 decision;
+      lifts to fleet-tested after Simon's 2-3 incoming GPU
+      validation hosts have run v0.13.0 for 3-5 days.

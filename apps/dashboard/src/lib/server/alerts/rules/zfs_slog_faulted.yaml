@@ -1,0 +1,91 @@
+# zfs_slog_faulted; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_FOLLOWUP_C1_C6_ACTIVATION_2026-05-19.md §5.2.
+#
+# Fires when any SLOG (ZIL log) vdev in any ZFS pool reports state
+# FAULTED or REMOVED. Sync-write durability is compromised: applications
+# that issue O_DSYNC writes (databases with sync=standard, NFS sync
+# exports) lose the persistence guarantee until the SLOG is repaired.
+#
+# Pool data is not at risk; SLOG failure does NOT cause data loss
+# unless the host crashes between commit and the next async flush.
+# The dashboard's zfs_pool_unhealthy rule no longer fires on SLOG-only
+# faults (it used to in PR #157); this rule takes that signal over.
+#
+# Capability gate: snap.zfs.pools[].slog_vdevs[] must be present
+# (Crucible v0.10.4+). Older agents emit absent; rule no-ops.
+id: zfs_slog_faulted
+priority: P1
+title: ZFS SLOG vdev faulted
+summary: A ZIL log vdev (SLOG) is FAULTED or REMOVED. Sync-write durability for the pool is compromised until the SLOG is replaced.
+fix:
+  quick_check:
+    command: |
+      sudo zpool status | grep -A5 -E 'logs:|cache:'
+    description: "Section view of SLOG (logs:) and L2ARC (cache:) vdevs. FAULTED/REMOVED/UNAVAIL on a SLOG device is the alert; L2ARC faulting is informational (cache can be safely removed)."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access
+    - Replacement SLOG device on hand (typically a small, fast NVMe)
+    - Awareness of which applications on the pool use O_DSYNC
+  safe_mode:
+    command: |
+      zpool status -v
+      zpool list -v
+      # Identify which device backs the SLOG
+      zpool status | grep -A 5 'logs'
+    description: |
+      Read-only inspection. zpool status -v shows per-vdev state +
+      per-device state. The faulted log vdev should be visible under
+      the `logs` section.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # If the SLOG is a mirror, the surviving leg keeps durability;
+        # zpool replace the faulted device in-place.
+        # If the SLOG is single-device, remove the log vdev (zpool
+        # remove) then add the replacement (zpool add tank log <dev>).
+        zpool status -v
+        # Replacement (mirror or single-device):
+        # sudo zpool replace tank /dev/old_log /dev/new_log
+        # Removal (single-device SLOG only):
+        # sudo zpool remove tank /dev/faulted_log
+      description: |
+        Two flavors: mirror SLOG can be replaced in-place; single
+        SLOG must be removed (briefly disables ZIL, sync writes go to
+        the pool's main vdevs) then re-added with a new device.
+  validation:
+    command: |
+      zpool status -v
+    description: |
+      After replacement, the log vdev should show state ONLINE with
+      zero error counters. Alert auto-resolves on next snapshot.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Hardware replacement is irreversible from the software side. If
+      the wrong device was added as the new SLOG, zpool remove + zpool
+      add with the right device.
+  impact:
+    blast_radius: |
+      No data loss from the SLOG fault itself (ZIL is a journal, not
+      primary storage). Sync writes degrade to async during the brief
+      window between zpool remove and zpool add on a single-SLOG
+      pool. Mirror SLOG: zero downtime if the mirror leg survives.
+    estimated_duration: |
+      Software replacement: 5 min. Physical SLOG swap: ~30 min
+      depending on host accessibility.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - ZFS synthetic test fixtures
+    tester: Glassmkr ops
+    research_basis: research-derived
+    source_note: |
+      Pattern library Cat 3.5 (ZFS) explicitly distinguishes SLOG from
+      pool main vdev: SLOG fault is sync-write durability concern (not
+      data loss). Splitting this from zfs_pool_unhealthy lets operators
+      page the right team and run the right runbook. Capability-gated
+      on Crucible C6 (snap.zfs.pools[].slog_vdevs[]).

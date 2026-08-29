@@ -1,0 +1,62 @@
+{
+  "_doc": "Seed allowlist for endpoints that pre-date the tier-gating lint. New endpoints should declare via inline `// tier: free|pro` marker; this file is for retrofit only. 2026-06-21 re-gating: the programmatic API is FREE; the only Pro gates are node count (servers POST quota), data retention (incl. the audit window), and AI analysis. See ~/Documents/Glassmkr/Reference/POLICY_TIER_GATING.md. Each entry: {path, method, tier} where tier in {free,pro}.",
+  "endpoints": [
+    { "path": "apps/dashboard/src/routes/api/v1/account/audit/+server.ts", "method": "GET", "tier": "pro", "rationale": "Audit window is retention-family (Free 30d / Pro 365d), kept split in the 2026-06-21 re-gating; requireProTier still enforced" },
+    { "path": "apps/dashboard/src/routes/api/v1/account/keys/+server.ts", "method": "GET", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; list own keys" },
+    { "path": "apps/dashboard/src/routes/api/v1/account/keys/+server.ts", "method": "POST", "tier": "free", "rationale": "2026-06-21 re-gating: any plan may mint write/admin keys; per-key scope + node cap + rate limits still apply" },
+    { "path": "apps/dashboard/src/routes/api/v1/account/keys/[id]/+server.ts", "method": "DELETE", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; delete own key" },
+    { "path": "apps/dashboard/src/routes/api/v1/account/keys/[id]/rotate/+server.ts", "method": "POST", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; rotate own key (re-auth still required)" },
+    { "path": "apps/dashboard/src/routes/api/v1/account/verify-password/+server.ts", "method": "POST", "tier": "free", "rationale": "Dashboard re-auth flow; needed by both Free and Pro UI; allow list is session+legacy_session" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/admin/retention/+server.ts", "method": "POST", "tier": "free", "rationale": "Admin-only endpoint; tier check is orthogonal (uses admin role gate, not Pro gate)" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/auth/admin/suspend/[customerId]/+server.ts", "method": "POST", "tier": "free", "rationale": "Admin-only; not Pro-relevant" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/forgot-password/+server.ts", "method": "POST", "tier": "free", "rationale": "Auth flow; unauthenticated password-reset request; generic response (no account-existence leak)" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/login/+server.ts", "method": "POST", "tier": "free", "rationale": "Auth flow; all tiers need it" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/logout/+server.ts", "method": "POST", "tier": "free", "rationale": "Auth flow; all tiers need it" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/logout/+server.ts", "method": "GET", "tier": "free", "rationale": "Auth flow; all tiers need it" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/me/+server.ts", "method": "GET", "tier": "free", "rationale": "Identity; all tiers need it" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/register/+server.ts", "method": "POST", "tier": "free", "rationale": "Auth flow; unauthenticated" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/resend-verification/+server.ts", "method": "POST", "tier": "free", "rationale": "Auth flow; all tiers need it" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/reset-password/+server.ts", "method": "POST", "tier": "free", "rationale": "Auth flow; unauthenticated (reset-token-gated) password reset" },
+    { "path": "apps/dashboard/src/routes/api/v1/auth/verify/+server.ts", "method": "GET", "tier": "free", "rationale": "Auth flow; unauthenticated (token-gated)" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/billing/checkout/+server.ts", "method": "GET", "tier": "free", "rationale": "Retired route; answers 410 no_paid_tier to every call" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/checkout/+server.ts", "method": "POST", "tier": "free", "rationale": "Retired route; answers 410 no_paid_tier to every call" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/downgrade/+server.ts", "method": "POST", "tier": "free", "rationale": "Billing flow; Pro customers downgrade to Free here" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/portal/+server.ts", "method": "POST", "tier": "free", "rationale": "Billing flow; manage subscription" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/resume/+server.ts", "method": "POST", "tier": "free", "rationale": "Billing flow; resume cancelled subscription" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/status/+server.ts", "method": "GET", "tier": "free", "rationale": "Billing status; all tiers" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/token/+server.ts", "method": "POST", "tier": "free", "rationale": "Billing token mint" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/token/+server.ts", "method": "DELETE", "tier": "free", "rationale": "Billing token revoke" },
+    { "path": "apps/dashboard/src/routes/api/v1/billing/token/rotate/+server.ts", "method": "POST", "tier": "free", "rationale": "Billing token rotate" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/health/+server.ts", "method": "GET", "tier": "free", "rationale": "Public health probe (unauthenticated)" },
+    { "path": "apps/dashboard/src/routes/api/v1/health/[serverId]/alerts/+server.ts", "method": "GET", "tier": "free", "rationale": "Read own server alerts; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/health/[serverId]/health/+server.ts", "method": "GET", "tier": "free", "rationale": "Read own server health; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/health/[serverId]/history/+server.ts", "method": "GET", "tier": "free", "rationale": "Read own server history; reads stay free" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/ingest/+server.ts", "method": "POST", "tier": "free", "rationale": "Collector telemetry; cru_key-only gate, never Pro-gated" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/servers/+server.ts", "method": "GET", "tier": "free", "rationale": "List own servers; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/+server.ts", "method": "POST", "tier": "free", "rationale": "2026-06-21 re-gating: create server open to Free; the 3-node quota (not the Pro gate) bounds Free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/+server.ts", "method": "GET", "tier": "free", "rationale": "Read server detail; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/+server.ts", "method": "PATCH", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; update server name/tags" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/+server.ts", "method": "DELETE", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; delete own server" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/alerts/+server.ts", "method": "GET", "tier": "free", "rationale": "Read own server alerts; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/disk-health/+server.ts", "method": "GET", "tier": "free", "rationale": "Read disk health; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/health/+server.ts", "method": "GET", "tier": "free", "rationale": "Read snapshot; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/history/+server.ts", "method": "GET", "tier": "free", "rationale": "Read history; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/metrics/+server.ts", "method": "GET", "tier": "free", "rationale": "Read metrics; reads stay free" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/mutes/+server.ts", "method": "GET", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; list mutes" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/mutes/+server.ts", "method": "POST", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; create mute" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/mutes/+server.ts", "method": "DELETE", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; delete mute" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/restore/+server.ts", "method": "POST", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; restore suspended server (still bounded by node quota)" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/[id]/rotate-key/+server.ts", "method": "POST", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; rotate the server's collector key" },
+    { "path": "apps/dashboard/src/routes/api/v1/servers/restore-all/+server.ts", "method": "POST", "tier": "free", "rationale": "2026-06-21 re-gating: programmatic API is Free; bulk restore (bounded by node quota)" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/trend-warnings/[id]/feedback/+server.ts", "method": "DELETE", "tier": "free", "rationale": "2026-06-21 re-gating: trend-warning feedback open to Free; POST handler marked inline" },
+
+    { "path": "apps/dashboard/src/routes/api/v1/version/+server.ts", "method": "GET", "tier": "free", "rationale": "Public version info; unauthenticated" }
+  ]
+}

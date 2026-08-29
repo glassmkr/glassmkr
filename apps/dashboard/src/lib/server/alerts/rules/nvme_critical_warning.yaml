@@ -1,0 +1,145 @@
+# nvme_critical_warning; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C11_C18_ACTIVATION_2026-05-19.md §5.
+#
+# Fires when any NVMe device reports a non-zero Critical Warning byte
+# in its SMART/Health Log (NVM Express spec §5.21). Always critical;
+# the rule lists which decoded flags are active so the operator can
+# triage (spare-low vs temperature vs read-only vs reliability-
+# degraded vs volatile-memory-backup-failed vs persistent-memory-
+# readonly).
+#
+# Capability gate: snap.smart[].critical_warning_decoded (Crucible
+# v0.12.0+ for NVMe devices). Pre-0.12.0 NVMe SMART data lacks the
+# decoded field; SATA devices have no Critical Warning byte at all.
+# R-P2-2 ownership-branch remediation (val-fleet 2026-05-29): this is a
+# vendor-side physical-hardware rule whose remediation assumes chassis
+# access. The customer-facing alert card appends the shared
+# OWNERSHIP_REMEDIATION_NOTE (evaluator.ts, single source of truth) so an
+# operator who cannot physically service the host still has a path:
+#   "If you operate this hardware (owned or colocated): handle the
+#    inspection or swap yourself, or dispatch a remote-hands technician.
+#    If this is rented or provider-managed: file a hardware service ticket
+#    with your provider. Either way, the physical check needs to happen
+#    on-site."
+# Keep this rule's remediation consistent with that note.
+id: nvme_critical_warning
+priority: P1
+# Forensic / post-incident: the NVM Express critical-warning bits are
+# sticky on the device itself, but resolution = drive swap, which
+# replaces the device entirely (alert auto-clears because the offending
+# device is gone; not because the fault was understood). The cost of
+# accidentally treating "drive is about to die" as auto-resolvable is
+# much higher than the cost of one extra click to close it; force
+# explicit operator closure.
+manual_resolve: true
+title: NVMe critical warning byte non-zero
+summary: "An NVMe device's Critical Warning byte (NVM Express §5.21) is non-zero. Per spec, any non-zero bit is a vendor-recommended immediate-action signal: temperature threshold exceeded, available spare below threshold, reliability degraded, read-only mode, volatile memory backup failed, or persistent memory region read-only."
+fix:
+  quick_check:
+    command: |
+      for n in /dev/nvme?n? 2>/dev/null; do
+        [ -e "$n" ] || continue
+        echo "=== $n ==="
+        sudo nvme smart-log $n 2>/dev/null | grep -iE 'critical_warning|temperature|available_spare|percentage_used|media_errors'
+      done
+    description: "Decode the NVMe critical_warning byte (bit 0 = spare below threshold, bit 1 = temperature, bit 2 = reliability degraded, bit 3 = read-only, bit 4 = volatile-memory-backup failed)."
+  verdict_prior: vendor-side
+  prerequisites:
+    - SSH access on the affected host
+    - smartctl available (most modern Linux distros ship it as `smartmontools`)
+    - "For replacement scenarios: spare NVMe device on hand + maintenance window"
+  safe_mode:
+    command: |
+      sudo smartctl -a /dev/<NVME>
+      sudo nvme smart-log /dev/<NVME>
+      # If the kernel has marked the device read-only:
+      mount | grep <NVME>
+    description: |
+      Read-only inspection. smartctl -a dumps the full SMART data
+      including the Critical Warning byte interpretation. `nvme
+      smart-log` from nvme-cli is the canonical view if installed.
+      mount confirms whether the kernel has remounted any filesystems
+      on this device as read-only.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # The remediation depends on which Critical Warning bit fired.
+        # Inspect the active flags from the alert evidence and follow
+        # the matching branch:
+        #
+        # bit 0 (available_spare_low):
+        #   Reserved blocks below threshold; SSD nearing end of life.
+        #   Plan replacement at next maintenance window.
+        #
+        # bit 1 (temperature_threshold):
+        #   Device exceeded its operating temp. Check airflow,
+        #   chassis temperatures. Sustained over-temp accelerates
+        #   wear and can push the device to read-only.
+        #
+        # bit 2 (reliability_degraded):
+        #   Vendor-specific but typically media health below threshold.
+        #   Plan replacement; data may still be readable but failure
+        #   is forecast.
+        #
+        # bit 3 (read_only):
+        #   Device entered read-only mode. URGENT: data preserved but
+        #   no further writes. Back up via the read-only path before
+        #   swap. Replacement is the only remediation.
+        #
+        # bit 4 (volatile_memory_backup_failed):
+        #   Power-loss-protection capacitor failure. The drive's DRAM
+        #   cache will lose in-flight writes on sudden power loss.
+        #   Plan replacement, especially for write-heavy workloads.
+        #
+        # bit 5 (persistent_memory_readonly):
+        #   Persistent memory region went read-only. Specific to
+        #   NVMe 1.4+ devices with PMR. Vendor-specific recovery.
+        #
+        # General: capture vendor telemetry before swap:
+        sudo nvme telemetry-log /dev/<NVME> --host-generated --output-file=/tmp/<HOST>-<NVME>.bin
+      description: |
+        Critical Warning is per-bit informative; the alert evidence
+        lists which flags are active. Read-only is the most urgent
+        (no further writes possible); spare-low and reliability-
+        degraded are end-of-life forecasts (plan replacement);
+        temperature is sometimes ambient-environment fixable
+        (improve airflow) before replacement is needed.
+  validation:
+    command: |
+      sudo smartctl -a /dev/<NVME> | grep -i 'critical warning'
+    description: |
+      After replacement: Critical Warning byte reads 0x00 on the new
+      device. Rule auto-resolves once the snapshot reports no flags
+      active.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Hardware replacement is irreversible. If the wrong device was
+      swapped, restore from backup or the prior device (if still
+      readable).
+  impact:
+    blast_radius: |
+      Alert itself has no service impact. The device's state has
+      operational impact: read-only blocks writes; spare-low +
+      reliability-degraded forecast failure; temperature can push to
+      read-only if not addressed. Replacement involves brief downtime
+      depending on filesystem layout (RAID/ZFS replace-in-place vs
+      single-device swap).
+    estimated_duration: |
+      Triage 10-20 min. Replacement varies: 30 min - 2 h depending
+      on filesystem and resilver / rebuild time.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic NVMe SMART JSON fixture with varying critical_warning bytes
+    tester: Glassmkr ops
+    research_basis: vendor-anchor
+    source_note: |
+      NVM Express specification §5.21 (SMART/Health Log). Any non-
+      zero bit in the Critical Warning byte is per-spec a vendor-
+      recommended immediate-action signal. Crucible v0.12.0 decodes
+      the byte into 6 boolean flags so the alert message can name
+      the specific failure mode.

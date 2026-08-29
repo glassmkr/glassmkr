@@ -1,0 +1,234 @@
+# smart_failing; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B1.
+#
+# Fires when SMART reports a LATCHING failure signal: aggregate health != "PASSED",
+# or reallocated_sectors > 0. pending_sectors (attr 197) is deliberately NOT a
+# trigger: it oscillates by design and some vendors relabel it as an ECC counter
+# that flaps 0<->1 on healthy drives (Crucial MX500). The held/repeated pending
+# case is owned by the trend engine (smart_197_step_change / smart_197_recurring),
+# which has the cross-snapshot history to judge it. Removed as a trigger 2026-08-04
+# after an MX500 false-positive flap. The fix is
+# fundamentally drive replacement; the deepened workflow guides the
+# operator through pre-replacement diagnostics, the replacement
+# itself (chassis-specific), and post-replacement verification.
+# R-P2-2 ownership-branch remediation (val-fleet 2026-05-29): this is a
+# vendor-side physical-hardware rule whose remediation assumes chassis
+# access. The customer-facing alert card appends the shared
+# OWNERSHIP_REMEDIATION_NOTE (evaluator.ts, single source of truth) so an
+# operator who cannot physically service the host still has a path:
+#   "If you operate this hardware (owned or colocated): handle the
+#    inspection or swap yourself, or dispatch a remote-hands technician.
+#    If this is rented or provider-managed: file a hardware service ticket
+#    with your provider. Either way, the physical check needs to happen
+#    on-site."
+# Keep this rule's remediation consistent with that note.
+id: smart_failing
+priority: P1
+title: Drive failing per SMART
+summary: SMART reports a failing drive (reallocated sectors, or aggregate health != PASSED). Back up data and replace the drive.
+
+fix:
+  quick_check:
+    command: |
+      lsblk -dno NAME,TRAN,SIZE,MODEL
+      for d in $(lsblk -dno NAME -e 1,7,11 2>/dev/null); do
+        echo "=== /dev/$d ==="
+        sudo smartctl -i /dev/$d 2>/dev/null | grep -iE 'model|serial'
+        sudo smartctl -H -A /dev/$d 2>&1 | grep -iE 'health|result|reallocated|pending|uncorrectable|unknown usb'
+      done
+      # Match the SERIAL from the alert evidence before acting: /dev/ letters
+      # can move across reboots when identical drives are present.
+      # smartctl says "Unknown USB bridge ... specify device type"? The drive
+      # sits behind a USB/SAT bridge; retry with the type from --scan:
+      # sudo smartctl --scan            # prints the -d type per device
+      # sudo smartctl -d sat -H -A /dev/<DEV>
+    description: "Walk every block device's SMART overall-health and the SMART attributes operators page on (5/187/197/198). The lsblk line first: a TRAN=usb device with SIZE 0 and a model like 'Virtual HDisk' is the BMC's virtual media, not a disk; it can never report SMART and is not a real failure. For real USB-enclosure drives, smartctl needs the -d type from smartctl --scan (usually -d sat)."
+  verdict_prior: vendor-side
+  prerequisites:
+    - Replacement drive on hand (matching capacity + interface)
+    - Recent backup verified (drive may fail mid-procedure)
+    - Maintenance window declared if the drive is in a RAID array (rebuild will pause storage I/O)
+    - Out-of-band access available (chassis swap may interrupt SSH if power is touched)
+
+  safe_mode:
+    command: |
+      sudo smartctl -a /dev/${DEVICE}
+      sudo smartctl -l selftest /dev/${DEVICE}
+      lsblk /dev/${DEVICE}
+      cat /proc/mdstat
+    description: |
+      Read-only diagnostic suite. Confirms which SMART attribute is
+      tripping, shows the drive's self-test history, exposes its
+      partition/RAID layout, and shows any in-progress mdadm rebuild.
+      Run before any destructive action. Substitute the failing
+      device path for ${DEVICE} (e.g. sda, nvme0n1) from the alert
+      evidence.
+
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Confirm failing drive + check RAID membership
+        sudo smartctl -a /dev/${DEVICE}
+        cat /proc/mdstat
+        lsblk /dev/${DEVICE}
+
+        # 2. Establish RAID membership BEFORE touching anything. This part is
+        #    read-only and runs: it prints the array this device belongs to.
+        ARRAY=$(lsblk -no PKNAME,TYPE /dev/${DEVICE} 2>/dev/null | awk '$2 ~ /^raid/ {print "/dev/"$1; exit}')
+        if [ -n "$ARRAY" ]; then echo "device is a member of $ARRAY"; else echo "not a RAID member: skip step 3 entirely"; fi
+        #
+        # 3. The two commands below are commented DELIBERATELY, and not because
+        #    they are optional. Failing a disk out of an array is a live change
+        #    to a degraded array: you are removing redundancy from a machine that
+        #    has already lost some, and if you name the wrong array you take a
+        #    healthy disk out of an unrelated one. There is no undo beyond a
+        #    rebuild, which costs hours and reads every remaining disk.
+        #
+        #    Before uncommenting: run step 2, confirm $ARRAY is non-empty AND is
+        #    the array you expect this drive to be in, and confirm the array is
+        #    not already degraded past its redundancy (cat /proc/mdstat).
+        #    Never substitute a literal array name you have not just derived.
+        #
+        # sudo mdadm --manage "$ARRAY" --fail /dev/${DEVICE}
+        # sudo mdadm --manage "$ARRAY" --remove /dev/${DEVICE}
+
+        # 4. Hot-swap the physical drive (chassis-specific; see vendor variants).
+        #    After swap, the kernel detects the new drive (dmesg | tail).
+
+        # 5. Add replacement drive back to RAID (if applicable)
+        # sudo mdadm --manage $ARRAY --add /dev/${DEVICE}
+
+        # 6. Watch rebuild progress
+        cat /proc/mdstat   # one-shot; re-run to monitor
+      description: |
+        Distro-agnostic baseline. smartctl + mdadm work the same on
+        every Linux. The chassis hot-swap step is the vendor-
+        specific operator-runbook step; documented separately
+        below. Substitute the failing device path for ${DEVICE}.
+    - distro_match: ["*"]
+      vendor_match: ["supermicro"]
+      command: |
+        # Supermicro chassis hot-swap procedure:
+        # 1. Identify the failing drive's bay via ipmitool sdr or BMC web UI
+        sudo ipmitool sdr type 'Drive Slot'
+        # 2. Open chassis (or use the front-bay handle for hot-swap-capable bays)
+        # 3. Pull the failing drive's caddy out
+        # 4. Insert new drive in same caddy + bay
+        # 5. Confirm kernel sees the new drive
+        sudo dmesg -T | tail -20
+      description: |
+        Supermicro-specific physical procedure. Use after the
+        distro-agnostic variant has staged the RAID removal.
+        Pair with the `*` variant for the full workflow.
+    - distro_match: ["*"]
+      vendor_match: ["gigabyte"]
+      command: |
+        # Gigabyte chassis: same as Supermicro on enterprise boards
+        # (R-series, H-series). Identify the bay via BMC web UI or:
+        sudo ipmitool sdr type 'Drive Slot'
+        # Hot-swap via the front bay; LED lights identify the bay.
+        sudo dmesg -T | tail -20
+      description: |
+        Gigabyte enterprise (R/H-series) physical procedure. Bay
+        identification + hot-swap same flow as Supermicro.
+    - distro_match: ["*"]
+      vendor_match: ["dell"]
+      command: |
+        # Dell PowerEdge: use iDRAC web UI or racadm to identify the bay
+        # and orchestrate the replacement (PERC controller integration).
+        # Desk-researched; not tested on validation fleet (no Dell box).
+        sudo racadm storage get pdisks -o
+        # Then physically swap; PERC auto-detects and rebuilds.
+      description: |
+        Dell PowerEdge / iDRAC + PERC variant. Desk-researched from
+        Dell racadm docs; not tested on validation fleet (no Dell
+        hardware in fleet). Operator should verify against Dell
+        OpenManage / iDRAC web UI before relying.
+    - distro_match: ["*"]
+      vendor_match: ["hpe"]
+      command: |
+        # HPE ProLiant: use iLO web UI or ssacli for HPE Smart Array.
+        # Desk-researched; not tested on validation fleet (no HPE box).
+        sudo ssacli ctrl all show config detail
+      description: |
+        HPE ProLiant / iLO + Smart Array variant. Desk-researched;
+        not tested on validation fleet (no HPE hardware in fleet).
+
+  # ====== Drive-type-specific deep diagnostics ======
+  #
+  # The variants above cover smartctl + vendor-RAID CLIs. For
+  # specific drive technologies the operator should ALSO inspect:
+  #
+  # NVMe-specific (not visible through `smartctl -d sat`):
+  #   sudo nvme list                                       # all NVMe namespaces
+  #   sudo nvme smart-log /dev/nvme0n1                     # full SMART
+  #   sudo nvme self-test-log /dev/nvme0n1                 # self-test history
+  #   sudo nvme id-ctrl /dev/nvme0n1 | grep -iE 'mn|fr|sn' # model/fw/serial
+  #   sudo nvme error-log /dev/nvme0n1 | head -50          # last 50 errors
+  #   # Cross-ref: nvme_critical_warning + nvme_wear_high rules fire
+  #   # earlier than smart_failing for NVMe-specific failure modes.
+  #
+  # SATA SSDs (vendor-specific extended attributes):
+  #   sudo smartctl -A /dev/sda -d ata                     # ATA passthrough
+  #   sudo smartctl -l selftest /dev/sda                   # self-test history
+  #   sudo smartctl -l xerror /dev/sda                     # extended error log
+  #   # Samsung-specific: Magician CLI exposes more counters.
+  #   # Intel: Intel Memory and Storage Tool (intelmas) for DC SSDs.
+  #
+  # Behind hardware RAID (drive not directly visible to smartctl):
+  #   # Dell PERC / MegaRAID / LSI:
+  #   sudo storcli /c0/eall/sall show all                  # all phys disks
+  #   sudo MegaCli64 -PDList -aALL                         # legacy
+  #   # HPE Smart Array:
+  #   sudo ssacli ctrl slot=0 pd all show detail
+  #   # Adaptec:
+  #   sudo arcconf getconfig 1 PD
+
+  validation:
+    command: |
+      sudo smartctl -a /dev/${DEVICE} | grep -E 'SMART overall-health|Reallocated_Sector_Ct|Current_Pending_Sector'
+      cat /proc/mdstat
+    description: |
+      After replacement, confirm: aggregate health PASSED,
+      reallocated_sectors = 0, pending_sectors = 0 on the NEW drive.
+      For RAID-attached replacement, also confirm /proc/mdstat shows
+      the array rebuilt to clean state (no [_U]s, status not
+      "recovering"). The latter check can take 30 min - 6 hours
+      depending on array size; re-run periodically.
+
+  rollback:
+    available: false
+    command: null
+    note: |
+      Drive replacement is not reversible. The validation step
+      confirms the intended end state. If the rebuild fails, check
+      the new drive's SMART data; the replacement itself may be DOA.
+      If data was lost (RAID double-failure during rebuild), restore
+      from backup.
+
+  impact:
+    blast_radius: |
+      No service impact for the drive removal/replacement (hot-swap).
+      RAID rebuild causes storage I/O to briefly pause and run at
+      reduced performance until complete.
+    estimated_duration: |
+      Physical swap: 5 minutes. RAID rebuild: 5-30 minutes for SSD
+      arrays; 1-6 hours for HDD arrays (depends on array size + load).
+    irreversible_steps: true
+
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: research-derived
+    source_note: |
+      Desk-researched from smartctl(8) + mdadm(8) man pages and Glassmkr
+      ops experience. Vendor-specific Supermicro/Gigabyte variants
+      desk-researched; not deliberately re-triggered on the validation
+      fleet for this deepening pass. Dell/HPE variants are pure desk
+      research with no validation-fleet coverage (see
+      Reference/validation-fleet.md for fleet coverage gaps).
+
+      Pattern library 2026-05-18: Category 3 (storage). Backblaze-five expansion (SMART 5, 187, 188, 197, 198 plus 184 end-to-end and 22 helium per spec §3.5) and rate-of-change mode deferred until Crucible C-series ships the full SMART attribute set per drive. Today's trigger set: health != PASSED, reallocated > 0. Pending (197) is trend-engine-owned, not a per-snapshot critical, because it oscillates.

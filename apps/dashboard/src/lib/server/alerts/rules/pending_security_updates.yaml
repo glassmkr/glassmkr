@@ -1,0 +1,198 @@
+# pending_security_updates; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B8.
+#
+# Single-severity rule (always warning). distro_match split between
+# Debian-family (apt) and RHEL-family (dnf); the apply command
+# differs entirely. Cross-references unattended_upgrades_disabled:
+# this rule is SUPPRESSED when auto-updates are configured, so a
+# server emitting this rule means manual patching is the operator's
+# intent; fix path is "apply now" not "set up auto-updates" (that's
+# the counterpart rule).
+id: pending_security_updates
+priority: P2
+title: Pending security updates
+summary: Package manager reports one or more security updates available AND auto-updates are not configured. Manual patching is required; counterpart to unattended_upgrades_disabled which fires when the auto-update mechanism itself is missing.
+fix:
+  quick_check:
+    command: |
+      # Debian / Ubuntu:
+      sudo apt-get update -qq 2>/dev/null && apt list --upgradable 2>/dev/null | grep -i security
+      # RHEL / Rocky / Alma:
+      sudo dnf updateinfo list --security 2>/dev/null || sudo yum updateinfo list --security 2>/dev/null
+      # SUSE:
+      sudo zypper list-patches --category security 2>/dev/null
+    description: "Per-package-manager list of pending security updates. Run them all; the one that matches your distro produces the list and the others fail silently. The numeric count is the alert input."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access (apt/dnf upgrades are non-disruptive for most packages but some require service restart)
+    - Awareness that some upgrades (kernel, glibc, systemd) may trigger kernel_needs_reboot afterward
+    - "For production servers: maintenance window scheduled if upgrades touch the running kernel or core libraries"
+    - Recent backup verified if any package's upgrade could be invasive (database engines, package manager itself)
+  safe_mode:
+    command: |
+      # Debian/Ubuntu inspection
+      apt list --upgradable 2>/dev/null | head -30
+      sudo unattended-upgrade --dry-run --debug 2>/dev/null | head -40
+
+      # RHEL family inspection
+      sudo dnf check-update --security 2>/dev/null | head -30
+
+      # Confirm the alert's pendingCount via cache:
+      stat -c '%Y' /var/cache/apt/pkgcache.bin 2>/dev/null
+      stat -c '%Y' /var/cache/dnf/expired_repos.json 2>/dev/null
+    description: |
+      Read-only update inspection. `apt list --upgradable` shows
+      every pending update; `dnf check-update --security` filters
+      to security-tagged only (the evaluator uses the latter for
+      its count). The cache mtimes confirm when the package
+      manager last refreshed metadata; stale cache means the
+      apparent pendingCount may be wrong both ways.
+  variants:
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        # Debian / Ubuntu apt path.
+
+        # 1. Refresh package metadata
+        sudo apt update
+
+        # 2. See what's pending (full picture)
+        apt list --upgradable
+
+        # 3. See what's pending security-only
+        # (apt doesn't expose --security flag like dnf; the
+        # filter is by source repo containing "-security")
+        sudo apt list --upgradable 2>/dev/null | grep -i security | head -30
+
+        # 4. For security-only upgrade:
+        sudo unattended-upgrade -d 2>/dev/null
+        # Or use the manual sequence:
+        # sudo apt-get install --only-upgrade $(apt list --upgradable 2>/dev/null | grep -i security | awk -F/ '{print $1}')
+
+        # 5. For full upgrade (security + all other patches):
+        # sudo apt upgrade -y
+        # sudo apt dist-upgrade -y  # includes removals if needed
+
+        # 6. Check whether a kernel upgrade landed
+        ls /boot/vmlinuz-* | sort -V | tail -3
+        # If a newer kernel installed -> see kernel_needs_reboot
+
+        # 7. Clean up if disk space is tight (see disk_space_high)
+        # sudo apt autoremove -y
+        # sudo apt clean
+      description: |
+        Debian/Ubuntu apt path. Security-only upgrade via
+        unattended-upgrade is the cleanest (won't pull non-security
+        updates unintentionally). If unattended-upgrade isn't
+        installed, the manual --only-upgrade pattern works.
+        Watch for new kernel + cross-reference kernel_needs_reboot.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        # RHEL family dnf path.
+
+        # 1. Refresh metadata
+        sudo dnf check-update --refresh 2>/dev/null
+
+        # 2. See what's pending security-only
+        sudo dnf updateinfo list --security
+
+        # 3. Apply security updates only
+        sudo dnf update --security -y
+
+        # 4. For full update including non-security:
+        # sudo dnf update -y
+
+        # 5. Check whether a kernel upgrade landed
+        ls /boot/vmlinuz-* | sort -V | tail -3
+        # If a newer kernel installed -> see kernel_needs_reboot
+
+        # 6. Clean up
+        sudo dnf clean all
+        sudo dnf autoremove                  # no -y: read the list first
+      description: |
+        RHEL family dnf path. `--security` flag is native + filters
+        to security-only at the patch level. Same kernel-upgrade
+        awareness as the apt path; cross-reference kernel_needs_reboot
+        after upgrades complete.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: distro attribute missing or unrecognized.
+        # Detect package manager + run the right command.
+
+        if command -v apt >/dev/null 2>&1; then
+          sudo apt update
+          sudo apt list --upgradable
+          # sudo unattended-upgrade -d  # security-only
+          # sudo apt upgrade -y         # all updates
+        elif command -v dnf >/dev/null 2>&1; then
+          sudo dnf check-update --security
+          sudo dnf update --security -y
+        elif command -v yum >/dev/null 2>&1; then
+          sudo yum check-update --security
+          sudo yum update --security -y
+        else
+          echo "Unknown package manager; investigate manually"
+        fi
+      description: |
+        Missing-evidence fallback. Detects package manager
+        dynamically (apt / dnf / yum) and runs the appropriate
+        security-update command.
+  validation:
+    command: |
+      # Debian/Ubuntu
+      apt list --upgradable 2>/dev/null | grep -i security | wc -l
+      # RHEL family
+      sudo dnf updateinfo list --security 2>/dev/null | wc -l
+    description: |
+      After fix, confirm:
+      - apt list --upgradable | grep security shows 0 results
+        (Debian/Ubuntu)
+      - dnf updateinfo list --security shows no pending entries
+        (RHEL family)
+      Re-firing the alert is the negative validation. Cross-check
+      kernel_needs_reboot; kernel updates won't be active until
+      reboot.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Package upgrades are not safely reversible; apt and dnf
+      both support downgrade in theory (`apt install <pkg>=<old>`
+      / `dnf downgrade <pkg>`), but dependency hell + scripts run
+      during postinstall mean reliable rollback is rarely possible.
+      If a security update breaks a service, the fast path is
+      forward-fix (patch / config tune / app update) not downgrade.
+      Backup before upgrade is the only true defense for
+      compliance-grade reversibility.
+  impact:
+    blast_radius: |
+      Most security upgrades restart their own service via systemd
+      triggers; visible service restart (typically <30s) per
+      affected package. Kernel + glibc + systemd upgrades stage a
+      reboot requirement (handled by kernel_needs_reboot). Disk
+      space requirements during upgrade can be significant (5-50%
+      of /var); see disk_space_high if low.
+    estimated_duration: |
+      apt update + apply: 5-30 minutes depending on update count
+      and package size. dnf update --security: 5-20 minutes
+      typically. Reboot (if kernel): 1-2 minutes incl. POST.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from apt(8), unattended-upgrade(8), dnf(8),
+      dnf-updateinfo(8). The "security-only filter" approach
+      matches the evaluator's suppression logic; pending_security_updates
+      fires only when auto-updates are off, so applying just the
+      security-tagged subset matches what auto-update would have
+      done. Cross-reference unattended_upgrades_disabled for the
+      "set up the auto path" workflow. Not deliberately re-triggered
+      on validation fleet for this deepening pass.
+
+      Pattern library 2026-05-18: Category 7 (system state). Auto-suppression when unattended_upgrades_disabled is also firing confirmed. Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

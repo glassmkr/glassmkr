@@ -1,0 +1,142 @@
+name: Integration
+
+# This workflow re-applies the full PG migration chain + spins up Redis
+# so the rate-limit module exercises its real path. See PR #53.
+
+on:
+  pull_request:
+    branches: [main]
+    # Skip integration when the PR only touches docs, prose, or the
+    # FIX-workflow rule YAML library. Integration tests exercise the
+    # ingest endpoint + PG/CH/Redis path; YAML rule deepening doesn't
+    # touch any of that surface, so the ~100s spin-up of PG + CH +
+    # Redis is wasted on those PRs. Saves ~10-15 min/week.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'apps/dashboard/src/lib/server/alerts/rules/**'
+  workflow_dispatch:
+
+# Least-privilege (security audit 2026-05-22, T-101). Reads the repo +
+# spins service containers; no write-back to GitHub.
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Integration tests (PG + ClickHouse)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: agent
+          POSTGRES_DB: guardian_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U agent -d guardian_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+      clickhouse:
+        # Pinned to match prod (the production host runs 26.3.9.8). The metrics
+        # endpoint 500 (ILLEGAL_AGGREGATION) only reproduced on 26.x: the newer
+        # analyzer binds a WHERE identifier to a same-named SELECT alias. 24.8
+        # silently accepted it, so CI never caught the #268 regression. Keep
+        # this in step with the deployed ClickHouse version.
+        image: clickhouse/clickhouse-server:26.3.9.8
+        ports: ["8123:8123", "9000:9000"]
+        env:
+          CLICKHOUSE_DB: glassmkr
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+          CLICKHOUSE_SKIP_USER_SETUP: 1
+        options: >-
+          --health-cmd="wget -q -O - http://localhost:8123/ping || exit 1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_NAME: guardian_test
+      DB_USER: agent
+      DB_PASSWORD: agent
+      CLICKHOUSE_URL: http://127.0.0.1:8123
+      REDIS_URL: redis://127.0.0.1:6379/0
+      JWT_SECRET: test-secret-do-not-use
+      RUN_INTEGRATION: "true"
+
+    steps:
+      # Actions SHA-pinned (T-103). Versions as of 2026-05-26.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      # Cache SvelteKit sync output + Vite's deps cache; same keying
+      # scheme as ci.yml. 2026-05-17 CI audit.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            apps/dashboard/.svelte-kit
+            apps/dashboard/node_modules/.vite
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/dashboard/svelte.config.js', 'apps/dashboard/vite.config.ts') }}
+          restore-keys: |
+            ${{ runner.os }}-svelte-kit-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-svelte-kit-
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply PostgreSQL migrations
+        run: |
+          # Migration 009 transfers api_audit_log ownership to `postgres` so
+          # that `agent` can be a non-owner grantee (effective REVOKE).
+          # On prod, `postgres` is the cluster superuser. The postgres:16
+          # container creates only the POSTGRES_USER role (here: agent), so
+          # we create a `postgres` superuser role first to match prod shape.
+          PGPASSWORD=agent psql -h 127.0.0.1 -U agent -d guardian_test -v ON_ERROR_STOP=1 -c \
+            "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='postgres') THEN CREATE ROLE postgres SUPERUSER; END IF; END \$\$;"
+
+          # Apply every migration in lexicographic order. Filenames are
+          # zero-padded (001_, 002_, ...) so a plain glob produces the right
+          # sequence. ON_ERROR_STOP=1 surfaces a bad migration loudly instead
+          # of silently leaving the test DB in a half-migrated state.
+          for f in migrations/postgres/*.sql; do
+            echo "Applying $f"
+            PGPASSWORD=agent psql -h 127.0.0.1 -U agent -d guardian_test -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Install clickhouse-client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y apt-transport-https ca-certificates curl gnupg
+          curl -fsSL https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+          ARCH=$(dpkg --print-architecture)
+          echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] https://packages.clickhouse.com/deb stable main" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y clickhouse-client
+
+      - name: Apply ClickHouse schema
+        run: |
+          clickhouse-client --host 127.0.0.1 --port 9000 --user default --multiquery < migrations/clickhouse/001_initial.sql
+
+      - run: pnpm turbo build --filter=@glassmkr/dashboard
+
+      - name: Integration tests
+        run: pnpm --filter @glassmkr/dashboard exec vitest run --config integration/vitest.config.ts

@@ -1,0 +1,165 @@
+# inode_high; deepened 2026-05-17 per
+# CC_FIX_WORKFLOW_DEEPENING_2026-05-17.md B3, using the condition_match
+# dimension added 2026-05-17 per
+# CC_FIX_WORKFLOW_SCHEMA_CONDITION_MATCH_2026-05-17.md.
+#
+# Inode exhaustion is sneakier than disk-full because `df -h` shows
+# free space while writes still fail with ENOSPC. Evaluator emits
+# severity=critical when percent >= 95. Variants split on the same
+# boundary. Common culprits: /tmp churn, mail spools, container
+# image layers, dovecot maildir, sessions, PHP file-based sessions.
+id: inode_high
+priority: P2
+title: Inode usage high
+summary: Filesystem has many small files; inode usage at or above 85% of the table. At 100%, file creation fails with ENOSPC even though `df -h` shows free space.
+fix:
+  quick_check:
+    # Codex 2026-05-22B F7: original recipe walked the entire root tree
+    # twice (one find + a nested find per result). On a multi-TB host with
+    # millions of inodes this is slow enough to time out the operator. The
+    # bounded recipe below counts inodes only in the usual culprit
+    # locations (mail/session/cache/log/tmp/container-layer dirs); operator
+    # can paste the deeper walk manually if the first pass does not
+    # localize.
+    command: |
+      df -i | awk 'NR==1 || $5+0 >= 80'
+      # Inode counts for the usual culprits (most inode exhaustion is one of these):
+      for d in /var/spool /var/lib /var/cache /var/log /tmp /home; do
+        [ -d "$d" ] || continue
+        count=$(find "$d" -xdev -type f 2>/dev/null | wc -l)
+        echo "$count	$d"
+      done | sort -rn | head -10
+      # Deeper walk (slow on multi-TB roots), only if the above doesn't localize:
+      # sudo find / -xdev -type d 2>/dev/null | head -50 | xargs -I{} sh -c 'echo "$(find "{}" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l) {}"' | sort -rn | head -20
+    description: "Inode usage per filesystem + inode counts for the usual exhaustion-culprit directories. The deeper full-tree walk is commented out for cases where this pass doesn't localize the runaway directory."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (cleanup is non-disruptive; targets cache + spool directories)
+    - "For critical path (>=95%): operator authority to delete stale tmp/spool/session files"
+    - Awareness of which services write many small files (mail, sessions, container layers)
+  safe_mode:
+    command: |
+      df -i <MOUNT>
+      df -h <MOUNT>
+      sudo find <MOUNT> -xdev -printf '%h\n' 2>/dev/null | sort | uniq -c | sort -rn | head -20
+    description: |
+      Read-only inspection. `df -i` confirms the inode pressure (the
+      important number is IUse%, not Use%). `df -h` confirms there
+      IS free space, ruling out a normal disk-full case. The `find`
+      pipeline groups files by parent directory and counts them, so
+      the directory with the most small files surfaces at the top.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: gte
+        value: 95
+      command: |
+        # Critical path (>=95% inodes used). Writes will start
+        # failing with ENOSPC any moment.
+
+        # 1. Find the directory with the most files
+        sudo find <MOUNT> -xdev -printf '%h\n' 2>/dev/null | sort | uniq -c | sort -rn | head -20
+
+        # 2. Common culprits; check + clean each that applies
+        #    a) /tmp churn
+        sudo find /tmp -xdev -type f -mtime +1 -delete 2>/dev/null
+        #    b) PHP file-based sessions
+        sudo find /var/lib/php/sessions -type f -mtime +1 -delete 2>/dev/null
+        #    c) Mail spool (postfix deferred queue)
+        # sudo postsuper -d ALL  # AGGRESSIVE; flushes all deferred mail
+        #    d) systemd journal (consumes inodes too)
+        sudo journalctl --vacuum-files=10
+
+        # 3. Container image layers (if applicable)
+        if command -v docker >/dev/null; then sudo docker system prune -af; fi
+        if command -v podman >/dev/null; then sudo podman system prune -af; fi
+
+        # 4. Verify
+        df -i <MOUNT>
+      description: |
+        Critical (>=95%) path. Hunt the culprit directory then clean
+        the usual suspects (/tmp, PHP sessions, mail spool, journal,
+        container layers). Each step is safe; the postfix deferred
+        queue flush is left commented because it deletes user mail.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      condition_match:
+        attribute: percent
+        op: lt
+        value: 95
+      command: |
+        # Warning path (85-94% inodes). Investigate, schedule cleanup.
+
+        # 1. Identify directories with most files
+        sudo find <MOUNT> -xdev -printf '%h\n' 2>/dev/null | sort | uniq -c | sort -rn | head -20
+
+        # 2. Check growth rate; files created in last 7 days
+        sudo find <MOUNT> -xdev -type f -mtime -7 2>/dev/null | wc -l
+
+        # 3. Schedule one of:
+        #    - logrotate / cron tmpreaper for /tmp churn
+        #    - PHP session GC tuning (session.gc_maxlifetime)
+        #    - mail spool monitoring (if mail server)
+        #    - container image GC schedule
+      description: |
+        Warning (85-94%) path. Investigate growth pattern; schedule
+        cleanup or operational change. The critical-path commands
+        all work here too if operator chooses to act preemptively.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: percent not present in evidence. Run diagnostic
+        # + classify manually.
+        df -i <MOUNT>
+        sudo find <MOUNT> -xdev -printf '%h\n' 2>/dev/null | sort | uniq -c | sort -rn | head -20
+      description: |
+        Missing-evidence fallback. Run the diagnostic and classify
+        the case manually before proceeding with cleanup.
+  validation:
+    command: |
+      df -i <MOUNT>
+    description: |
+      After cleanup, confirm IUse% dropped below 85%. The validation
+      just re-runs `df -i`; operator eyeballs the IUse% column. If
+      cleanup didn't move the needle the root culprit wasn't covered;
+      escalate to a per-directory `find ... | wc -l` audit.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Deleted files (stale tmp, PHP sessions, old journal entries,
+      pruned container layers) are not recoverable from this
+      workflow's actions. The targets are all reproducible content;
+      if user data was deleted in error (e.g. an over-aggressive
+      /tmp prune that caught an active session), restore from
+      backup. There is no in-band rollback.
+  impact:
+    blast_radius: |
+      Cleanup targets transient/cache directories: /tmp, sessions,
+      journal, container layers. Services may lose in-flight session
+      state (forces re-login on web apps using file-based sessions);
+      no permanent data loss. Mail spool flush is left commented
+      because it IS destructive to deferred user mail.
+    estimated_duration: |
+      Cleanup: 1-15 minutes depending on file count (find traversal
+      of a million-file /tmp can take several minutes). Operator
+      inspection of `find` output: 5 minutes.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-14"
+    tested_on:
+      - Inherited from initial rule library
+    tester: Glassmkr ops (migration)
+    research_basis: operator-pattern
+    source_note: |
+      Desk-researched from find(1), df(1), and Glassmkr ops experience
+      with /tmp churn on PHP-session-heavy boxes. The /tmp + PHP
+      session culprits are by far the most common in production;
+      mail spool is rare on monitoring-target boxes but kept in the
+      list for completeness. Not deliberately re-triggered on the
+      validation fleet for this deepening pass (would require seeding
+      a million inodes; deferred).
+
+      Pattern library 2026-05-18: Category 8 (filesystem capacity). Existing thresholds (85/95) close to pattern library values (80/90); kept as-is to avoid notification churn on long-running fleets. Operator-validated per OPERATIONAL_PATTERN_LIBRARY_2026-05-18.md.

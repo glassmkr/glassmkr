@@ -1,0 +1,179 @@
+# raid_degraded; Phase 1 sample, used by schema validation tests.
+# Phase 2 migrates the remaining 36 rules; this one's content is
+# the spec's canonical example so it serves as the reference shape
+# every other rule files mirrors.
+# R-P2-2 ownership-branch remediation (val-fleet 2026-05-29): this is a
+# vendor-side physical-hardware rule whose remediation assumes chassis
+# access. The customer-facing alert card appends the shared
+# OWNERSHIP_REMEDIATION_NOTE (evaluator.ts, single source of truth) so an
+# operator who cannot physically service the host still has a path:
+#   "If you operate this hardware (owned or colocated): handle the
+#    inspection or swap yourself, or dispatch a remote-hands technician.
+#    If this is rented or provider-managed: file a hardware service ticket
+#    with your provider. Either way, the physical check needs to happen
+#    on-site."
+# Keep this rule's remediation consistent with that note.
+id: raid_degraded
+priority: P1
+title: RAID array degraded
+summary: "One or more disks have failed in an mdadm software array or a hardware RAID controller (Dell PERC, LSI/Broadcom MegaRAID, HPE Smart Array, Adaptec). One more failure may cause data loss."
+
+fix:
+  quick_check:
+    command: |
+      cat /proc/mdstat 2>/dev/null
+      # Triage the FAILED member before deciding re-add vs replace:
+      sudo smartctl -H /dev/sdX 2>/dev/null | grep -i result
+      sudo dmesg -T 2>/dev/null | grep -iE 'sdX.*(error|fail|reset)' | tail -5
+      sudo megacli -PDList -aALL 2>/dev/null | grep -E 'Slot|Firmware state' | head -40
+      sudo storcli /c0 show 2>/dev/null | head -20
+      sudo perccli /c0 show 2>/dev/null | head -20
+    description: "Print the array state, then TRIAGE the failed member itself (SMART health + kernel log for that device, sdX = the failed member's disk). A member can be marked faulty by a transient (link reset, controller hiccup, administrative action) while the drive is healthy: if SMART passes and the kernel log shows no I/O errors for it, `mdadm --manage /dev/<array> --re-add /dev/<member>` restores redundancy in seconds via the write-intent bitmap, no replacement drive needed. If it drops out again, or SMART/dmesg show real errors, or the same drive is flagged by a wear/SMART alert, take the replacement path below instead. For hardware RAID, the three common CLIs (MegaCLI, storcli, perccli) print failed/rebuilding members."
+  verdict_prior: vendor-side
+  prerequisites:
+    - Failed member triaged (SMART + kernel log); replacement path only if it shows real errors, re-fails after --re-add, or is wear/SMART-flagged
+    - For the replacement path, replacement drive identified and in /dev/sdN
+    - Maintenance window declared (storage I/O may briefly pause)
+    - Recent backup verified (mdadm rebuild is generally safe but defence in depth applies)
+
+  safe_mode:
+    command: mdadm --detail /dev/{{device}}
+    description: |
+      Read the array's current state without modifying anything.
+      Shows which drive failed, which slot is empty, and current
+      sync status. Run this first to confirm the failed drive
+      identifier before running the fix.
+
+  variants:
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        cat /proc/mdstat
+        sudo mdadm --manage /dev/{{device}} --add /dev/sdN
+      description: Standard Debian/Ubuntu mdadm hot-add to existing software array.
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        cat /proc/mdstat
+        sudo mdadm --manage /dev/{{device}} --add /dev/sdN
+      description: RHEL family mdadm hot-add (same command, separate variant for documentation clarity).
+    - distro_match: ["*"]
+      vendor_match: ["dell-*"]
+      command: |
+        sudo perccli /c0 show all
+        sudo perccli /c0/eall/sall show
+        # Identify the failed slot and replace; then hot-spare assigns automatically:
+        # sudo perccli /c0/e<enclosure>/s<slot> set offline
+        # sudo perccli /c0/e<enclosure>/s<slot> set missing
+      description: "Dell PERC controller via perccli. Fleet-tested parser in Crucible v0.10.4."
+    - distro_match: ["*"]
+      vendor_match: ["supermicro-*", "asrock-*", "gigabyte-*", "asus-*"]
+      command: |
+        sudo storcli /c0 show all
+        sudo storcli /c0/eall/sall show
+        # Same procedure as PERC (Broadcom OEM family):
+        # sudo storcli /c0/e<enclosure>/s<slot> set offline
+        # sudo storcli /c0/e<enclosure>/s<slot> set missing
+      description: "LSI/Broadcom MegaRAID via storcli. Fleet-tested parser. Common on Supermicro / generic OEM boards."
+    - distro_match: ["*"]
+      vendor_match: ["hpe-*", "hp-*"]
+      command: |
+        sudo ssacli ctrl all show config detail
+        sudo ssacli ctrl slot=0 pd all show status
+        # Identify failed slot; replace physically; controller auto-rebuilds.
+      description: "HPE Smart Array via ssacli. Parser is a stub in Crucible v0.10.4; treat evidence as provisional and verify directly with the controller CLI before acting."
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Generic fallback: distro and controller both unrecognized. Detect
+        # the RAID type first, then act on whichever is present.
+        cat /proc/mdstat 2>/dev/null                                          # software RAID (mdadm)
+        sudo storcli /c0 show 2>/dev/null || sudo megacli -PDList -aALL 2>/dev/null  # LSI/Broadcom
+        sudo perccli /c0 show 2>/dev/null                                     # Dell PERC
+        sudo ssacli ctrl all show config 2>/dev/null                          # HPE Smart Array
+        sudo arcconf getconfig 1 2>/dev/null                                  # Adaptec
+        # Software RAID (mdadm): hot-add the replacement once identified.
+        #   sudo mdadm --manage /dev/{{device}} --add /dev/sdN
+        # Hardware RAID: identify the failed slot from the controller output
+        # above, replace the physical drive, and the controller auto-rebuilds.
+      description: "Generic fallback when distro and controller vendor are both unrecognized; probes software mdadm plus the four common hardware controllers, then hot-add for mdadm or physical swap with auto-rebuild for hardware RAID. Covers any Linux mdadm 4.x software array as well as Adaptec or unrecognized controllers."
+
+  # ====== Rebuild monitoring + performance impact ======
+  #
+  # Once a replacement disk has been added (mdadm --add or hardware
+  # RAID auto-rebuild), monitor progress + performance impact:
+  #
+  # Software RAID (mdadm):
+  #   cat /proc/mdstat
+  #   # The progress line shows `[===>........]  recovery = 23.4% (...)`
+  #   # plus finish-ETA. Rebuild rate is controlled by:
+  #   cat /proc/sys/dev/raid/speed_limit_min
+  #   cat /proc/sys/dev/raid/speed_limit_max
+  #   # Default min=1000 KB/s (slow but safe), max=200000 KB/s.
+  #   # To accelerate (at cost of foreground I/O):
+  #   echo 100000 | sudo tee /proc/sys/dev/raid/speed_limit_min
+  #   # Restore default after rebuild.
+  #
+  # Hardware RAID rebuild monitoring (vendor-specific):
+  #   sudo storcli /c0/eall/sall show rebuild    # Dell PERC / MegaRAID
+  #   sudo ssacli ctrl slot=0 pd all show detail | grep -A2 -i rebuild
+  #   sudo arcconf getstatus 1                    # Adaptec
+  #
+  # Performance impact during rebuild:
+  #   - Rebuild competes with foreground I/O at the disk level.
+  #   - For RAID-5/6: parity computation adds CPU load; load
+  #     average grows ~10-30% during rebuild.
+  #   - For RAID-1 (mirror): straight data copy; minimal CPU.
+  #   - Read latency rises 2-5x on the array during rebuild.
+  #   - Schedule rebuilds during low-traffic windows when possible.
+  #
+  # Hot-spare configuration (avoids manual replacement):
+  #   # mdadm:
+  #   sudo mdadm /dev/<MD> --add-spare /dev/<NEW_DISK>
+  #   # When a disk later fails, mdadm auto-promotes the spare.
+  #   # Hardware RAID: configure global or dedicated hot-spares via
+  #   # vendor tool (storcli "add hotsparedrive", etc.).
+
+  validation:
+    command: |
+      sudo mdadm --detail /dev/{{device}} | grep -q 'State : clean'
+    expected_exit: 0
+    description: |
+      Confirms the array has rebuilt successfully and is clean.
+      May take 30 minutes to several hours depending on array size.
+      Run periodically until it passes.
+
+  rollback:
+    available: false
+    command: null
+    note: |
+      Drive replacement is not reversible. The validation step
+      confirms the intended end state. If the rebuild fails, consult
+      the failure mode in the SMART data on the new drive.
+
+  impact:
+    blast_radius: No service impact; storage I/O may briefly pause during rebuild.
+    estimated_duration: 5-30 minutes for SSD arrays; 1-6 hours for HDD arrays.
+    irreversible_steps: false
+
+  provenance:
+    last_verified: "2026-04-09"
+    tested_on:
+      - Debian 12 + Supermicro X12 + mdadm 4.2
+      - Ubuntu 24.04 + Dell R740 + mdadm 4.3
+    tester: Glassmkr ops
+    research_basis: operator-pattern
+    source_note: |
+      Standard mdadm hot-add procedure; aligned with mdadm(8) man page.
+
+      Pattern library 2026-05-18; Category 3 (storage). Hardware-RAID
+      controller path activated 2026-05-19 per CC_SPEC_FORGE_C1_C6_
+      DEFERRED_TUNES, consuming Crucible v0.10.4 snap.hardware_raid.
+      Four vendor parsers: perccli (Dell, fleet-tested via synthetic
+      fixtures), storcli (LSI/Broadcom, fleet-tested), ssacli (HPE
+      Smart Array, stub), arcconf (Adaptec, stub). Stubs ship at the
+      same P1 severity per 2026-05-19 product decision; first real
+      customer per vendor surfaces parser bugs. Evidence field
+      parser_quality flags fleet-tested vs stub so the operator can
+      calibrate trust. Crucible follow-up will harden ssacli and
+      arcconf once real-host data lands.

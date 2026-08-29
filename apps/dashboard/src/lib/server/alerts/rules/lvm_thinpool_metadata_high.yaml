@@ -1,0 +1,91 @@
+# lvm_thinpool_metadata_high; new rule shipped 2026-05-19 per
+# CC_SPEC_FORGE_C11_C18_ACTIVATION_2026-05-19.md §2.
+#
+# Fires when an LVM thin pool's metadata volume utilisation crosses
+# 80% (warning) or 95% (critical). LVM thin pools use a separate
+# metadata volume from data; when metadata fills, writes across ALL
+# thin volumes in the pool start failing in unpredictable ways. This
+# is a silent and catastrophic failure mode that absolute disk-space
+# thresholds miss because the metadata volume is much smaller.
+#
+# Capability gate: snap.lvm.available (Crucible v0.12.0+; absent on
+# hosts without LVM thin pools or without the lvs binary).
+id: lvm_thinpool_metadata_high
+priority: P1
+title: LVM thin pool metadata near full
+summary: "LVM thin pool metadata volume at or above 80%. Metadata exhaustion is silent and catastrophic: writes across all thin volumes in the pool start failing in unpredictable ways at 100%. Extend the metadata volume before it fills."
+fix:
+  quick_check:
+    command: |
+      sudo lvs --units g -o name,vg_name,lv_size,data_percent,metadata_percent,pool_lv 2>/dev/null
+      sudo lvdisplay --maps 2>/dev/null | grep -A2 -i 'thin pool'
+    description: "Thin-pool data_percent and metadata_percent for every thin pool. Metadata exhaustion is silent and faster to hit than data; >=80% metadata is the warning band, >=95% triggers pool-wide read-only."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access on the affected host
+    - Free physical extents available in the volume group (or ability to extend the VG)
+    - Brief I/O pause tolerable while lvextend runs (typically subsecond)
+  safe_mode:
+    command: |
+      sudo lvs --options=lv_name,vg_name,data_percent,metadata_percent
+      sudo vgs
+      sudo lvdisplay <VG>/<LV>
+    description: |
+      Read-only inspection. lvs reports data and metadata utilisation;
+      vgs shows free physical extents in the VG (you need free PEs to
+      extend the metadata volume); lvdisplay shows the current metadata
+      volume size for sizing the extension.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Extend the metadata volume. Common safe target: 0.5%-1% of
+        # data volume size. lvextend reserves the new space without
+        # interrupting I/O.
+        sudo lvextend --poolmetadatasize +<SIZE> <VG>/<LV>
+        # Where <SIZE> is something like "100M" or "500M" depending on
+        # how oversized you need to land. After extending:
+        sudo lvs --options=lv_name,vg_name,data_percent,metadata_percent
+      description: |
+        Extending the metadata volume is non-disruptive; the existing
+        thin volumes keep operating. The new metadata space is
+        immediately usable. If the VG has no free PEs, extend the VG
+        first via `vgextend <VG> /dev/sdN` (adds a new PV) or via
+        another lvextend on the underlying physical volume.
+  validation:
+    command: |
+      sudo lvs --options=lv_name,vg_name,data_percent,metadata_percent
+    description: |
+      metadata_percent should drop substantially. The rule auto-
+      resolves when metadata utilisation falls below 80% on the
+      next snapshot cycle.
+  rollback:
+    available: false
+    command: null
+    note: |
+      lvextend is not reversible via lvreduce on a thin pool's
+      metadata volume; the metadata volume cannot be shrunk. Plan
+      the extension size carefully.
+  impact:
+    blast_radius: |
+      Alert is informational. The remediation (lvextend) is non-
+      disruptive. The condition behind the alert is high-impact:
+      if metadata fills before remediation, writes across all thin
+      volumes in the pool fail unpredictably.
+    estimated_duration: |
+      lvextend runs in seconds. End-to-end: 5-15 min including
+      sizing decision and validation.
+    irreversible_steps: true
+  provenance:
+    last_verified: "2026-05-19"
+    tested_on:
+      - Synthetic lvs JSON fixture with thin pools at varying utilisation
+    tester: Glassmkr ops
+    research_basis: vendor-anchor
+    source_note: |
+      Per Red Hat documentation and LVM best practices: thin pool
+      metadata at 95%+ is critical. Metadata is a separate, much
+      smaller volume than data; exhaustion mode is different from
+      data exhaustion and harder to detect after the fact.
+      Crucible v0.12.0 ships data_percent + metadata_percent via
+      `lvs --reportformat=json`.

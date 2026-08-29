@@ -1,0 +1,122 @@
+# io_pressure_high; new rule shipped 2026-05-20 (cycle 2 campaign
+# finding 4). Companion to cpu_iowait_high for hosts where modern
+# NVMe storage completes I/O fast enough that the kernel's iowait
+# counter rarely registers, but PSI catches the brief CPU stalls.
+#
+# Fires when snap.psi.io.full.avg10 > 10% AND at least one of:
+#   - any device has read or write avg latency >= 50 ms
+#   - snap.io_errors.count > 0 (recent disk I/O errors)
+#   - snap.cpu.iowait_percent >= 5 (moderate iowait corroboration band)
+#
+# Subordinate to cpu_iowait_high; when both fire on the same host the
+# runtime subordination collapses them under cpu_iowait_high as
+# evidence (cpu_iowait_high is the historically-known surface; this
+# rule adds NVMe coverage without producing a separate page in
+# overlap cases).
+#
+# Capability gates: snap.psi.io.full required (Crucible v0.10.4+ PSI
+# collector). Older agents see no emission. Stock EL-family kernels
+# ship PSI disabled (no /proc/pressure without psi=1).
+#
+# Provenance: validation-pending (no fleet examples yet; designed
+# from the campaign finding on val-mz62hd where 32 concurrent sync
+# write workers produced 0% iowait for 5+ minutes; PSI io.full was
+# never measured at that point because the rule didn't exist).
+id: io_pressure_high
+priority: P2
+subordinate_to: cpu_iowait_high
+title: I/O pressure sustained
+summary: PSI reports I/O contention with corroborating disk-latency or error signal. Catches the modern-NVMe case where iowait stays at zero but the CPU is briefly blocking on I/O often enough to matter. Not available on stock RHEL-family kernels (PSI ships disabled there; enable with the psi=1 boot parameter).
+fix:
+  quick_check:
+    command: |
+      cat /proc/pressure/io
+      # Per-device wait (modern NVMe usually shows low await but high svctm spikes):
+      sudo iostat -xz 1 3 2>/dev/null | tail -30
+      # Who's actually doing I/O right now:
+      sudo iotop -obn1 2>/dev/null | head -20
+    description: "PSI io pressure averages + 3 seconds of per-device iostat + per-process I/O. On modern NVMe the iostat r_await/w_await numbers can stay below 5 ms even when PSI shows 20%+; that's a bursty workload pattern (many short blocks). iotop tells you which process is responsible."
+  verdict_prior: investigation
+  prerequisites:
+    - SSH access (triage commands are read-only)
+    - Awareness of the storage hardware tier; the same PSI value means different things on spinning rust vs SSD vs NVMe
+  safe_mode:
+    command: |
+      cat /proc/pressure/io
+      sudo iostat -xz 1 3
+      sudo iotop -obn1 | head -20
+      # Recent kernel I/O errors:
+      sudo dmesg -T --level=err,warn 2>/dev/null | grep -iE 'I/O error|sense key|ata.*hard reset|nvme.*error' | tail -10
+    description: |
+      Read-only triage. /proc/pressure/io is the signal the rule fires
+      on; iostat shows which device is contributing; iotop shows which
+      process is causing the I/O; dmesg picks up correlated kernel
+      errors that might explain the latency burst.
+  variants:
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # 1. Identify the heavy-I/O process(es)
+        sudo iotop -obn1 | head -20
+        # 2. Per-device latency (look for sustained r_await > 50 ms or
+        #    w_await > 50 ms; svctm > 10 ms on NVMe is also notable)
+        sudo iostat -xz 1 5
+        # 3. If a specific process is responsible, check whether it
+        #    can batch its writes (sync vs async, fsync cadence):
+        # ; for a databases: check journal/wal config
+        # ; for log writers: check buffer / async writes
+        # ; for backup jobs: check whether they run during high-load periods
+        # 4. If the device itself is slow (long-tail latencies, NVMe wear
+        #    above the warning band), the fix may be hardware-level:
+        sudo smartctl -A /dev/nvme0n1 | grep -iE 'percentage_used|critical_warning'
+      description: |
+        Single-variant for now. The remediation path depends on whether
+        the I/O is workload-driven (process is doing more I/O than it
+        needs to) or device-driven (the disk is degraded or saturated).
+        The diagnostic sequence above distinguishes the two.
+  validation:
+    command: |
+      cat /proc/pressure/io
+    description: |
+      Re-check PSI io.full.avg10; if the corrective action was
+      effective it should drop below the 10% threshold within one
+      avg10 window (10 seconds).
+  rollback:
+    available: true
+    command: null
+    note: |
+      All actions in this workflow are diagnostic or workload
+      configuration changes (batch writes, restart a service to clear
+      a stuck queue). No system-level state is modified that needs
+      undoing.
+  impact:
+    blast_radius: |
+      Diagnostic commands are non-disruptive. Restarting a service to
+      clear a stuck I/O queue causes that service's downtime; database
+      restarts in particular should be coordinated.
+    estimated_duration: |
+      Diagnosis: 3-5 minutes. Workload tuning: hours to days
+      (configuration change + observation). Service restart:
+      service-dependent.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-05-20"
+    tested_on:
+      - Designed against val-mz62hd campaign finding (cycle 2)
+    tester: Glassmkr ops (campaign)
+    research_basis: validation-pending
+    source_note: |
+      Campaign cycle 2 (2026-05-20) on val-mz62hd ran sustained
+      sync-write stress (stress-ng --hdd 32 --hdd-bytes 1G
+      --hdd-write-size 64k --hdd-opts sync) for 5+ minutes. iowait
+      stayed at 0.0% the entire time; cpu_iowait_high never fired.
+      PSI io.full was the only signal that would have caught the
+      condition. This rule fills the NVMe blind spot.
+
+      Threshold (avg10 > 10%) mirrors mem_pressure_high's design
+      (PSI threshold + independent corroborator to avoid false
+      positives from short PSI bursts). The 50 ms latency corroborator
+      is generous enough to fire on workload spikes without catching
+      normal NVMe latency variance (which sits at 0.1-2 ms).
+
+      Lifts to fleet-tested once we have a real-world example.
