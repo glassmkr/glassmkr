@@ -152,7 +152,15 @@ async function runReadTool(
       mcp_session_hash: context.sessionHash ?? undefined,
     });
     if (!(error instanceof McpOperationError)) {
-      console.error(`[mcp] ${toolName} failed for request ${requestId() ?? "unknown"}`);
+      // Log the underlying error server-side. The client still receives only
+      // the generic INTERNAL_ERROR via createMcpErrorResult (no leak of
+      // internals to an untrusted caller), but a bare "failed for request"
+      // line with no error made a Postgres NUL-byte rejection in the enroll
+      // path un-diagnosable without a repro. Detail here, generic there.
+      console.error(
+        `[mcp] ${toolName} failed for request ${requestId() ?? "unknown"}:`,
+        error instanceof Error ? (error.stack ?? error.message) : error,
+      );
     }
     return createMcpErrorResult(error, requestId());
   }
@@ -209,7 +217,15 @@ async function runWriteTool(
       mcp_session_hash: context.sessionHash ?? undefined,
     });
     if (!(error instanceof McpOperationError)) {
-      console.error(`[mcp] ${toolName} failed for request ${requestId() ?? "unknown"}`);
+      // Log the underlying error server-side. The client still receives only
+      // the generic INTERNAL_ERROR via createMcpErrorResult (no leak of
+      // internals to an untrusted caller), but a bare "failed for request"
+      // line with no error made a Postgres NUL-byte rejection in the enroll
+      // path un-diagnosable without a repro. Detail here, generic there.
+      console.error(
+        `[mcp] ${toolName} failed for request ${requestId() ?? "unknown"}:`,
+        error instanceof Error ? (error.stack ?? error.message) : error,
+      );
     }
     return createMcpErrorResult(error, requestId());
   }
@@ -265,7 +281,15 @@ async function runAdminTool(
       mcp_session_hash: context.sessionHash ?? undefined,
     });
     if (!(error instanceof McpOperationError)) {
-      console.error(`[mcp] ${toolName} failed for request ${requestId() ?? "unknown"}`);
+      // Log the underlying error server-side. The client still receives only
+      // the generic INTERNAL_ERROR via createMcpErrorResult (no leak of
+      // internals to an untrusted caller), but a bare "failed for request"
+      // line with no error made a Postgres NUL-byte rejection in the enroll
+      // path un-diagnosable without a repro. Detail here, generic there.
+      console.error(
+        `[mcp] ${toolName} failed for request ${requestId() ?? "unknown"}:`,
+        error instanceof Error ? (error.stack ?? error.message) : error,
+      );
     }
     return createMcpErrorResult(error, requestId());
   }

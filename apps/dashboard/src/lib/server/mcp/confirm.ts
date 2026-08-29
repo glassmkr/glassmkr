@@ -127,7 +127,16 @@ export function enrollTarget(
   hostname?: string | null,
   tags?: readonly string[],
 ): string {
-  return [name, hostname ?? "", JSON.stringify([...(tags ?? [])])].join("\u0000");
+  // JSON.stringify of the whole tuple: injective (arrays are ordered, strings
+  // quoted and escaped), and crucially free of NUL bytes. The first version
+  // joined with a NUL (\u0000) as an uncollidable separator; that value is
+  // then stored in the mcp_confirm_tokens.target TEXT column, and Postgres
+  // rejects NUL in text, so every enroll consume threw a caught INTERNAL_ERROR
+  // while prepare (which never writes) succeeded. The in-memory test fake
+  // stored NUL happily, so the suite stayed green. JSON escaping makes any
+  // control char in an input a safe two-char sequence, keeping the string
+  // Postgres-safe without losing injectivity.
+  return JSON.stringify([name, hostname ?? "", [...(tags ?? [])]]);
 }
 
 /** The identifier recorded when a token is spent. A hash, never the token. */
