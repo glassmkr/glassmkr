@@ -678,11 +678,8 @@
      create-key flow first and the upgrade prompt as secondary context. */
   .upsell-card { background: rgba(245, 166, 35, 0.04); border-color: rgba(245, 166, 35, 0.25); }
   .upsell-row { display: flex; justify-content: space-between; gap: 24px; align-items: center; }
-  .upsell-row > div:first-child { flex: 1; }
-  .upsell-row strong { font-size: 14px; color: var(--text-primary); }
   /* Scope display in the Free-tier create modal: a static "read" badge plus
      the upsell note, replacing the 3-radio selector. */
   .scope-readonly { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--surface-border); border-radius: 4px; background: var(--surface); }
   .scope-readonly-note { font-size: 12px; color: var(--text-tertiary); }
-  .scope-readonly-note a { color: var(--accent); }
 </style>

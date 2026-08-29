@@ -700,12 +700,6 @@
     font-weight: 600;
   }
 
-  .checkout-notice {
-    font-size: 12px;
-    color: var(--text-tertiary);
-    margin-top: 8px;
-    line-height: 1.4;
-  }
 
   .billing-policy-link {
     font-size: 12px;
@@ -795,32 +789,9 @@
     font-size: 12px;
   }
 
-  .token-display {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--surface-border);
-    border-radius: 4px;
-    padding: 10px 14px;
-  }
-  .token-value {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 13px;
-    background: none;
-    padding: 0;
-  }
   .hint {
     font-size: 12px;
     color: var(--text-tertiary);
-  }
-  .token-actions {
-    display: flex;
-    gap: 8px;
   }
 
   .docs-links {

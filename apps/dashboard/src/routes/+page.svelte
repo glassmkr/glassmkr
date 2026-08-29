@@ -292,11 +292,6 @@
   .empty-step code { color: var(--accent); }
   .step-desc { font-size: 13px; color: var(--text-tertiary); margin: 0; }
 
-  .server-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 16px;
-  }
 
   .muted {
     color: var(--text-tertiary);
