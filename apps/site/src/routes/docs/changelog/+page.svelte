@@ -32,6 +32,7 @@
   <aside class="sidebar">
     <nav class="sidebar-nav">
       <a href="/docs" class="sidebar-section">&larr; Back to docs</a>
+      <a href="#2026-08-30" class="sidebar-link">2026-08-30</a>
       <a href="#2026-08-29" class="sidebar-link">2026-08-29</a>
       <a href="#2026-08-27-1" class="sidebar-link">2026-08-27</a>
       <a href="#2026-08-02-1" class="sidebar-link">2026-08-02</a>
@@ -108,11 +109,18 @@
       <p class="docs-subtitle">Behavior changes, operational improvements, and notable fixes for Glassmkr and the Crucible agent. Most recent at top.</p>
     </header>
 
+    <section class="release" id="2026-08-30">
+      <h2><a href="#2026-08-30" class="anchor-link">#</a>2026-08-30</h2>
+
+      <h3>Crucible v1.1.1</h3>
+      <p><strong>Current.</strong> The agent is at v1.1.1 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Docs-only patch: the npm README now states the license plainly and describes the Dashboard as what it is, open source at github.com/glassmkr/glassmkr and self-hostable. No code changes; agents on v1.1.0 have nothing to gain from upgrading.</p>
+    </section>
+
     <section class="release" id="2026-08-29">
       <h2><a href="#2026-08-29" class="anchor-link">#</a>2026-08-29</h2>
 
       <h3>Crucible v1.1.0</h3>
-      <p><strong>Current.</strong> The agent is at v1.1.0 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Install natively: <code>sudo npm install -g @glassmkr/crucible</code> then <code>sudo glassmkr-crucible init</code>.</p>
+      <p><strong>Superseded by v1.1.1.</strong> The agent is at v1.1.0 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Install natively: <code>sudo npm install -g @glassmkr/crucible</code> then <code>sudo glassmkr-crucible init</code>.</p>
       <p><strong>The agent is relicensed from MIT to AGPL-3.0-only.</strong> The agent and the dashboard now carry the same license, so there is one license to review instead of two. Versions 1.0.1 and earlier were published under MIT and remain MIT; nothing you already installed changed license.</p>
       <p><strong>A GPU probe returning output the parser cannot read is reported as a parser/API mismatch, not as absent hardware.</strong> Empty output still means the feature is absent. Nonempty output that cannot be parsed is what a driver output-format change produces, and it now surfaces as something to look at instead of silently reading as unsupported.</p>
       <p><strong>README corrections.</strong> The documented default collection interval is the shipped 300 seconds (the sample config previously said 60, five times the intended load if copied), and the stale rule-catalog claim is corrected to the generated catalog's current count and priority range (P0 through P4).</p>
