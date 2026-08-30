@@ -49,44 +49,16 @@ jobs:
           command_timeout: 5m
           script: |
             set -euo pipefail
-            # Refresh the repo and the invoked copy of the deployer BEFORE
-            # running it.
-            #
-            # The workflow invokes /home/agent/deploy.sh rather than the repo's
-            # scripts/deploy.sh on purpose: the deployer does `git reset --hard`
-            # on its own repository, and bash reads a script incrementally, so
-            # executing the file that the reset is about to rewrite can run half
-            # of one version and half of another.
-            #
-            # The cost used to be silent drift: nothing updated the copy, so
-            # every edit to scripts/deploy.sh landed in git, changed nothing,
-            # and looked deployed. Doing the copy here, as a completed step
-            # before execution begins, closes the drift AND keeps the
-            # incremental-read safety, because the file is whole before bash
-            # opens it.
-            cd /home/agent/glassmkr-sveltekit
-            # Public-canonical cutover: the production checkout tracked the
-            # private repository until 2026-08-30. Idempotent and self-healing;
-            # the public repository needs no credentials to fetch.
-            git remote set-url origin https://github.com/glassmkr/glassmkr.git
-            git fetch --all --quiet
-            # Extract ONLY the deployer from the fetched ref. Deliberately not a
-            # `git reset` here: deploy.sh does its own reset and then compares
-            # the SHA it moved from against the one it moved to, so resetting
-            # first makes every deploy look like a no-op and skip the build
-            # entirely. That happened once, on 2026-08-28, and a silent no-op
-            # deploy is worse than a failing one.
-            # Stage the deployer AND its helper from the SAME fetched revision.
-            # deploy.sh sources scripts/lib/nginx-prune.sh; taking one from the
-            # new revision while the other comes from whatever is in the
-            # worktree is version skew in the code that runs `sudo rm` against
-            # prod nginx. Both are written to temporary names and moved into
-            # place, so an interrupted fetch cannot leave a half-written
-            # deployer that then executes.
-            mkdir -p /home/agent/deploy-lib
-            git show origin/main:scripts/deploy.sh > /home/agent/deploy.sh.new
-            git show origin/main:scripts/lib/nginx-prune.sh > /home/agent/deploy-lib/nginx-prune.sh.new
-            mv /home/agent/deploy-lib/nginx-prune.sh.new /home/agent/deploy-lib/nginx-prune.sh
-            mv /home/agent/deploy.sh.new /home/agent/deploy.sh
-            chmod +x /home/agent/deploy.sh
-            /home/agent/deploy.sh
+            # The deploy sequence lives in a fixed, ROOT-OWNED
+            # /home/agent/ci-deploy.sh on the services host (repoint origin,
+            # fetch, stage scripts/deploy.sh + its nginx-prune helper from
+            # origin/main, then run deploy.sh). Invoking it here rather than
+            # inlining the sequence lets the dedicated CI deploy key be locked
+            # to exactly this via an authorized_keys forced command, so a
+            # leaked DEPLOY_SSH_KEY can run ONLY the deploy, never an arbitrary
+            # shell as agent@services (the old shared key reached the whole
+            # fleet; the new key reaches one host and one command). Works with
+            # or without the forced command: without it this line runs the
+            # deployer; with it the server runs ci-deploy.sh regardless of what
+            # is requested, and ignores this text.
+            bash /home/agent/ci-deploy.sh
