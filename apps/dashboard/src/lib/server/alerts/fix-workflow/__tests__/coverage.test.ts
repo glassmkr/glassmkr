@@ -120,8 +120,21 @@ describe("FIX-workflow rule coverage", () => {
     // hosts at time of writing, all reason ipmitool_cve_2020_5208 (ipmitool
     // < 1.8.19 refused by the agent), which is a one-package fix. no_bmc_device
     // is excluded so VMs and BMC-less hosts stay silent. Count to 70.
-    expect(inYaml.length).toBe(70);
+    // 2026-08-30: added boot_config_broken (P0, critical) + boot_config_drift
+    // (P3, warning) from the val-rocky boot-failure postmortem. The collector
+    // (Crucible 1.2.0+ snap.boot_config) cross-checks every boot target's
+    // root=UUID/LABEL against the filesystems that actually exist:
+    // boot_config_broken fires when the NEXT-boot entry resolves to no present
+    // filesystem (the "next reboot will not come back" case, caught in the
+    // window before the fatal reboot); boot_config_drift fires when the host
+    // boots today but the cmdline source / default entry / a fallback entry
+    // points at a wrong or absent filesystem (a future kernel update would
+    // detonate it). Both capability-gate on snap.boot_config.available and are
+    // proven silent on the four val distros. Count to 72.
+    expect(inYaml.length).toBe(72);
     expect(inYaml).toContain("ipmi_monitoring_unavailable");
+    expect(inYaml).toContain("boot_config_broken");
+    expect(inYaml).toContain("boot_config_drift");
     expect(inYaml).toContain("os_end_of_life");
     expect(inYaml).toContain("bios_firmware_age");
     expect(inYaml).toContain("ipmi_sel_full");

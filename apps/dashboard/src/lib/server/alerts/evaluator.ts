@@ -206,6 +206,24 @@ export interface Snapshot {
     wtmp_reboot_record: string | null;
     prior_shutdown_clean: boolean;
   };
+  /** Boot-config integrity (Crucible 1.2.0+, val-rocky postmortem). The
+   *  collector cross-checks every boot target's root= filesystem reference
+   *  against the filesystems that actually exist and precomputes the summary
+   *  flags below; boot_config_broken / boot_config_drift read them directly.
+   *  Absent on older agents and available:false on unprivileged hosts, so both
+   *  rules degrade to silence. Loose booleans/strings so a newer agent cannot
+   *  break ingest. */
+  boot_config?: {
+    available: boolean;
+    error?: string;
+    mounted_root: { source: string; uuid: string | null; label: string | null } | null;
+    cmdline_source: { path: string; root_spec: string | null; resolvable: boolean | null; matches_mounted: boolean | null } | null;
+    entries: Array<{ source: string; title: string; kernel: string | null; root_spec: string | null; resolvable: boolean | null; matches_mounted: boolean | null; is_default: boolean }>;
+    default_entry_bootable: boolean | null;
+    default_entry_wrong_fs: boolean | null;
+    unbootable_entry_count: number;
+    source_regressed: boolean | null;
+  };
   hardware_raid?: {
     controllers: Array<{
       vendor: "dell" | "hpe" | "lsi" | "adaptec";
@@ -3636,6 +3654,110 @@ const rules: AlertRule[] = [
         message: `Running kernel: ${k.running}. Installed kernel: ${k.installed}. A reboot is needed to apply the newer kernel.`,
         evidence: { running: k.running, installed: k.installed },
         recommendation: "Schedule a reboot to apply the newer kernel. Security patches may not be active until then.",
+      }];
+    },
+  },
+
+  // 22.1 boot_config_broken (CRITICAL) + 22.2 boot_config_drift (WARNING).
+  //
+  // From the val-rocky boot-failure postmortem (2026-08-30): a kernel update
+  // baked a stale root=UUID (from a prior reinstall) into the new boot entry,
+  // so the box dropped to the dracut emergency shell on the next reboot with no
+  // prior warning. Crucible 1.2.0's boot_config collector cross-checks every
+  // boot target's root= reference against the filesystems that actually exist
+  // and precomputes the flags these rules read. Capability-gated on
+  // snap.boot_config?.available: older agents omit the field, unprivileged
+  // hosts report available:false, and both cases stay silent. Never fires on a
+  // healthy box (proven against the four val distros as negative controls).
+  {
+    type: "boot_config_broken",
+    // The whole point is to warn in the window BEFORE the fatal reboot, so no
+    // boot-grace suppression: a freshly-booted box that already has a broken
+    // NEXT-boot target must page immediately.
+    evaluate(snap) {
+      const bc = snap.boot_config;
+      if (!bc || bc.available !== true) return [];
+      // The critical signal: the entry the bootloader will select next cannot
+      // find its root filesystem. `default_entry_bootable === false` is set
+      // only when that entry's root=UUID/LABEL resolves to NOTHING present.
+      if (bc.default_entry_bootable !== false) return [];
+      const def = bc.entries.find((e) => e.is_default) ?? null;
+      const badSpec = def?.root_spec ?? "(unknown)";
+      const mounted = bc.mounted_root;
+      const kern = def?.kernel ? ` (kernel ${def.kernel})` : "";
+      return [{
+        type: "boot_config_broken",
+        severity: "critical",
+        title: "Next boot will fail: boot entry points at a missing root filesystem",
+        message: `The boot entry the bootloader will select next${kern} sets ${badSpec}, but no such filesystem exists on this host. The currently mounted root is ${mounted?.source ?? "unknown"} (UUID ${mounted?.uuid ?? "unknown"}). This host is running now, but the NEXT reboot will drop to the emergency shell and not come back. Fix the boot configuration before rebooting. This is exactly the failure mode from the val-rocky postmortem (a kernel update inherited a stale root=UUID).`,
+        evidence: {
+          mounted_root: mounted,
+          default_entry: def,
+          cmdline_source: bc.cmdline_source,
+          unbootable_entry_count: bc.unbootable_entry_count,
+          source_regressed: bc.source_regressed,
+          fix_commands: [
+            "# 1. Confirm the REAL root filesystem UUID (ground truth):",
+            "findmnt -no SOURCE,UUID /",
+            "",
+            "# 2. See what the boot entries and the cmdline source request:",
+            "grep -r root=UUID /boot/loader/entries/ /etc/kernel/cmdline 2>/dev/null   # RHEL family",
+            "grep -r root=UUID /boot/grub/grub.cfg 2>/dev/null                          # Debian family",
+            "",
+            "# 3a. RHEL family: fix the SOURCE so future kernels inherit the right",
+            "#     UUID, then the entries. Replace OLD with the real UUID from step 1:",
+            "#   sudo sed -i 's/OLD-UUID/REAL-UUID/g' /etc/kernel/cmdline /boot/loader/entries/*.conf",
+            "# 3b. Debian family: fix /etc/fstab if wrong, then regenerate:",
+            "#   sudo update-grub",
+            "",
+            "# 4. Verify NOTHING still points at the missing UUID before rebooting:",
+            "grep -rl OLD-UUID /boot /etc/kernel 2>/dev/null   # must print nothing",
+          ],
+        },
+        recommendation: `Do not reboot until this is fixed. The next-boot entry${kern} references ${badSpec}, which is not a filesystem present on this host, so the reboot will strand the box in the dracut emergency shell. Align every boot entry and the kernel-cmdline source to the real root UUID (${mounted?.uuid ?? "from findmnt -no UUID /"}), then confirm no reference to the missing UUID remains.`,
+      }];
+    },
+  },
+  {
+    type: "boot_config_drift",
+    evaluate(snap) {
+      const bc = snap.boot_config;
+      if (!bc || bc.available !== true) return [];
+      // Do not double-report: if the default entry is already broken, the
+      // critical rule owns it.
+      if (bc.default_entry_bootable === false) return [];
+      const sourceBad = bc.source_regressed === true;
+      const wrongFs = bc.default_entry_wrong_fs === true;
+      const staleEntries = bc.unbootable_entry_count > 0;
+      if (!sourceBad && !wrongFs && !staleEntries) return [];
+      const mounted = bc.mounted_root;
+      const reasons: string[] = [];
+      if (sourceBad) reasons.push(`the kernel-cmdline source (${bc.cmdline_source?.path ?? "/etc/kernel/cmdline"}) sets ${bc.cmdline_source?.root_spec ?? "a root="} that is not the mounted root, so the NEXT kernel install would inherit a wrong root and fail to boot`);
+      if (wrongFs) reasons.push("the default boot entry resolves to a different existing filesystem than the one currently mounted as root");
+      if (staleEntries) reasons.push(`${bc.unbootable_entry_count} boot entr${bc.unbootable_entry_count === 1 ? "y references a filesystem" : "ies reference filesystems"} that do not exist (a fallback boot into ${bc.unbootable_entry_count === 1 ? "it" : "one of them"} would fail)`);
+      return [{
+        type: "boot_config_drift",
+        severity: "warning",
+        title: "Boot configuration drift: a future or fallback boot could strand this host",
+        message: `This host boots correctly today, but ${reasons.join("; and ")}. Left unaddressed, a kernel update or a fallback boot can drop the box to the emergency shell (the val-rocky failure mode). The mounted root is ${mounted?.source ?? "unknown"} (UUID ${mounted?.uuid ?? "unknown"}).`,
+        evidence: {
+          mounted_root: mounted,
+          cmdline_source: bc.cmdline_source,
+          default_entry_wrong_fs: bc.default_entry_wrong_fs,
+          unbootable_entry_count: bc.unbootable_entry_count,
+          source_regressed: bc.source_regressed,
+          unbootable_entries: bc.entries.filter((e) => e.resolvable === false),
+          fix_commands: [
+            "# Confirm the real root UUID:",
+            "findmnt -no SOURCE,UUID /",
+            "# RHEL family: align the cmdline source + entries to it:",
+            "grep -r root=UUID /etc/kernel/cmdline /boot/loader/entries/ 2>/dev/null",
+            "#   sudo sed -i 's/WRONG-UUID/REAL-UUID/g' /etc/kernel/cmdline /boot/loader/entries/*.conf",
+            "# Debian family: fix /etc/fstab if needed, then:",
+            "#   sudo update-grub",
+          ],
+        },
+        recommendation: `Not yet urgent (the host boots today), but fix before the next kernel update: ${reasons.join("; ")}. Align the boot configuration to the real root UUID (${mounted?.uuid ?? "from findmnt -no UUID /"}). Acknowledge if you have verified this is expected for this host.`,
       }];
     },
   },

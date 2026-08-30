@@ -1,0 +1,178 @@
+# boot_config_broken; added 1.2.0 from the val-rocky boot-failure postmortem
+# (2026-08-30). CRITICAL (P0): the entry the bootloader will select next
+# references a root filesystem (root=UUID/LABEL) that does not exist on this
+# host, so the next reboot drops to the dracut emergency shell and does not
+# come back. The host is running NOW; the whole value is warning in the window
+# before the fatal reboot. Distro split: RHEL fixes /etc/kernel/cmdline (the
+# source future kernels inherit) plus the BLS entries; Debian fixes /etc/fstab
+# then regenerates grub.cfg.
+id: boot_config_broken
+priority: P0
+title: Next boot will fail (boot entry points at a missing root filesystem)
+summary: The boot entry the bootloader will select next sets a root= filesystem that does not exist on this host. The box runs now but the next reboot will strand it in the emergency shell. Fix the boot configuration before rebooting.
+fix:
+  quick_check:
+    command: |
+      # The REAL root filesystem (ground truth):
+      findmnt -no SOURCE,UUID,LABEL /
+      # What the boot entries + the cmdline source request (RHEL family):
+      grep -H root=UUID /etc/kernel/cmdline /boot/loader/entries/*.conf 2>/dev/null
+      # What grub requests (Debian family):
+      grep -H root=UUID /boot/grub/grub.cfg 2>/dev/null
+      # Which requested UUIDs actually exist:
+      blkid -o export | grep -E '^(DEVNAME|UUID|LABEL|TYPE)='
+    description: "Compare the root= UUID/LABEL in the boot entries (and, on RHEL, /etc/kernel/cmdline) against the filesystems blkid actually sees. A root=UUID that appears in no blkid record is the fault: that entry cannot find root."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access to the running host (fix it now, while it is still up)
+    - "A console fallback (IPMI/KVM/hosting panel) available in case a reboot happens before the fix lands"
+    - The real root UUID from `findmnt -no UUID /` (this is the value to align everything to)
+    - "Do NOT reboot until the fix is verified: the current running system is the only thing keeping the box reachable"
+  safe_mode:
+    command: |
+      findmnt -no SOURCE,UUID,LABEL /
+      cat /proc/cmdline
+      cat /etc/kernel/cmdline 2>/dev/null
+      ls -1 /boot/loader/entries/ 2>/dev/null
+      grep -H root= /boot/loader/entries/*.conf 2>/dev/null
+      grep -h root= /boot/grub/grub.cfg 2>/dev/null | head
+      cat /boot/grub2/grubenv 2>/dev/null | grep saved_entry
+      blkid
+    description: |
+      Read-only. Establishes the real root UUID, then shows every
+      place a root= is declared and which entry is the saved/default
+      one, plus the full blkid table so you can see exactly which
+      referenced UUID is missing.
+  variants:
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        # RHEL family. Align every boot reference to the REAL root UUID.
+
+        # 1. Ground truth: the real root UUID.
+        REAL=$(findmnt -no UUID /)
+        echo "real root UUID: $REAL"
+
+        # 2. The stale UUID(s) the entries wrongly request (inspect, do not guess):
+        grep -h root=UUID /etc/kernel/cmdline /boot/loader/entries/*.conf 2>/dev/null
+
+        # 3. Replace the stale UUID everywhere. Fix the SOURCE first
+        #    (/etc/kernel/cmdline) so future kernel installs inherit the
+        #    right value, then the existing entries. Set OLD to the stale UUID:
+        # OLD=<the-stale-uuid-from-step-2>
+        # sudo sed -i "s/$OLD/$REAL/g" /etc/kernel/cmdline /etc/sysconfig/bootloader /boot/loader/entries/*.conf
+
+        # 4. VERIFY nothing still points at the stale UUID (must print nothing):
+        # grep -rl "$OLD" /boot/loader/entries /etc/kernel/cmdline /etc/sysconfig/bootloader 2>/dev/null
+
+        # 5. Confirm the saved/default entry now resolves:
+        grep saved_entry /boot/grub2/grubenv
+        grep -H root=UUID /boot/loader/entries/*.conf
+
+        # 6. Only now schedule a reboot, with a console fallback ready:
+        # sudo glassmkr-crucible mark-reboot --reason "boot config fix"
+        # sudo systemctl reboot
+      description: |
+        RHEL BLS layout. The failure originates in /etc/kernel/cmdline
+        (the template grubby copies into every new kernel's entry), so
+        fixing only the entries would let the next kernel update
+        regress. Fix the source AND the entries, verify zero references
+        to the stale UUID remain, then reboot.
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        # Debian family. grub.cfg root= comes from /etc/fstab via grub-probe.
+
+        # 1. Ground truth:
+        REAL=$(findmnt -no UUID /)
+        echo "real root UUID: $REAL"
+
+        # 2. Confirm /etc/fstab's / entry matches $REAL (the usual root cause
+        #    is a stale fstab UUID after a filesystem was recreated):
+        grep -E '\s/\s' /etc/fstab
+
+        # 3. If fstab is wrong, correct the / line to UUID=$REAL, then:
+        # sudo update-grub
+
+        # 4. VERIFY grub.cfg now requests the real UUID:
+        grep -H root=UUID /boot/grub/grub.cfg | head
+
+        # 5. Reboot with a console fallback ready:
+        # sudo glassmkr-crucible mark-reboot --reason "boot config fix"
+        # sudo systemctl reboot
+      description: |
+        Debian/Ubuntu regenerate grub.cfg from /etc/fstab + grub-probe,
+        so the durable fix is to correct /etc/fstab (or the underlying
+        UUID) and run update-grub, not to hand-edit grub.cfg (which is
+        overwritten on the next update-grub).
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: distro unknown. Universal principle.
+
+        # 1. The real root UUID everything must point at:
+        findmnt -no SOURCE,UUID /
+
+        # 2. Find every root= reference and the ones that do not resolve:
+        grep -rH root=UUID /boot /etc/kernel/cmdline 2>/dev/null
+        blkid
+
+        # 3. Align every boot entry (and any kernel-cmdline source file) to
+        #    the real UUID, regenerate the bootloader config if the distro
+        #    uses a generator (grub-mkconfig / update-grub / grubby), and
+        #    VERIFY no reference to the missing UUID remains before rebooting.
+      description: |
+        Universal recovery: make every boot target's root= resolve to
+        the currently mounted root filesystem, fix whatever source the
+        distro generates entries from, verify, then reboot with a
+        console fallback available.
+  validation:
+    command: |
+      # After the fix (before AND after the reboot):
+      findmnt -no UUID /
+      grep -rH root=UUID /boot/loader/entries/ /boot/grub/grub.cfg 2>/dev/null
+      cat /proc/cmdline
+    description: |
+      Every boot entry's root=UUID must equal `findmnt -no UUID /`, and
+      no entry may reference a UUID absent from blkid. After the reboot,
+      /proc/cmdline should show the real root UUID. The alert
+      auto-resolves once the next snapshot sees a resolvable default
+      entry.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Editing boot entries to point at the real, present root UUID is
+      the safe direction; there is nothing to roll back to (the prior
+      state was unbootable). Keep the console/IPMI fallback available
+      until the box has rebooted cleanly at least once. If a reboot
+      happens before the fix and the box is in the emergency shell,
+      mount the root filesystem and apply the same UUID correction to
+      the boot entries and the cmdline source from there.
+  impact:
+    blast_radius: |
+      No blast radius while applying the fix (edits to boot config do
+      not affect the running system). The risk being averted is total:
+      an unfixed host is lost on its next reboot until someone reaches
+      the console. The reboot that follows the fix is a normal 1-5
+      minute host outage.
+    estimated_duration: |
+      Fix: a few minutes. The subsequent verifying reboot: 1-5 minutes
+      including POST.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-08-30"
+    tested_on:
+      - "val-rocky (Rocky Linux 9.8, software-RAID1 root, live 2026-08-30 boot failure + recovery)"
+      - "val-alma / val-debian / val-ubuntu (negative controls: parser stays silent)"
+    tester: Glassmkr ops
+    research_basis: fleet-tested
+    source_note: |
+      Directly from the val-rocky boot-failure postmortem
+      (POSTMORTEM_val-rocky_boot_2026-08-30.md): a dnf security update
+      installed a kernel whose BLS entry inherited a stale root=UUID
+      from /etc/kernel/cmdline, and the next reboot dropped to the
+      dracut emergency shell. The recovery commands in the RHEL variant
+      are exactly the ones that fixed the box. The detection and the
+      four-distro negative controls are unit-tested in the Crucible
+      boot-config collector.

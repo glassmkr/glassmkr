@@ -427,6 +427,20 @@
     "_category": "Security & Patching"
   },
   {
+    "id": "boot_config_broken",
+    "priority": "P0",
+    "title": "Next boot will fail (boot entry points at a missing root filesystem)",
+    "summary": "The boot entry the bootloader will select next sets a root= filesystem that does not exist on this host. The box runs now but the next reboot will strand it in the emergency shell. Fix the boot configuration before rebooting.",
+    "_category": "Security & Patching"
+  },
+  {
+    "id": "boot_config_drift",
+    "priority": "P3",
+    "title": "Boot configuration drift (a future or fallback boot could strand this host)",
+    "summary": "This host boots correctly now, but a boot reference (the kernel-cmdline source, the default entry, or a fallback entry) points at a wrong or absent filesystem. A future kernel update or a fallback boot could drop it to the emergency shell. Fix before the next kernel update.",
+    "_category": "Security & Patching"
+  },
+  {
     "id": "kernel_needs_reboot",
     "priority": "P2",
     "title": "Reboot required (newer kernel installed)",

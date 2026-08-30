@@ -325,6 +325,118 @@ describe("drive_smart_unreadable", () => {
   });
 });
 
+describe("boot_config_broken", () => {
+  const HEALTHY_BC = {
+    available: true,
+    mounted_root: { source: "/dev/md127", uuid: "real-uuid", label: "root" },
+    cmdline_source: { path: "/etc/kernel/cmdline", root_spec: "UUID=real-uuid", resolvable: true, matches_mounted: true },
+    entries: [
+      { source: "bls", title: "Linux 6.1 good", kernel: "6.1", root_spec: "UUID=real-uuid", resolvable: true, matches_mounted: true, is_default: true },
+    ],
+    default_entry_bootable: true,
+    default_entry_wrong_fs: false,
+    unbootable_entry_count: 0,
+    source_regressed: false,
+  };
+
+  it("fires critical when the default (next-boot) entry cannot find its root fs", () => {
+    const s = healthySnapshot();
+    s.boot_config = {
+      ...HEALTHY_BC,
+      cmdline_source: { path: "/etc/kernel/cmdline", root_spec: "UUID=dead-uuid", resolvable: false, matches_mounted: false },
+      entries: [
+        { source: "bls", title: "Linux 6.2 NEW", kernel: "6.2", root_spec: "UUID=dead-uuid", resolvable: false, matches_mounted: false, is_default: true },
+        { source: "bls", title: "Linux 6.1 good", kernel: "6.1", root_spec: "UUID=real-uuid", resolvable: true, matches_mounted: true, is_default: false },
+      ],
+      default_entry_bootable: false,
+      unbootable_entry_count: 1,
+      source_regressed: true,
+    };
+    const [a] = alertsOf("boot_config_broken", s);
+    expect(a.severity).toBe("critical");
+    expect(a.message).toContain("emergency shell");
+    expect(a.recommendation.toLowerCase()).toContain("do not reboot");
+  });
+
+  it("no fire on a healthy boot config (default entry resolves)", () => {
+    const s = healthySnapshot();
+    s.boot_config = { ...HEALTHY_BC };
+    expect(alertsOf("boot_config_broken", s)).toHaveLength(0);
+  });
+
+  it("no fire when the field is absent (older agents)", () => {
+    expect(alertsOf("boot_config_broken")).toHaveLength(0);
+  });
+
+  it("no fire when the collector reports available:false (never on missing data)", () => {
+    const s = healthySnapshot();
+    s.boot_config = { ...HEALTHY_BC, available: false, error: "blkid unavailable", mounted_root: null, default_entry_bootable: null };
+    expect(alertsOf("boot_config_broken", s)).toHaveLength(0);
+  });
+});
+
+describe("boot_config_drift", () => {
+  const HEALTHY_BC = {
+    available: true,
+    mounted_root: { source: "/dev/md127", uuid: "real-uuid", label: "root" },
+    cmdline_source: { path: "/etc/kernel/cmdline", root_spec: "UUID=real-uuid", resolvable: true, matches_mounted: true },
+    entries: [
+      { source: "bls", title: "Linux 6.1 good", kernel: "6.1", root_spec: "UUID=real-uuid", resolvable: true, matches_mounted: true, is_default: true },
+    ],
+    default_entry_bootable: true,
+    default_entry_wrong_fs: false,
+    unbootable_entry_count: 0,
+    source_regressed: false,
+  };
+
+  it("fires warning when the kernel-cmdline source has regressed (future kernel would fail)", () => {
+    const s = healthySnapshot();
+    s.boot_config = {
+      ...HEALTHY_BC,
+      cmdline_source: { path: "/etc/kernel/cmdline", root_spec: "UUID=other-present-uuid", resolvable: true, matches_mounted: false },
+      source_regressed: true,
+    };
+    const [a] = alertsOf("boot_config_drift", s);
+    expect(a.severity).toBe("warning");
+    expect(a.message.toLowerCase()).toContain("next kernel install");
+  });
+
+  it("fires warning when a fallback/rescue entry references a missing filesystem", () => {
+    const s = healthySnapshot();
+    s.boot_config = {
+      ...HEALTHY_BC,
+      entries: [
+        { source: "bls", title: "good", kernel: "6.1", root_spec: "UUID=real-uuid", resolvable: true, matches_mounted: true, is_default: true },
+        { source: "bls", title: "stale rescue", kernel: null, root_spec: "UUID=gone-uuid", resolvable: false, matches_mounted: false, is_default: false },
+      ],
+      unbootable_entry_count: 1,
+    };
+    const [a] = alertsOf("boot_config_drift", s);
+    expect(a.severity).toBe("warning");
+  });
+
+  it("does NOT double-report when the default entry is already broken (critical owns it)", () => {
+    const s = healthySnapshot();
+    s.boot_config = {
+      ...HEALTHY_BC,
+      default_entry_bootable: false,
+      unbootable_entry_count: 1,
+      source_regressed: true,
+    };
+    expect(alertsOf("boot_config_drift", s)).toHaveLength(0);
+  });
+
+  it("no fire on a healthy boot config", () => {
+    const s = healthySnapshot();
+    s.boot_config = { ...HEALTHY_BC };
+    expect(alertsOf("boot_config_drift", s)).toHaveLength(0);
+  });
+
+  it("no fire when the field is absent (older agents)", () => {
+    expect(alertsOf("boot_config_drift")).toHaveLength(0);
+  });
+});
+
 describe("raid_degraded", () => {
   it("fires when array degraded", () => {
     const s = healthySnapshot();

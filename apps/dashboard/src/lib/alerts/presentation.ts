@@ -84,6 +84,8 @@ export const ALERT_PRIORITIES: Record<string, number> = {
   interface_errors: 2,
   io_pressure_high: 2,
   kernel_needs_reboot: 2,
+  boot_config_broken: 0,
+  boot_config_drift: 3,
   kernel_vulnerabilities: 2,
   link_speed_mismatch: 2,
   listen_overflow: 2,
