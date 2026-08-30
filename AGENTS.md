@@ -53,8 +53,8 @@ Canonical sources:
                       shipped broken once; the comments say which.
 
 The agent that runs on monitored hosts is a **separate repository**:
-[glassmkr/crucible](https://github.com/glassmkr/crucible), MIT licensed. This
-repository is AGPL-3.0-only.
+[glassmkr/crucible](https://github.com/glassmkr/crucible), AGPL-3.0-only since
+v1.1.0 (v1.0.1 and earlier remain MIT). This repository is AGPL-3.0-only.
 
 ---
 

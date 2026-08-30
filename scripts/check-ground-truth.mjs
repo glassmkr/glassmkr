@@ -198,6 +198,55 @@ if (!only || only === "licence") {
   }
 }
 
+// 6b. Current-Crucible-MIT claims (post-redesign review P0-1, 2026-08-30).
+// Crucible is AGPL-3.0-only from v1.1.0; v1.0.1 and earlier remain MIT. The
+// existing licence check enforces the SPELLING of AGPL claims, so an active
+// surface flatly calling the current agent MIT sailed through it: README,
+// AGENTS.md, three comparison pages, and the retired design spec all did.
+// This check fails any ACTIVE surface that describes OUR agent as MIT unless
+// the same line carries an explicit retrospective marker. Blog posts are
+// dated canon: they pass if the post carries the editorial license note (and
+// their absolute claims were version-scoped when the note was added).
+if (!only || only === "licence-mit") {
+  const RETRO = /through v?1\.0\.1|1\.0\.1 and earlier|v?1\.0\.[01] (was|were|remains?)|was MIT|were MIT|remains? MIT|then-MIT|at the time|as of this entry|Superseded by/i;
+  // Third-party agents legitimately described as MIT on comparison pages.
+  const THIRD_PARTY = /CloudWatch Agent|collectd|amazon-cloudwatch/i;
+  const EDITORIAL_NOTE = /Crucible versions through 1\.0\.1 were MIT/;
+  const OURS = /Crucible|MIT[- ]licensed agent|MIT agent|agent is MIT|MIT-licensed project/i;
+
+  const targets = [
+    ...copyFiles(["node_modules", "__capture"]),
+    path.resolve(ROOT, "README.md"),
+    path.resolve(ROOT, "AGENTS.md"),
+    ...(fs.existsSync(path.resolve(ROOT, "docs/design"))
+      ? walk(path.resolve(ROOT, "docs/design"), [".md"], [])
+      : []),
+  ];
+  const hits = [];
+  for (const f of targets) {
+    const text = fs.readFileSync(f, "utf8");
+    if (!/MIT/.test(text)) continue;
+    const rel = path.relative(ROOT, f);
+    const isBlog = rel.includes(`routes${path.sep}blog${path.sep}`);
+    const isHistoricalDoc = /SUPERSEDED|Historical design input/i.test(text.slice(0, 600));
+    if (isHistoricalDoc) continue;
+    if (isBlog && EDITORIAL_NOTE.test(text)) continue;
+    for (const [i, line] of text.split("\n").entries()) {
+      if (!/MIT/.test(line)) continue;
+      if (!OURS.test(line)) continue;
+      if (RETRO.test(line)) continue;
+      if (/AGPL-3\.0-only \(Crucible\)/.test(line)) continue;
+      if (THIRD_PARTY.test(line) && !/Crucible[^.]{0,60}MIT|MIT[^.]{0,60}Crucible/i.test(line)) continue;
+      hits.push(`${rel}:${i + 1}`);
+    }
+  }
+  if (hits.length) {
+    fail("licence-mit", `active surface describes current Crucible as MIT on ${hits.length} line(s): ${hits.slice(0, 8).join(", ")}`);
+  } else {
+    ok("licence-mit", "no active surface calls the current agent MIT; historical claims are version-scoped");
+  }
+}
+
 // 7. collectd parity. The site and the announcement quote a row tally from the
 // audit that lives in the crucible repo. 26 gap rows exceed 21 covered, so
 // collectd reads MORE distinct things than Crucible: a surface that drifted

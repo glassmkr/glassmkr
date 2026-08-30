@@ -34,7 +34,7 @@
         Checkmk is a long-established enterprise monitoring platform (Munich-based, Nagios lineage). Editions as of 2026-03-17 are Community (free, self-hosted, ~100 hosts) <sup><a href="#fn1">1</a></sup>, Pro (from EUR 190/month annual), Ultimate (from EUR 275/month annual), Cloud SaaS (EUR 240/month), and Ultimate with Multi-Tenancy <sup><a href="#fn3">3</a></sup> <sup><a href="#fn4">4</a></sup>. Pricing is service-based (~30 services per host typical) <sup><a href="#fn1">1</a></sup>.
       </p>
       <p>
-        Glassmkr is opinionated bare-metal monitoring, fully open source and free in both deployment forms: self-hosted (AGPL-3.0-only dashboard, MIT agent, no node limits) or hosted at app.glassmkr.com (free, 10-node per-account cap) <sup><a href="#fn-glassmkr">G</a></sup>. {ruleCount} alert rules ship enabled and tuned, and there is no proprietary edition: every feature is in the open repo.
+        Glassmkr is opinionated bare-metal monitoring, fully open source and free in both deployment forms: self-hosted (AGPL-3.0-only agent and dashboard, no node limits) or hosted at app.glassmkr.com (free, 10-node per-account cap) <sup><a href="#fn-glassmkr">G</a></sup>. {ruleCount} alert rules ship enabled and tuned, and there is no proprietary edition: every feature is in the open repo.
       </p>
       <p>
         Checkmk wins on breadth (2000+ official plugins <sup><a href="#fn8">8</a></sup>), distributed monitoring across regions, and enterprise features (RBAC, audit logs, LDAP/SAML). Glassmkr wins on time-to-value for focused bare-metal monitoring without the operational footprint.

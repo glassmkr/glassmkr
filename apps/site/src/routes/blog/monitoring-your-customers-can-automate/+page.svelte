@@ -124,7 +124,10 @@ curl -sS "https://app.glassmkr.com/api/v1/servers/$SERVER_ID/alerts?status=activ
 
     <p>
       An agent inside the OS earns scrutiny, especially on rented hardware, where two parties care what runs there. We keep that part deliberately boring: Crucible is MIT licensed, the <a href="https://github.com/glassmkr/crucible">source is on GitHub</a>, the installer is ~150 lines of bash, it runs as its own non-root user, communicates over HTTPS only, and ships metrics and alert state, plus small bounded diagnostic excerpts around a failure (for example the last journal lines of a failed service, or a matched kernel dmesg event): no bulk log streaming, no command output, no arbitrary file contents. The collector key that stays on the box can push that one server’s telemetry and nothing else.
+
     </p>
+
+    <p class="license-note">Editorial note, August 2026: Crucible versions through 1.0.1 were MIT licensed. Version 1.1.0 and later are AGPL-3.0-only.</p>
 
     <h2>Who this is for</h2>
 
@@ -146,6 +149,7 @@ curl -sS "https://app.glassmkr.com/api/v1/servers/$SERVER_ID/alerts?status=activ
 </div>
 
 <style>
+  .license-note { font-size: 13px; color: var(--text-tertiary); border-left: 2px solid var(--surface-border); padding-left: 12px; line-height: 1.6; }
   .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
     border-radius:6px; border:1px solid var(--surface-border);
     margin:24px 0 20px; background:var(--surface-raised); }
