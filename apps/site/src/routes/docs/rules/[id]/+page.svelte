@@ -121,7 +121,7 @@
     font-family: var(--font-mono, monospace);
     font-size: 13px;
     color: var(--accent);
-    background: rgba(245, 166, 35, 0.08);
+    background: rgba(255, 107, 53, 0.08);
     padding: 3px 8px;
     border-radius: var(--radius-md);
   }
@@ -133,9 +133,11 @@
     padding: 3px 7px;
     border-radius: var(--radius-sm);
   }
-  .priority-p1 { background: rgba(244, 67, 54, 0.12); color: #f87171; }
-  .priority-p2 { background: rgba(245, 166, 35, 0.12); color: var(--accent); }
-  .priority-p3 { background: rgba(255, 255, 255, 0.06); color: var(--text-tertiary); }
+  .priority-p0 { background: var(--red-bg); color: var(--g-critical); }
+  .priority-p1 { background: var(--red-bg); color: var(--g-critical); }
+  .priority-p2 { background: var(--yellow-bg); color: var(--g-warning); }
+  .priority-p3 { background: var(--blue-bg); color: var(--g-info); }
+  .priority-p4 { background: var(--g-surface-3); color: var(--g-text-subtle); }
   .category {
     font-size: 12px;
     color: var(--text-tertiary);

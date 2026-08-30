@@ -335,7 +335,7 @@
     transition: color 0.12s, background 0.12s;
   }
   .nav-dropdown-item:hover {
-    background: rgba(245, 166, 35, 0.08);
+    background: rgba(255, 107, 53, 0.08);
     text-decoration: none;
   }
   .nav-dropdown-item :global(.nav-dropdown-icon) {

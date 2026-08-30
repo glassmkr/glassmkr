@@ -36,7 +36,7 @@ h1, h2, h3, h4 {
 
 /* Site ambient glow, tuned to the amber accent. */
 .ambient::before {
-  background: radial-gradient(ellipse, rgba(245, 166, 35, 0.05) 0%, transparent 70%);
+  background: radial-gradient(ellipse, rgba(255, 107, 53, 0.05) 0%, transparent 70%);
 }
 
 /* Lucide icons: bespoke default stroke weight, away from the template default. */

@@ -169,7 +169,7 @@ docker compose up -d</code></pre>
   .anchor-link { color: transparent; text-decoration: none; margin-right: 4px; font-weight: 400; transition: color 0.15s; }
   h2:hover .anchor-link { color: var(--text-tertiary); }
   .anchor-link:hover { color: var(--accent) !important; text-decoration: none; }
-  pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(245, 166, 35, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 0.75rem; }
+  pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 0.75rem; }
   pre code { font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6; color: var(--text-primary); background: transparent; padding: 0; }
   code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
   .callout { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid var(--accent); border-radius: var(--radius-md); padding: 14px 16px; margin: 16px 0; font-size: 0.9rem; line-height: 1.65; color: var(--text-secondary); }

@@ -135,7 +135,7 @@
   .tab:hover { color: var(--text-secondary); }
   .tab.active {
     color: var(--accent);
-    background: rgba(245, 166, 35, 0.04);
+    background: rgba(255, 107, 53, 0.04);
   }
 
   .terminal-body {

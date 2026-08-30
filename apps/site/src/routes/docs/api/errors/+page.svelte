@@ -161,12 +161,12 @@
   p, li { color: var(--text-secondary); line-height: 1.7; }
   ul { padding-left: 20px; margin-bottom: 1rem; }
   li { margin-bottom: 6px; }
-  pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(245, 166, 35, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 1rem; }
+  pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 1rem; }
   pre code { font-family: var(--font-mono); font-size: 13px; line-height: 1.55; color: var(--text-primary); background: transparent; padding: 0; }
   code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
   table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1rem; font-size: 0.875rem; min-width: 40rem; }
   thead th { text-align: left; padding: 8px 12px; color: var(--text-tertiary); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--surface-border); }
   tbody td { padding: 8px 12px; color: var(--text-secondary); border-bottom: 1px solid rgba(61, 54, 48, 0.4); vertical-align: top; }
-  tbody tr:target { background: rgba(245, 166, 35, 0.06); }
+  tbody tr:target { background: rgba(255, 107, 53, 0.06); }
   @media (max-width: 900px) { .sidebar { display: none; } .docs-layout { gap: 0; padding: 40px 20px 100px; } }
 </style>

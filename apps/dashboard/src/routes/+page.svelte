@@ -270,8 +270,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: rgba(245, 166, 35,0.08);
-    border: 1px solid rgba(245, 166, 35,0.15);
+    background: rgba(255, 107, 53,0.08);
+    border: 1px solid rgba(255, 107, 53,0.15);
     color: var(--accent);
     font-size: 13px;
     font-weight: 600;

@@ -508,7 +508,7 @@
     font-size: 13px;
     font-family: inherit;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
   }
   .tab:hover {
     color: var(--text-primary);

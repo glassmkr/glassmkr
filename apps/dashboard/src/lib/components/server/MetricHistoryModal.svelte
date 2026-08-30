@@ -61,7 +61,7 @@
   const degFmt = (_: any, v: number) => (v != null ? v.toFixed(0) + " °C" : "");
   const wattFmt = (_: any, v: number) => (v != null ? v.toFixed(0) + " W" : "");
 
-  const accent = "rgba(245, 166, 35,0.95)";
+  const accent = "rgba(255, 107, 53,0.95)";
 
   function destroy() {
     if (chart) { chart.destroy(); chart = null; }
@@ -115,7 +115,7 @@
         memTotalMaxGB = totalGB.length ? Math.max(0, ...totalGB) : 0;
         // Palette matches the live Memory tile: Used = blue, Buff/Cache = amber,
         // Free = green (green reads as "available", not "used").
-        const cUsed = "rgba(59,130,246,", cCache = "rgba(245,166,35,", cFree = "rgba(70,185,138,";
+        const cUsed = "rgba(59,130,246,", cCache = "rgba(255, 107, 53,", cFree = "rgba(70,185,138,";
         const usedStyle = { label: "Used", stroke: cUsed + "0.95)", width: 2, fill: grad(cUsed, 0.3), value: gbFmt };
         // Stacked legend shows the real band size, not the cumulative height.
         const band = (u: any, v: number | null, sidx: number, i: number) => {
@@ -164,7 +164,7 @@
         };
         const valFmt = m.metric === "temp" ? degFmt : m.metric === "power" ? wattFmt : pct;
         data = [xs, gpuRows.map((r: any) => pick(r))];
-        series = [{}, { label: m.label, stroke: accent, width: 2, fill: grad("rgba(245,166,35,", 0.22), value: valFmt }];
+        series = [{}, { label: m.label, stroke: accent, width: 2, fill: grad("rgba(255, 107, 53,", 0.22), value: valFmt }];
       } else if (metric.kind === "core") {
         xs = cores.map((c: any) => secs(c.ts));
         data = [
@@ -175,7 +175,7 @@
             return typeof idle === "number" ? Math.max(0, Math.min(100, 100 - idle)) : 0;
           }),
         ];
-        series = [{}, { label: metric.label, stroke: accent, width: 2, fill: grad("rgba(245,166,35,", 0.22), value: pct }];
+        series = [{}, { label: metric.label, stroke: accent, width: 2, fill: grad("rgba(255, 107, 53,", 0.22), value: pct }];
       } else {
         xs = rows.map((r: any) => secs(r.ts));
         data = [
@@ -236,11 +236,11 @@
             const y = Math.round(u.valToPos(83, "y", true));
             if (y >= top && y <= top + height) {
               ctx.save();
-              ctx.strokeStyle = "rgba(245, 166, 35,0.7)";
+              ctx.strokeStyle = "rgba(255, 107, 53,0.7)";
               ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
               ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + width, y); ctx.stroke();
               ctx.setLineDash([]);
-              ctx.fillStyle = "rgba(245, 166, 35,0.9)";
+              ctx.fillStyle = "rgba(255, 107, 53,0.9)";
               ctx.font = "11px sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
               ctx.fillText("83°C throttle", left + width - 4, y - 3);
               ctx.restore();
@@ -403,7 +403,7 @@
   .head h3 { font-size: 16px; font-weight: 600; margin: 0; }
   .ranges { display: flex; gap: 4px; margin-left: auto; }
   .pill { font-size: 12px; padding: 4px 11px; border-radius: 4px; cursor: pointer; background: var(--surface); border: 1px solid var(--surface-border); color: var(--text-secondary); }
-  .pill.active { background: var(--accent-glow); border-color: rgba(245, 166, 35,0.4); color: var(--accent); font-weight: 600; }
+  .pill.active { background: var(--accent-glow); border-color: rgba(255, 107, 53,0.4); color: var(--accent); font-weight: 600; }
   .close { background: none; border: none; color: var(--text-tertiary); font-size: 24px; line-height: 1; cursor: pointer; padding: 0 4px; }
   .close:hover { color: var(--text-primary); }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 22px 0; }

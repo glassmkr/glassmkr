@@ -92,7 +92,7 @@
   // yellow/red as it fills. Cache = amber, Free = green -- matches the memory
   // history chart's stacked palette.
   const MEM_USED_OK = "rgba(59,130,246,0.95)";
-  const MEM_CACHE = "rgba(245,166,35,0.82)";
+  const MEM_CACHE = "rgba(255, 107, 53,0.82)";
   const MEM_FREE = "rgba(70,185,138,0.8)";
   let memColor = $derived(usedPct >= 90 ? "var(--red)" : usedPct >= 75 ? "var(--yellow)" : MEM_USED_OK);
   let swapPct = $derived(swapTotalMb > 0 ? (swapUsedMb / swapTotalMb) * 100 : 0);

@@ -27,14 +27,18 @@
      a big-bang rename that would touch hundreds of call sites for no visual
      gain. New code should use --g-*. */
 
-  /* Canonical: ground and surfaces */
-  --g-bg: #0a0a09;
-  --g-surface-1: #10110f;
-  --g-surface-2: #151612;
+  /* Canonical: ground and surfaces (Axiom-led redesign 2026-08-30, spec 4.3).
+     Warm, furnace-adjacent neutrals without turning brown. Contrast verified
+     in the spec: primary text 18.36:1 on base, subtle text 5.18:1 on base. */
+  --g-bg: #070706;
+  --g-surface-1: #0d0d0c;
+  --g-surface-2: #141310;
+  --g-surface-3: #1a1815;
+  --g-hover-surface: #201d19;
 
   /* Canonical: text */
-  --g-text: #f2f0e9;
-  --g-text-muted: #a8a49a;
+  --g-text: #f7f4ee;
+  --g-text-muted: #b1aaa0;
   /* Raised from #77746c on 2026-08-27. That value measured 4.24:1 on the base
    * background, 4.06:1 on surface-1 and 3.89:1 on surface-2, all below the 4.5:1
    * required for normal text, and it is the token used for metadata, captions
@@ -43,27 +47,66 @@
    * restrained look survives the fix. Check the darkest surface, not just the
    * page background: the previous value passed nothing and looked like it passed
    * because only the base was ever measured. */
-  --g-text-subtle: #847f76;
+  --g-text-subtle: #888077;
 
   /* Canonical: hairline structure (borders do the work shadows used to) */
-  --g-border: rgba(242, 240, 233, 0.12);
-  --g-border-strong: rgba(242, 240, 233, 0.22);
+  --g-border-subtle: rgba(247, 244, 238, 0.075);
+  --g-border: rgba(247, 244, 238, 0.13);
+  --g-border-strong: rgba(247, 244, 238, 0.23);
 
-  /* Canonical: brand. Kept visibly distinct from --g-warning so amber never
-     reads as a health state. */
-  --g-brand: #e1843b;
-  --g-brand-hover: #f19a54;
+  /* Canonical: brand (Axiom-led redesign, spec 4.2). Vivid molten orange,
+     visible in the DEFAULT state, never hidden until hover. Measures ~7.1:1
+     on the base ground; near-black text on brand also ~7.1:1, so brand-filled
+     buttons use near-black text (white does not clear 4.5:1 on brand). Kept
+     categorically distinct from --g-warning so orange never reads as health. */
+  --g-brand: #ff6b35;
+  --g-brand-hover: #ff8255;
+  --g-brand-soft: #ff9f7b;
+  --g-brand-dim: rgba(255, 107, 53, 0.14);
+  --g-brand-faint: rgba(255, 107, 53, 0.07);
+  --g-brand-edge: rgba(255, 107, 53, 0.42);
 
-  /* Canonical: semantics. Reserved for system state, never decoration. */
-  --g-healthy: #69c28e;
-  --g-warning: #e2b94b;
-  --g-critical: #e36b6b;
-  --g-info: #7ea3d8;
+  /* Canonical: semantics. Reserved for system state, never decoration. These
+     are SEPARATE from the brand: a stronger brand makes conflation
+     unacceptable (spec 4.4). Priority styling reads --g-priority-* below,
+     never --g-brand. */
+  --g-healthy: #67c69b;
+  --g-warning: #e5b94c;
+  --g-critical: #ee6a7a;
+  --g-info: #79a8e8;
+  --g-offline: #888077;
 
-  --g-focus: #f2f0e9;
+  /* Priority presentation tokens. The canonical model is
+     apps/dashboard/src/lib/alerts/priority.ts; these are the colors it maps to.
+     P4 is subtle text (info tier, below the notify threshold), never brand. */
+  --g-priority-p0: var(--g-critical);
+  --g-priority-p1: var(--g-critical);
+  --g-priority-p2: var(--g-warning);
+  --g-priority-p3: var(--g-info);
+  --g-priority-p4: var(--g-text-subtle);
+
+  --g-focus: #f7f4ee;
 
   --g-radius-1: 2px;
   --g-radius-2: 4px;
+  --g-radius-3: 6px;
+
+  /* Type scale (spec 5.2). Plex/Commit/Source Serif roles are unchanged; the
+     scale changes how Plex is used: larger, lighter, tighter at the top. */
+  --type-display-xl: clamp(2.75rem, 2rem + 3.5vw, 5.25rem);
+  --type-display-lg: clamp(2.75rem, 2rem + 3vw, 4.5rem);
+  --type-h1: clamp(2.5rem, 2rem + 2vw, 3.75rem);
+  --type-h2: clamp(2rem, 1.65rem + 1.5vw, 3rem);
+  --type-h3: clamp(1.35rem, 1.2rem + 0.6vw, 1.75rem);
+  --type-body-lg: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
+  --type-body: 1rem;
+  --type-small: 0.875rem;
+  --type-micro: 0.75rem;
+
+  /* Wide site grid (spec 6.1). Replaces the narrow 960px marketing ceiling. */
+  --page-max: 1440px;
+  --page-gutter: clamp(20px, 3vw, 48px);
+  --grid-gap: clamp(16px, 1.7vw, 24px);
 
   /* --- Legacy aliases (existing components read these) --- */
   --bg: var(--g-bg);
@@ -71,11 +114,11 @@
   --surface: var(--g-surface-1);
   --bg-surface: var(--g-surface-1);
   --bg-elevated: var(--g-surface-2);
-  --bg-hover: #1c1d19;
+  --bg-hover: var(--g-hover-surface);
 
   --surface-border: var(--g-border);
   --border-default: var(--g-border);
-  --border-subtle: rgba(242, 240, 233, 0.07);
+  --border-subtle: var(--g-border-subtle);
 
   --text-primary: var(--g-text);
   --text-secondary: var(--g-text-muted);
@@ -83,8 +126,8 @@
 
   --accent: var(--g-brand);
   --accent-hover: var(--g-brand-hover);
-  --accent-glow: rgba(225, 132, 59, 0.15);
-  --accent-muted: rgba(225, 132, 59, 0.15);
+  --accent-glow: var(--g-brand-dim);
+  --accent-muted: var(--g-brand-dim);
   /* A 10x6 chevron for appearance:none selects, stroked in the secondary text
      grey (#a8a49a) so it reads as a control, not content. One token so every
      select draws the identical arrow with the identical inset. */
@@ -92,24 +135,24 @@
   --warm: var(--g-brand);
 
   --green: var(--g-healthy);
-  --green-bg: rgba(105, 194, 142, 0.10);
+  --green-bg: rgba(103, 198, 155, 0.10);
   --yellow: var(--g-warning);
-  --yellow-bg: rgba(226, 185, 75, 0.10);
+  --yellow-bg: rgba(229, 185, 76, 0.10);
   --red: var(--g-critical);
-  --red-bg: rgba(227, 107, 107, 0.10);
+  --red-bg: rgba(238, 106, 122, 0.10);
   --blue: var(--g-info);
-  --blue-bg: rgba(126, 163, 216, 0.08);
+  --blue-bg: rgba(121, 168, 232, 0.08);
 
   /* Status aliases */
   --status-healthy: var(--green);
   --status-warning: var(--yellow);
   --status-critical: var(--red);
   --status-info: var(--blue);
-  --status-offline: #6B7280;
+  --status-offline: var(--g-offline);
 
   /* Glass */
   --glass-bg: rgba(18, 20, 23, 0.7);
-  --glass-border: rgba(245, 166, 35, 0.10);
+  --glass-border: rgba(255, 107, 53, 0.10);
   --glass-blur: 16px;
   --glass-gradient: linear-gradient(135deg, rgba(236,238,241,0.04) 0%, rgba(236,238,241,0.01) 50%, rgba(236,238,241,0.03) 100%);
 
@@ -178,7 +221,7 @@ a:hover { text-decoration: underline; }
   font-size: var(--text-small);
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
   text-decoration: none;
 }
 .btn:hover { background: var(--bg-hover); color: var(--text-primary); text-decoration: none; }
@@ -190,7 +233,7 @@ a:hover { text-decoration: underline; }
 .btn-primary {
   background: var(--accent-glow);
   color: var(--accent);
-  border-color: rgba(245, 166, 35, 0.4);
+  border-color: rgba(255, 107, 53, 0.4);
   font-weight: 500;
 }
 .btn-primary:hover {
@@ -273,6 +316,7 @@ a:hover { text-decoration: underline; }
 .tag-blue { background: var(--blue-bg); color: var(--blue); }
 /* Accent tag for non-status uses (priority labels, etc.) */
 .tag-accent { background: var(--accent-muted); color: var(--accent); }
+.tag-muted { background: var(--g-surface-3); color: var(--g-text-subtle); }
 
 /* Labels */
 .label {
@@ -427,7 +471,7 @@ select {
   left: 40%;
   width: 600px;
   height: 500px;
-  background: radial-gradient(ellipse, rgba(245, 166, 35, 0.03) 0%, transparent 70%);
+  background: radial-gradient(ellipse, rgba(255, 107, 53, 0.03) 0%, transparent 70%);
   animation: drift 10s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -462,7 +506,7 @@ select {
 .glass-edge:nth-child(3) {
   width: 60px; height: 1px; top: 45%; left: 10%;
   transform: rotate(-4deg); opacity: 0.2;
-  background: linear-gradient(90deg, transparent, rgba(245, 166, 35,0.04), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 107, 53,0.04), transparent);
 }
 
 /* Glass panel utility */

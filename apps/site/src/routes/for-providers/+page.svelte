@@ -271,7 +271,7 @@ curl -sS "https://app.glassmkr.com/api/v1/servers/$SERVER_ID/alerts?status=activ
   .api-steps pre {
     background: #0d0d0d;
     border: 1px solid var(--surface-border);
-    border-left: 3px solid rgba(245, 166, 35, 0.35);
+    border-left: 3px solid rgba(255, 107, 53, 0.35);
     border-radius: var(--radius-md);
     padding: 18px 22px;
     overflow-x: auto;

@@ -88,7 +88,7 @@
     border: 1px solid var(--surface-border);
     border-left: 2px solid var(--accent);
     border-radius: 0 8px 8px 0;
-    background: rgba(245, 166, 35, 0.04);
+    background: rgba(255, 107, 53, 0.04);
   }
   .vs-cta-mid .cta-copy {
     flex: 1 1 320px;
@@ -111,7 +111,7 @@
     border: 1px solid var(--surface-border);
     border-radius: var(--radius-md);
     background:
-      radial-gradient(ellipse at top, rgba(245, 166, 35, 0.06), transparent 60%),
+      radial-gradient(ellipse at top, rgba(255, 107, 53, 0.06), transparent 60%),
       rgba(255, 255, 255, 0.015);
   }
   .vs-cta-bottom .cta-lead {

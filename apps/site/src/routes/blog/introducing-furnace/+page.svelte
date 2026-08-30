@@ -224,7 +224,7 @@
   .editorial-note {
     background: var(--surface);
     border: 1px solid var(--surface-border);
-    border-left: 3px solid rgba(245, 166, 35, 0.5);
+    border-left: 3px solid rgba(255, 107, 53, 0.5);
     border-radius: var(--radius-md);
     padding: 12px 16px;
     margin: 0 0 28px;
@@ -279,7 +279,7 @@
     font-family: var(--font-mono, monospace);
     font-size: 14px;
     color: var(--accent);
-    background: rgba(245, 166, 35, 0.06);
+    background: rgba(255, 107, 53, 0.06);
     padding: 1px 6px;
     border-radius: var(--radius-sm);
   }
@@ -301,7 +301,7 @@
     margin: 20px 0;
     padding: 18px 22px;
     border-left: 2px solid var(--accent);
-    background: rgba(245, 166, 35, 0.04);
+    background: rgba(255, 107, 53, 0.04);
     border-radius: 0 6px 6px 0;
   }
   .post blockquote p {

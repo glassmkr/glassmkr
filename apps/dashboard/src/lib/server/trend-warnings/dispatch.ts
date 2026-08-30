@@ -422,7 +422,7 @@ function formatEmail(
           </td></tr>
           <tr><td style="padding:20px 24px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border-radius:6px;">
-              <tr><td bgcolor="#F5A623" style="border-radius:6px;padding:10px 28px;" align="center">
+              <tr><td bgcolor="#ff6b35" style="border-radius:6px;padding:10px 28px;" align="center">
                 <a href="${url}" target="_blank" style="font-size:14px;font-weight:600;color:#0B0C0E;text-decoration:none;display:block;">View details</a>
               </td></tr>
             </table>

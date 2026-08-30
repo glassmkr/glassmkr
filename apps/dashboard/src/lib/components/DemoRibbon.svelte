@@ -112,9 +112,9 @@
 
   .cta-wrap { margin-left: auto; position: relative; }
   .cta {
-    background: var(--accent-glow, rgba(245, 166, 35,0.12));
+    background: var(--accent-glow, rgba(255, 107, 53,0.12));
     color: var(--accent);
-    border: 1px solid rgba(245, 166, 35, 0.4);
+    border: 1px solid rgba(255, 107, 53, 0.4);
     border-radius: 4px;
     padding: 6px 14px;
     font-size: 12px;
@@ -122,7 +122,7 @@
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
   }
-  .cta:hover, .cta.active { background: rgba(245, 166, 35, 0.18); border-color: rgba(245, 166, 35, 0.55); }
+  .cta:hover, .cta.active { background: rgba(255, 107, 53, 0.18); border-color: rgba(255, 107, 53, 0.55); }
 
   /* Popover card: a proper designed lead form rather than a cramped
      inline strip. Anchored under the CTA, right-aligned. */
@@ -172,7 +172,7 @@
   .lead-popover input[type="email"]:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.15);
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
   }
 
   /* Custom checkbox: reads as designed even when unchecked. */
@@ -189,7 +189,7 @@
     content: ""; width: 4px; height: 8px; margin-top: -2px;
     border: solid var(--bg, #0B0C0E); border-width: 0 2px 2px 0; transform: rotate(45deg);
   }
-  .call-check input:focus-visible + .box { box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.2); }
+  .call-check input:focus-visible + .box { box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2); }
 
   .send {
     width: 100%;

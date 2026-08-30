@@ -78,7 +78,7 @@
 
   .pills { margin-left: auto; display: flex; gap: 4px; }
   .rp { font-size: 12px; font-style: normal; padding: 2px 8px; border-radius: var(--radius-md); border: 1px solid var(--surface-border); color: var(--text-secondary); }
-  .rp.on { background: var(--accent-glow); border-color: rgba(245, 166, 35,0.4); color: var(--accent); font-weight: 600; }
+  .rp.on { background: var(--accent-glow); border-color: rgba(255, 107, 53,0.4); color: var(--accent); font-weight: 600; }
   .chart .ch { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
   .ct { font-size: 12px; font-weight: 600; color: var(--text-primary); }
   .cr { font-size: 12px; color: var(--text-secondary); }

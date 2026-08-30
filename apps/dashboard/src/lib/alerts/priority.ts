@@ -38,28 +38,28 @@ export const PRIORITIES: readonly PriorityMeta[] = [
     key: "P0",
     label: "P0 Critical",
     meaning: "Data is already at risk. Uncorrected memory and GPU errors.",
-    color: "var(--red)",
+    color: "var(--g-priority-p0)",
     defaultEnabled: true,
   },
   {
     key: "P1",
     label: "P1 Urgent",
     meaning: "Data loss or service outage. Act now.",
-    color: "var(--red)",
+    color: "var(--g-priority-p1)",
     defaultEnabled: true,
   },
   {
     key: "P2",
     label: "P2 High",
     meaning: "Significant degradation.",
-    color: "var(--yellow)",
+    color: "var(--g-priority-p2)",
     defaultEnabled: true,
   },
   {
     key: "P3",
     label: "P3 Medium",
     meaning: "Early warning.",
-    color: "var(--accent)",
+    color: "var(--g-priority-p3)",
     defaultEnabled: true,
   },
   {
@@ -67,7 +67,7 @@ export const PRIORITIES: readonly PriorityMeta[] = [
     label: "P4 Low",
     meaning:
       "Proactive recommendation, or an alert whose instance severity is informational. Shows on the dashboard without paging.",
-    color: "var(--blue)",
+    color: "var(--g-priority-p4)",
     defaultEnabled: false,
   },
 ] as const;

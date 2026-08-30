@@ -12,7 +12,7 @@ const EMAIL_PRIORITY_COLORS: Record<number, { text: string; bg: string; border: 
   0: { text: "#E5564B", bg: "#2a0e0e", border: "#B91C1C" },  // P0 critical: deepest red band (matches SLACK_COLORS[0])
   1: { text: "#E5564B", bg: "#2A1517", border: "#E5564B" },  // red
   2: { text: "#E0A93B", bg: "#2A2412", border: "#E0A93B" },  // orange
-  3: { text: "#F5A623", bg: "#1f1a0f", border: "#F5A623" },  // amber/gold (matches --accent)
+  3: { text: "#79a8e8", bg: "#0f1622", border: "#79a8e8" },  // P3 medium: info blue (semantic, decoupled from brand per spec 4.4)
 };
 const RESOLVED_COLORS = { text: "#46B98A", bg: "#0f1f19", border: "#46B98A" };
 
@@ -181,7 +181,7 @@ function formatAlertEmail(alert: Alert, server: Server): { subject: string; html
           <tr><td style="padding:20px 24px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border-radius:6px;">
               <tr>
-                <td bgcolor="#F5A623" style="border-radius:6px;padding:10px 28px;" align="center">
+                <td bgcolor="#ff6b35" style="border-radius:6px;padding:10px 28px;" align="center">
                   <a href="${dashboardUrl}" target="_blank" style="font-size:14px;font-weight:600;color:#0B0C0E;text-decoration:none;display:block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">View in Dashboard</a>
                 </td>
               </tr>

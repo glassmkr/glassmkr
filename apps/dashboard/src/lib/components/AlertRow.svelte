@@ -595,10 +595,11 @@
     padding: 20px;
     margin-bottom: 12px;
   }
-  .alert-card.priority-1 { border-left: 3px solid var(--red); }
-  .alert-card.priority-2 { border-left: 3px solid var(--accent); }
-  .alert-card.priority-3 { border-left: 3px solid var(--yellow); }
-  .alert-card.priority-4 { border-left: 3px solid var(--blue); }
+  .alert-card.priority-0 { border-left: 3px solid var(--g-priority-p0); }
+  .alert-card.priority-1 { border-left: 3px solid var(--g-priority-p1); }
+  .alert-card.priority-2 { border-left: 3px solid var(--g-priority-p2); }
+  .alert-card.priority-3 { border-left: 3px solid var(--g-priority-p3); }
+  .alert-card.priority-4 { border-left: 3px solid var(--g-priority-p4); }
 
   .alert-header {
     display: flex;
