@@ -39,7 +39,7 @@
     description:
       `Open-source Linux server monitoring. Glassmkr watches the Linux and hardware signals most people never configure (SMART, IPMI, ECC, RAID, ZFS, network), explains what needs attention, and gives you the next command to run. ${ruleCount} alert rules. Self-hostable with Docker Compose; AGPL-3.0-only end to end.`,
     url: "https://glassmkr.com",
-    image: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260826",
+    image: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260830",
     offers: [
       {
         "@type": "Offer",
@@ -72,7 +72,7 @@
     "@type": "Organization",
     name: "Glassmkr",
     url: "https://glassmkr.com",
-    logo: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260826",
+    logo: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260830",
     description:
       `Open-source Linux and dedicated-server monitoring. ${ruleCount} alert rules with evidence and guided remediation, self-hostable end to end.`,
     email: "hello@glassmkr.com",
@@ -102,7 +102,7 @@
     property="og:description"
     content="Open-source Linux server monitoring that explains what needs attention and gives you the next command to run. SMART, IPMI, ECC, RAID, ZFS, and network. Hosted or self-hosted, AGPL-3.0-only."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
 
   <meta name="twitter:card" content="summary_large_image" />
@@ -111,7 +111,7 @@
     name="twitter:description"
     content="Open-source Linux server monitoring that explains what needs attention and gives you the next command to run. Hosted or self-hosted, AGPL-3.0-only throughout."
   />
-  <meta name="twitter:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" />
 
   <!-- Structured data: SoftwareApplication + Organization. Emitted via
        {@html} so the JSON payload is not HTML-escaped. -->

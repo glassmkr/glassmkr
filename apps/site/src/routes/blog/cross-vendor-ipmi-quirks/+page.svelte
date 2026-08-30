@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/cross-vendor-ipmi-quirks" />
   <meta property="og:title" content="Cross-vendor IPMI quirks we learned the hard way" />
   <meta property="og:description" content="Six specific cross-vendor footguns from running IPMI monitoring across Supermicro, Gigabyte, ASUS and ASRockRack on Debian, Ubuntu, Rocky, Alma and Proxmox. The protocol is consistent. Nothing above it is." />
-  <meta property="og:image" content="https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Cross-vendor IPMI quirks we learned the hard way" />
   <meta name="twitter:description" content="Six specific cross-vendor footguns from running IPMI monitoring across 4 vendors, 6 board generations, 5 OS families. Every vendor lies about something different." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/cross-vendor-ipmi-quirks" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "Cross-vendor IPMI quirks we learned the hard way",
     description: "Six specific cross-vendor IPMI footguns from running monitoring on seven boxes spanning four vendors, six motherboard generations, and three OS families.",
-    image: "https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260826",
+    image: "https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260830",
     datePublished: "2026-05-25",
     dateModified: "2026-05-25",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/cross-vendor-ipmi-quirks.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/cross-vendor-ipmi-quirks",
     articleSection: "Operations"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/cross-vendor-ipmi-quirks.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Cross-vendor IPMI quirks we learned the hard way" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">May 2026 · Operations · 7 min read</p>
       <h1>Cross-vendor IPMI quirks we learned the hard way.</h1>
@@ -217,6 +218,9 @@ ipmitool: bash: ipmitool: command not found</code></pre>
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

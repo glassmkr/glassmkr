@@ -7,7 +7,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/introducing-glassmkr" />
   <meta property="og:title" content="Introducing Glassmkr: bare metal monitoring built by operators" />
   <meta property="og:description" content="The original launch post (May 2026). The pricing and plans it describes were retired in August 2026 when the whole stack went open source." />
-  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Glassmkr: bare metal monitoring built by operators. Terminal preview: crucible fleet --status showing 3 servers, 68 rules across 9 categories evaluated, all healthy." />
@@ -17,7 +17,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Introducing Glassmkr: bare metal monitoring built by operators" />
   <meta name="twitter:description" content="The original launch post (May 2026). The plans it describes were retired when the stack went open source in August 2026." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" />
   <meta name="twitter:image:alt" content="Glassmkr: bare metal monitoring built by operators" />
   <link rel="canonical" href="https://glassmkr.com/blog/introducing-glassmkr" />
 
@@ -27,11 +27,11 @@
     "@type": "BlogPosting",
     headline: "Introducing Glassmkr: bare metal monitoring built by operators",
     description: "The original Glassmkr launch post (May 2026). The pricing and plans it describes were retired in August 2026 when the whole stack went open source.",
-    image: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260826",
+    image: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260830",
     datePublished: "2026-04-21",
     dateModified: "2026-04-21",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/introducing-glassmkr",
     articleSection: "Launch"
   })}</` + `script>`}
@@ -48,6 +48,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/introducing-glassmkr.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Introducing Glassmkr: bare metal monitoring built by operators" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Launch</p>
 
     <h1>Introducing Glassmkr: bare metal monitoring built by operators</h1>
@@ -141,6 +142,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 720px;
     margin: 0 auto;

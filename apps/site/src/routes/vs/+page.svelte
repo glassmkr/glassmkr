@@ -39,7 +39,7 @@
     property="og:description"
     content="Side-by-side comparisons of Glassmkr with the monitoring tools teams most often weigh it against."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
 
   <meta name="twitter:card" content="summary_large_image" />
@@ -48,7 +48,7 @@
     name="twitter:description"
     content="Side-by-side comparisons of Glassmkr with Datadog, Prometheus, Netdata, and more."
   />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${itemListLd}</` + `script>`}
 </svelte:head>

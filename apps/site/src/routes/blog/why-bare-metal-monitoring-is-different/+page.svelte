@@ -7,7 +7,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/why-bare-metal-monitoring-is-different" />
   <meta property="og:title" content="Why bare metal monitoring is different" />
   <meta property="og:description" content="Cloud monitoring tools were built for ephemeral workloads. Bare metal servers fail in fundamentally different ways." />
-  <meta property="og:image" content="https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="crucible rules --group-by category: STORAGE reallocated sectors and silent RAID degradation, HARDWARE CPU temp and PSU redundancy, NETWORK physical NIC errors and bond member down, OS OOM patterns and swap climb. 68 rules across 9 categories as of publication, none fire in a cloud APM" />
@@ -17,7 +17,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Why bare metal monitoring is different" />
   <meta name="twitter:description" content="Cloud monitoring tools were built for ephemeral workloads. Bare metal servers fail in fundamentally different ways." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260830" />
   <meta name="twitter:image:alt" content="Bare metal failure modes across storage, hardware, network, OS - none of which a cloud APM sees" />
   <link rel="canonical" href="https://glassmkr.com/blog/why-bare-metal-monitoring-is-different" />
 
@@ -27,11 +27,11 @@
     "@type": "BlogPosting",
     headline: "Why bare metal monitoring is different",
     description: "Cloud monitoring tools were built for ephemeral workloads. They track HTTP latency and container restarts. But when you run physical servers, the failure modes are fundamentally different: drives wear out, DIMM slots develop bit errors, fans fail silently, and RAID arrays degrade without anyone noticing.",
-    image: "https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260826",
+    image: "https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260830",
     datePublished: "2026-04-10",
     dateModified: "2026-04-10",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/why-bare-metal-monitoring-is-different.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/why-bare-metal-monitoring-is-different",
     articleSection: "Operations"
   })}</` + `script>`}
@@ -48,6 +48,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/why-bare-metal-monitoring-is-different.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Why bare metal monitoring is different" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Operations</p>
 
     <h1>Why bare metal monitoring is different</h1>
@@ -92,6 +93,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 680px;
     margin: 0 auto;

@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/haiku-blind-remediation" />
   <meta property="og:title" content="We gave Claude Haiku root on a broken server" />
   <meta property="og:description" content="The smallest model in the family, a real server, four firing alerts, and a read-only key that cannot be talked into a passing grade. What it fixed, what it correctly left alone, and the bug it found in us." />
-  <meta property="og:image" content="https://glassmkr.com/og/haiku-blind-remediation.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/haiku-blind-remediation.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="We gave Claude Haiku root on a broken server" />
   <meta name="twitter:description" content="The smallest model in the family fixed what it should on a real broken server, left healthy hardware alone, and surfaced a false positive in our own monitoring." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/haiku-blind-remediation.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/haiku-blind-remediation.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/haiku-blind-remediation" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "We gave Claude Haiku root on a broken server",
     description: "A standing validation exercise: the smallest Claude model, a real bare-metal server with four firing alerts, SSH, the public docs, and a read-only key. What it fixed, what it correctly declined to touch, and the false-positive bug it found in our own monitoring.",
-    image: "https://glassmkr.com/og/haiku-blind-remediation.png?v=20260826",
+    image: "https://glassmkr.com/og/haiku-blind-remediation.png?v=20260830",
     datePublished: "2026-07-08",
     dateModified: "2026-07-08",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/haiku-blind-remediation.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/haiku-blind-remediation.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/haiku-blind-remediation",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/haiku-blind-remediation.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title We gave Claude Haiku root on a broken server" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Engineering · 5 min read</p>
       <h1>We gave Claude Haiku root on a broken server</h1>
@@ -116,6 +117,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

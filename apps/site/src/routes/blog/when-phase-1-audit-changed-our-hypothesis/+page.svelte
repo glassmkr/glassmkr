@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/when-phase-1-audit-changed-our-hypothesis" />
   <meta property="og:title" content="When a Phase 1 audit changed our hypothesis" />
   <meta property="og:description" content="An hour mapping the actual problem before writing any code saved us from fixing the wrong thing. The audit changed everything we were about to ship." />
-  <meta property="og:image" content="https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="When a Phase 1 audit changed our hypothesis" />
   <meta name="twitter:description" content="The spec said the detection logic was wrong. An hour of audit said it was correct and three other things were broken. Map the problem before you code." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/when-phase-1-audit-changed-our-hypothesis" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "When a Phase 1 audit changed our hypothesis",
     description: "We had a bug on a validation server. The spec said the detection logic was wrong about a vendor. An hour-long audit said the detection logic was correct and three other things were wrong.",
-    image: "https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260826",
+    image: "https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260830",
     datePublished: "2026-05-13",
     dateModified: "2026-05-13",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/when-phase-1-audit-changed-our-hypothesis",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title When a Phase 1 audit changed our hypothesis" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">May 2026 · Engineering · 6 min read</p>
       <h1>When a Phase 1 audit changed our hypothesis</h1>
@@ -185,6 +186,9 @@ ECC Errors: Correctable: 0, Uncorrectable: 0</code></pre>
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/monitoring-a-host-you-dont-fully-control" />
   <meta property="og:title" content="Half the problems on a marketplace GPU host are required config" />
   <meta property="og:description" content="The same signal that is a finding on a web server is required config on a Vast GPU host. So we stopped treating every host the same, with host-type profiles that suppress the expected noise and keep the real problems loud." />
-  <meta property="og:image" content="https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Monitoring a host you don't fully control" />
   <meta name="twitter:description" content="The same signal is a finding on one host and required config on another. Host-type profiles teach the monitor the difference." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/monitoring-a-host-you-dont-fully-control" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "Half the problems on a marketplace GPU host are required config. So we taught Glassmkr the difference.",
     description: "Why the same alert signal is a finding on one host and required config on another, and how host-type profiles suppress expected noise by role while keeping genuine problems loud.",
-    image: "https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260826",
+    image: "https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260830",
     datePublished: "2026-07-01",
     dateModified: "2026-07-01",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/monitoring-a-host-you-dont-fully-control.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/monitoring-a-host-you-dont-fully-control",
     articleSection: "Product"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/monitoring-a-host-you-dont-fully-control.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Half the &quot;problems&quot; on a marketplace GPU host are required config" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Product · 5 min read</p>
       <h1>Half the "problems" on a marketplace GPU host are required config. So we taught Glassmkr the difference.</h1>
@@ -106,6 +107,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

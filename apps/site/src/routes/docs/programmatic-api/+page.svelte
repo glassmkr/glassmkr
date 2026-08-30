@@ -18,12 +18,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/programmatic-api" />
   <meta property="og:title" content="Programmatic API + account API keys" />
   <meta property="og:description" content="Account API keys, scopes, idempotency, rate limits, audit log." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Programmatic API + account API keys" />
   <meta name="twitter:description" content="Account API keys, scopes, idempotency, rate limits, audit log." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

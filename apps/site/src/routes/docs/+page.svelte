@@ -153,12 +153,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs" />
   <meta property="og:title" content="Glassmkr documentation" />
   <meta property="og:description" content="Installation, {rulesData.length} alert rules, configuration, architecture, and self-hosting for bare-metal server monitoring. Dashboard and Crucible agent AGPL-3.0-only." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Glassmkr documentation" />
   <meta name="twitter:description" content="{rulesData.length} alert rules, five-minute snapshot interval, fully open source. Installation, configuration, architecture, self-hosting." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   <!-- Structured data: FAQPage mirrors the FAQ section below;
        BreadcrumbList renders rich breadcrumbs in search results. -->

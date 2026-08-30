@@ -6,12 +6,12 @@
   <meta property="og:url" content="https://glassmkr.com/blog" />
   <meta property="og:title" content="Glassmkr blog" />
   <meta property="og:description" content="Field notes on bare-metal monitoring: server operations, infrastructure tooling, and self-hosted AI for alert remediation." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Glassmkr blog" />
   <meta name="twitter:description" content="Updates and technical posts on bare-metal monitoring and infrastructure tooling." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 </svelte:head>
 
 <script lang="ts">
@@ -34,14 +34,14 @@
 
   // Single source of truth for the index. Newest first. Image paths match
   // the files committed at apps/site/static/og/. If a post doesn't have a
-  // dedicated image yet, point `image` at /og/default.png?v=20260826.
+  // dedicated image yet, point `image` at /og/default.png?v=20260830.
   const posts: Post[] = [
     {
       slug: "smart-said-passed",
       evidence: "/blog/smart-said-passed-trajectory.png?v=2",
       evidenceAlt: "Chart of one drive across 140 readings. A green band across the top shows overall health reporting PASSED in every reading. A flat dashed line marks reallocated sectors at 477, unchanged throughout. Below, the pending sector count opens at its maximum of 96, drains to zero over about two days, and after a 5.17 day gap in monitoring rises from zero three more times, peaking at 16, 32 and 16.",
       readTime: "7 min read",
-      image: "/og/smart-said-passed.png?v=20260826",
+      image: "/og/smart-said-passed.png?v=20260830",
       date: "August 2026",
       tag: "Engineering",
       title: "SMART said PASSED. The drive had 477 dead sectors.",
@@ -51,7 +51,7 @@
     {
       slug: "manage-your-fleet-by-talking-to-it",
       readTime: "5 min read",
-      image: "/og/manage-your-fleet-by-talking-to-it.png?v=20260826",
+      image: "/og/manage-your-fleet-by-talking-to-it.png?v=20260830",
       date: "July 2026",
       tag: "Engineering",
       title: "Manage your fleet by talking to it",
@@ -61,7 +61,7 @@
     {
       slug: "monitoring-your-customers-can-automate",
       readTime: "4 min read",
-      image: "/og/monitoring-your-customers-can-automate.png?v=20260826",
+      image: "/og/monitoring-your-customers-can-automate.png?v=20260830",
       date: "July 2026",
       tag: "Product",
       title: "Monitoring your customers can automate",
@@ -71,7 +71,7 @@
     {
       slug: "one-account-key-zero-per-host-secrets",
       readTime: "5 min read",
-      image: "/og/one-account-key-zero-per-host-secrets.png?v=20260826",
+      image: "/og/one-account-key-zero-per-host-secrets.png?v=20260830",
       date: "July 2026",
       tag: "Engineering",
       title: "One account key, zero per-host secrets",
@@ -81,7 +81,7 @@
     {
       slug: "open-model-ladder-blind-remediation",
       readTime: "8 min read",
-      image: "/og/open-model-ladder-blind-remediation.png?v=20260826",
+      image: "/og/open-model-ladder-blind-remediation.png?v=20260830",
       date: "July 2026",
       tag: "Engineering",
       title: "Same model, same server, opposite result: the half of agent testing everyone forgets",
@@ -91,7 +91,7 @@
     {
       slug: "haiku-blind-remediation",
       readTime: "5 min read",
-      image: "/og/haiku-blind-remediation.png?v=20260826",
+      image: "/og/haiku-blind-remediation.png?v=20260830",
       date: "July 2026",
       tag: "Engineering",
       title: "We gave Claude Haiku root on a broken server",
@@ -101,7 +101,7 @@
     {
       slug: "monitoring-a-host-you-dont-fully-control",
       readTime: "5 min read",
-      image: "/og/monitoring-a-host-you-dont-fully-control.png?v=20260826",
+      image: "/og/monitoring-a-host-you-dont-fully-control.png?v=20260830",
       date: "July 2026",
       tag: "Product",
       title: "Half the \"problems\" on a marketplace GPU host are required config",
@@ -111,7 +111,7 @@
     {
       slug: "the-reboot-that-delists-your-gpu-host",
       readTime: "6 min read",
-      image: "/og/the-reboot-that-delists-your-gpu-host.png?v=20260826",
+      image: "/og/the-reboot-that-delists-your-gpu-host.png?v=20260830",
       date: "June 2026",
       tag: "GPU",
       title: "A single reboot would have de-listed our entire GPU fleet",
@@ -121,7 +121,7 @@
     {
       slug: "20-box-gpu-fleet-88-to-11-alerts",
       readTime: "7 min read",
-      image: "/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260826",
+      image: "/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260830",
       date: "June 2026",
       tag: "GPU",
       title: "We pointed Glassmkr at a 20-box GPU fleet. It went from 88 alerts to 11.",
@@ -131,7 +131,7 @@
     {
       slug: "the-most-honest-ai-feature-we-shipped-has-no-ai-in-it",
       readTime: "6 min read",
-      image: "/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260826",
+      image: "/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260830",
       date: "June 2026",
       tag: "Engineering",
       title: "The most honest AI feature we shipped has no AI in it",
@@ -141,7 +141,7 @@
     {
       slug: "would-you-have-caught-my-vrm-degradation",
       readTime: "9 min read",
-      image: "/og/would-you-have-caught-my-vrm-degradation.png?v=20260826",
+      image: "/og/would-you-have-caught-my-vrm-degradation.png?v=20260830",
       date: "June 2026",
       tag: "Engineering",
       title: "Would you have caught my VRM degradation?",
@@ -151,7 +151,7 @@
     {
       slug: "what-our-test-suite-looks-like",
       readTime: "8 min read",
-      image: "/og/what-our-test-suite-looks-like.png?v=20260826",
+      image: "/og/what-our-test-suite-looks-like.png?v=20260830",
       date: "June 2026",
       tag: "Engineering",
       title: "What our test suite looks like, and why",
@@ -161,7 +161,7 @@
     {
       slug: "validating-gpu-monitoring-across-three-nvidia-cards",
       readTime: "7 min read",
-      image: "/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260826",
+      image: "/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260830",
       date: "May 2026",
       tag: "Engineering",
       title: "Validating GPU monitoring across three NVIDIA cards: L4, RTX A4000, A16",
@@ -171,7 +171,7 @@
     {
       slug: "we-found-a-security-false-negative-in-our-own-monitoring",
       readTime: "5 min read",
-      image: "/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260826",
+      image: "/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260830",
       date: "May 2026",
       tag: "Security",
       title: "We found a security false-negative in our own monitoring",
@@ -181,7 +181,7 @@
     {
       slug: "cross-vendor-ipmi-quirks",
       readTime: "7 min read",
-      image: "/og/cross-vendor-ipmi-quirks.png?v=20260826",
+      image: "/og/cross-vendor-ipmi-quirks.png?v=20260830",
       date: "May 2026",
       tag: "Operations",
       title: "Cross-vendor IPMI quirks we learned the hard way",
@@ -190,7 +190,7 @@
     },
     {
       slug: "when-monitoring-punishes-customers",
-      image: "/og/when-monitoring-punishes-customers.png?v=20260826",
+      image: "/og/when-monitoring-punishes-customers.png?v=20260830",
       date: "May 2026",
       tag: "Engineering",
       title: "When your monitoring tool punishes customers for doing the right thing",
@@ -200,7 +200,7 @@
     {
       slug: "when-phase-1-audit-changed-our-hypothesis",
       readTime: "6 min read",
-      image: "/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260826",
+      image: "/og/when-phase-1-audit-changed-our-hypothesis.png?v=20260830",
       date: "May 2026",
       tag: "Engineering",
       title: "When a Phase 1 audit changed our hypothesis",
@@ -210,7 +210,7 @@
     {
       slug: "introducing-furnace",
       readTime: "5 min read",
-      image: "/og/introducing-furnace.png?v=20260826",
+      image: "/og/introducing-furnace.png?v=20260830",
       date: "May 2026",
       tag: "AI",
       title: "Introducing Furnace: the AI assistant that helps you fix alerts",
@@ -219,7 +219,7 @@
     },
     {
       slug: "ai-controlled-probe-of-alert-docs",
-      image: "/og/ai-controlled-probe-of-alert-docs.png?v=20260826",
+      image: "/og/ai-controlled-probe-of-alert-docs.png?v=20260830",
       date: "May 2026",
       tag: "Engineering",
       title: "We used an AI as a controlled probe of our alert documentation",
@@ -228,7 +228,7 @@
     },
     {
       slug: "training-drive-failure-model-on-l4",
-      image: "/og/training-drive-failure-model-on-l4.png?v=20260826",
+      image: "/og/training-drive-failure-model-on-l4.png?v=20260830",
       date: "April 2026",
       tag: "Engineering",
       title: "Training a drive-failure model on a GPU server's CPU",
@@ -237,7 +237,7 @@
     },
     {
       slug: "introducing-glassmkr",
-      image: "/og/introducing-glassmkr.png?v=20260826",
+      image: "/og/introducing-glassmkr.png?v=20260830",
       date: "April 2026",
       tag: "Launch",
       title: "Introducing Glassmkr: bare metal monitoring built by operators",
@@ -246,7 +246,7 @@
     },
     {
       slug: "qwen3-6-vs-gemma-4-infrastructure-narration",
-      image: "/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260826",
+      image: "/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260830",
       date: "April 2026",
       tag: "Engineering",
       title: "We benchmarked Qwen3.6 against our production Gemma 4 on an L4. Here's what actually mattered.",
@@ -255,7 +255,7 @@
     },
     {
       slug: "ipmi-diagnostics-bare-metal",
-      image: "/og/ipmi-diagnostics-bare-metal.png?v=20260826",
+      image: "/og/ipmi-diagnostics-bare-metal.png?v=20260830",
       date: "April 2026",
       tag: "Operations",
       title: "IPMI diagnostics for bare metal: what to monitor and how to read it",
@@ -264,7 +264,7 @@
     },
     {
       slug: "gemma-4-l4-gpu-server-analysis",
-      image: "/og/gemma-4-l4-gpu-server-analysis.png?v=20260826",
+      image: "/og/gemma-4-l4-gpu-server-analysis.png?v=20260830",
       date: "April 2026",
       tag: "Engineering",
       title: "What We Learned Running Gemma 4 on an L4 GPU for Production Server Analysis",
@@ -273,7 +273,7 @@
     },
     {
       slug: "ipmi-smart-raid-hardware-monitoring",
-      image: "/og/ipmi-smart-raid-hardware-monitoring.png?v=20260826",
+      image: "/og/ipmi-smart-raid-hardware-monitoring.png?v=20260830",
       date: "April 2026",
       tag: "Operations",
       title: "IPMI, SMART, and RAID: The Hardware Layer Your Cloud Monitoring Tool Ignores",
@@ -282,7 +282,7 @@
     },
     {
       slug: "why-bare-metal-monitoring-is-different",
-      image: "/og/why-bare-metal-monitoring-is-different.png?v=20260826",
+      image: "/og/why-bare-metal-monitoring-is-different.png?v=20260830",
       date: "April 2026",
       tag: "Operations",
       title: "Why bare metal monitoring is different",
@@ -292,32 +292,38 @@
   ];
 </script>
 
-<div class="container-narrow">
-  <div class="page-header">
+<div class="blog-shell site-grid">
+  <div class="blog-rail">
     <h1>Blog</h1>
-    <p>Field notes, guides, and operational evidence from Glassmkr.</p>
+    <p class="rail-desc">Field notes, guides, and operational evidence from Glassmkr.</p>
+    <p class="rail-note">Real captures, real failures, real numbers. Every chart on these pages comes from a machine we ran.</p>
   </div>
 
-  <div class="divider"></div>
+  <div class="blog-main">
     {#if posts.length}
-      {@const lead = posts[0]}
-      <a href="/blog/{lead.slug}" class="lead">
-        {#if lead.evidence}
-          <!-- Intrinsic size stated so the row above reserves the space before the
-           image arrives. Without it this one image shifted the whole journal
-           list on load: 0.0719 CLS on the blog index against 0.0007 elsewhere. -->
-      <img class="lead-art" src={lead.evidence} alt={lead.evidenceAlt} width="1464" height="792" loading="eager" decoding="async" />
-        {/if}
-        <p class="row-meta">
-          <span>{lead.date}</span><span class="sep">·</span><span>{lead.tag}</span>
-          {#if lead.readTime}<span class="sep">·</span><span>{lead.readTime}</span>{/if}
-        </p>
-        <h2 class="lead-title">{lead.title}</h2>
-        <p class="lead-dek">{lead.excerpt}</p>
-      </a>
+      {@const features = posts.slice(0, 2)}
+      <div class="feature-row">
+        {#each features as post, i (post.slug)}
+          <a href="/blog/{post.slug}" class="feature">
+            {#if i === 0 && post.evidence}
+              <!-- Intrinsic size stated so the row reserves space before the
+                   image arrives (CLS: 0.0719 on this index without it). -->
+              <img class="feature-art" src={post.evidence} alt={post.evidenceAlt} width="1464" height="792" loading="eager" decoding="async" />
+            {:else}
+              <img class="feature-art" src={post.image} alt={post.imageAlt} width="1200" height="630" loading="eager" decoding="async" />
+            {/if}
+            <p class="row-meta">
+              <span>{post.date}</span><span class="sep">·</span><span>{post.tag}</span>
+              {#if post.readTime}<span class="sep">·</span><span>{post.readTime}</span>{/if}
+            </p>
+            <h2 class="feature-title">{post.title}</h2>
+            <p class="feature-dek">{post.excerpt}</p>
+          </a>
+        {/each}
+      </div>
 
       <ol class="journal">
-        {#each posts.slice(1) as post (post.slug)}
+        {#each posts.slice(2) as post (post.slug)}
           <li>
             <a href="/blog/{post.slug}">
               <p class="row-meta">
@@ -331,109 +337,170 @@
         {/each}
       </ol>
     {/if}
-
+  </div>
 </div>
 
 <style>
-  .container-narrow {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 0 24px 80px;
-    position: relative;
-    z-index: 1;
+  /* Blog index on the wide grid (redesign spec 13.1): editorial rail left,
+     a two-post feature row carrying real art, compact chronological rows
+     below. No category filters: no category routes exist, and a dead
+     control is worse than none. */
+  .blog-shell {
+    padding-top: clamp(40px, 6vh, 72px);
+    padding-bottom: 80px;
+    row-gap: 0;
   }
-
-  .page-header {
-    padding: 80px 0 0;
-    margin-bottom: 32px;
+  .blog-rail {
+    grid-column: 1 / 4;
+    align-self: start;
+    position: sticky;
+    top: 88px;
   }
-
-  .page-header h1 {
-    font-size: 32px;
-    font-weight: 700;
+  .blog-rail h1 {
+    font-size: var(--type-h1);
+    font-weight: 500;
     letter-spacing: -0.02em;
-    margin-bottom: 12px;
+    line-height: 1.02;
+    margin: 0 0 14px;
   }
-
-  .page-header p {
+  .rail-desc {
     font-size: 15px;
+    line-height: 1.6;
     color: var(--text-secondary);
+    margin: 0 0 14px;
+    max-width: 30ch;
+  }
+  .rail-note {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-tertiary);
+    margin: 0;
+    max-width: 30ch;
+    border-top: 1px solid var(--g-border-subtle);
+    padding-top: 12px;
+  }
+  .blog-main {
+    grid-column: 4 / 13;
+    min-width: 0;
   }
 
-  .divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 15%, rgba(168,200,255,0.08) 35%, rgba(255,255,255,0.06) 50%, rgba(255,200,140,0.05) 65%, rgba(255,255,255,0.03) 85%, transparent 100%);
-    margin: 0 0 40px;
+  .feature-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--grid-gap);
+    margin-bottom: 40px;
   }
-  /* An engineering-journal index, not a card feed. One lead entry carries art;
-     everything below is a dense typographic list separated by hairlines, so
-     the page reads as an archive rather than 26 identical containers. Dropping
-     per-row thumbnails also removes the empty grey blocks that appeared while
-     lazy-loaded images were still pending. */
-  .lead {
+  .feature {
     display: block;
     text-decoration: none;
-    padding-bottom: 28px;
-    border-bottom: 1px solid var(--border-default);
+    color: inherit;
+    min-width: 0;
   }
-  .lead:hover { text-decoration: none; }
-  .lead-art {
+  .feature:hover {
+    text-decoration: none;
+  }
+  .feature-art {
     display: block;
     width: 100%;
     height: auto;
-    aspect-ratio: 1464 / 792;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
-    margin-bottom: 18px;
+    border-radius: var(--g-radius-3);
+    border: 1px solid var(--g-border);
+    background: var(--g-surface-1);
+    margin-bottom: 14px;
   }
-  .lead-title {
-    font-size: 1.6rem;
-    line-height: 1.25;
+  .feature:hover .feature-art {
+    border-color: var(--g-brand-edge);
+  }
+  .feature-title {
+    font-size: var(--type-h3);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
     color: var(--text-primary);
     margin: 6px 0 8px;
   }
-  .lead-dek { color: var(--text-secondary); line-height: 1.65; margin: 0; max-width: 68ch; }
+  .feature:hover .feature-title {
+    color: var(--g-brand);
+  }
+  .feature-dek {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 
   .row-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin: 0;
     font-family: var(--font-mono);
     font-size: 12px;
     letter-spacing: 0.04em;
     color: var(--text-tertiary);
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
-  .row-meta .sep { opacity: 0.5; }
+  .row-meta .sep {
+    color: var(--g-border-strong);
+  }
 
-  .journal { list-style: none; margin: 0; padding: 0; }
-  .journal li { border-bottom: 1px solid var(--border-subtle); }
+  .journal {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--g-border-strong);
+  }
+  .journal li {
+    border-bottom: 1px solid var(--g-border-subtle);
+  }
   .journal a {
     display: block;
-    padding: 20px 0;
+    padding: 18px 0;
+    text-decoration: none;
+    color: inherit;
+  }
+  .journal a:hover {
     text-decoration: none;
   }
-  .journal a:hover { text-decoration: none; }
-  .journal a:hover h3 { color: var(--accent); }
   .journal h3 {
-    font-size: 1.05rem;
-    line-height: 1.35;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
     color: var(--text-primary);
-    margin: 6px 0 4px;
-    transition: color 0.15s;
+    margin: 6px 0 6px;
+  }
+  .journal a:hover h3 {
+    color: var(--g-brand);
   }
   .row-dek {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-tertiary);
     margin: 0;
-    color: var(--text-secondary);
-    font-size: 14px;
-    line-height: 1.6;
-    max-width: 74ch;
+    max-width: 90ch;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
-  /* Mobile technical-text floor (taste pass 4.1): these are product-surface
-     and table labels, which must stay legible on a phone. Widened data
-     scrolls inside its container rather than shrinking. */
-  @media (max-width: 768px) {
-    .row-meta { font-size: 12px; }
+  @media (max-width: 1023px) {
+    .blog-rail {
+      grid-column: 1 / 13;
+      position: static;
+      margin-bottom: 32px;
+    }
+    .blog-main {
+      grid-column: 1 / 13;
+    }
+  }
+  @media (max-width: 640px) {
+    .feature-row {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

@@ -62,7 +62,7 @@
     property="og:description"
     content="Monitoring for datacenter GPU boxes: PSU redundancy, ECC counters, XID events, IPMI, PCIe link state. Built for training clusters."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${serviceLd}</` + `script>`}
 </svelte:head>

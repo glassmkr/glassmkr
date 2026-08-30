@@ -63,7 +63,7 @@
     "@type": "Organization",
     name: "Glassmkr",
     url: "https://glassmkr.com",
-    logo: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260826",
+    logo: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260830",
     sameAs: ["https://github.com/glassmkr", "https://www.npmjs.com/package/@glassmkr/crucible"],
   }).replace(/</g, "\\u003c")}</` + `script>`}
   {@html `<script type="application/ld+json">${JSON.stringify({

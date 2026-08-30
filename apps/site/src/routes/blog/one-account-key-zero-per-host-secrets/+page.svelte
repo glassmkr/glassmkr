@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/one-account-key-zero-per-host-secrets" />
   <meta property="og:title" content="One account key, zero per-host secrets" />
   <meta property="og:description" content="glassmkr-crucible enroll: bake one write-scoped account key into your automation, each host self-registers by machine ID and holds only its own collector key. Idempotent across re-runs and re-images." />
-  <meta property="og:image" content="https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="One account key, zero per-host secrets" />
   <meta name="twitter:description" content="One account key stays in your control plane; each host self-registers by machine ID and holds only its own collector key. Idempotent by construction." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/one-account-key-zero-per-host-secrets" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "One account key, zero per-host secrets",
     description: "How glassmkr-crucible enroll onboards a bare-metal fleet from a single write-scoped account key used only for the one registration call, keying each server by a stable machine ID so re-runs and re-images are idempotent.",
-    image: "https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260826",
+    image: "https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260830",
     datePublished: "2026-07-15",
     dateModified: "2026-07-15",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/one-account-key-zero-per-host-secrets.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/one-account-key-zero-per-host-secrets",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/one-account-key-zero-per-host-secrets.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title One account key, zero per-host secrets" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Engineering · 5 min read</p>
       <h1>One account key, zero per-host secrets</h1>
@@ -163,6 +164,9 @@ done &lt; hosts.txt</code></pre>
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

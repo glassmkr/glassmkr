@@ -19,12 +19,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/troubleshooting/ipmi" />
   <meta property="og:title" content="IPMI troubleshooting" />
   <meta property="og:description" content="IPMI detection, doctor subcommand, per-vendor notes." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="IPMI troubleshooting" />
   <meta name="twitter:description" content="IPMI detection, doctor subcommand, per-vendor notes." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/20-box-gpu-fleet-88-to-11-alerts" />
   <meta property="og:title" content="We pointed Glassmkr at a 20-box GPU fleet. It went from 88 alerts to 11." />
   <meta property="og:description" content="The headline number is not the interesting part. The breakdown is: real hardware, noise we muted on purpose, self-inflicted reboots, and the false positives we fixed in the product." />
-  <meta property="og:image" content="https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="A 20-box GPU fleet: 88 alerts to 11" />
   <meta name="twitter:description" content="The honest part is the breakdown: real hardware, deliberate noise, self-inflicted, and the false positives we fixed." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/20-box-gpu-fleet-88-to-11-alerts" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "We pointed Glassmkr at a 20-box GPU fleet. It went from 88 alerts to 11.",
     description: "A field report from running Glassmkr against twenty GPU boxes on Vast: the breakdown of 88 alerts down to 11, what was real, what was noise, and the false positives we fixed.",
-    image: "https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260826",
+    image: "https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260830",
     datePublished: "2026-06-28",
     dateModified: "2026-06-28",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/20-box-gpu-fleet-88-to-11-alerts",
     articleSection: "GPU"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/20-box-gpu-fleet-88-to-11-alerts.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title We pointed Glassmkr at a 20-box GPU fleet. It went from 88 alerts to 11." width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">June 2026 · GPU · 7 min read</p>
       <h1>We pointed Glassmkr at a 20-box GPU fleet. It went from 88 alerts to 11. The honest part is the breakdown.</h1>
@@ -132,6 +133,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

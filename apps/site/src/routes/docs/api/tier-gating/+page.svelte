@@ -19,12 +19,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/api/tier-gating" />
   <meta property="og:title" content="API tier gating" />
   <meta property="og:description" content="Nothing in the API is tier-gated anymore. Since August 2026 there are no paid tiers; historical account keys keep working." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="API tier gating" />
   <meta name="twitter:description" content="Nothing in the API is tier-gated anymore. Since August 2026 there are no paid tiers; historical account keys keep working." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

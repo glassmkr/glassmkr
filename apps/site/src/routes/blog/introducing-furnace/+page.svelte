@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/introducing-furnace" />
   <meta property="og:title" content="Introducing Furnace: the AI assistant that helps you fix alerts" />
   <meta property="og:description" content="Furnace reads alerts, looks at evidence, suggests fixes. Self-hosted Gemma 4 26B, no third-party LLM APIs, conservative + hedging + willing to say 'I don't know'." />
-  <meta property="og:image" content="https://glassmkr.com/og/introducing-furnace.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/introducing-furnace.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Introducing Furnace: the AI assistant that helps you fix alerts" />
   <meta name="twitter:description" content="The AI assistant we built for Glassmkr. Conservative, hedging, willing to say 'I don't know'. Self-hosted Gemma 4 26B." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/introducing-furnace.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/introducing-furnace.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/introducing-furnace" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "Introducing Furnace: the AI assistant that helps you fix alerts",
     description: "Furnace is the AI assistant we built for Glassmkr. It reads alerts, looks at evidence, suggests remediation. Self-hosted Gemma 4 26B, no third-party LLM APIs.",
-    image: "https://glassmkr.com/og/introducing-furnace.png?v=20260826",
+    image: "https://glassmkr.com/og/introducing-furnace.png?v=20260830",
     datePublished: "2026-05-17",
     dateModified: "2026-05-17",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/introducing-furnace.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/introducing-furnace.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/introducing-furnace",
     articleSection: "AI"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/introducing-furnace.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Introducing Furnace: the AI assistant that helps you fix alerts" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">May 2026 · AI · 5 min read</p>
       <h1>Introducing Furnace: the AI assistant that helps you fix alerts.</h1>
@@ -206,6 +207,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

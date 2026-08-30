@@ -35,7 +35,7 @@
     property="og:description"
     content="One JSON error envelope for the whole API namespace, with stable machine codes and explicit retry guidance."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Glassmkr API errors" />
@@ -43,7 +43,7 @@
     name="twitter:description"
     content="One JSON error envelope for the whole API, with stable machine codes and explicit retry guidance."
   />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>
 

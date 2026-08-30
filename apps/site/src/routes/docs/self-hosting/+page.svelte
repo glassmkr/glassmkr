@@ -23,12 +23,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/self-hosting" />
   <meta property="og:title" content="Self-hosting Glassmkr" />
   <meta property="og:description" content="One compose file: dashboard, Postgres, ClickHouse. Point the agent at your own URL. AGPL-3.0-only, no license key, no node limits." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Self-hosting Glassmkr" />
   <meta name="twitter:description" content="Run the whole stack on your hardware with Docker Compose. AGPL-3.0-only, everything included." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it" />
   <meta property="og:title" content="The most honest AI feature we shipped has no AI in it" />
   <meta property="og:description" content="We built the AI path for our ticket-draft feature, measured it against a plain template on a live alert, and turned it off. The model was fine. Fine did not earn 22 seconds and a hallucination surface." />
-  <meta property="og:image" content="https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="The most honest AI feature we shipped has no AI in it" />
   <meta name="twitter:description" content="We built the AI path, measured it against a template on a live alert, and shipped the template. The model was fine. Fine did not earn 22 seconds." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "The most honest AI feature we shipped has no AI in it",
     description: "We built the self-hosted-Gemma path for our ticket-draft feature, A/B'd it against a plain template on a live degraded-array alert, and shipped the template.",
-    image: "https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260826",
+    image: "https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260830",
     datePublished: "2026-06-21",
     dateModified: "2026-06-21",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/the-most-honest-ai-feature-we-shipped-has-no-ai-in-it.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title The most honest AI feature we shipped has no AI in it" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">June 2026 · Engineering · 6 min read</p>
       <h1>The most honest AI feature we shipped has no AI in it.</h1>
@@ -205,6 +206,9 @@ Thank you for your help.</code></pre>
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

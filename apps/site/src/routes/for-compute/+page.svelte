@@ -57,7 +57,7 @@
     property="og:description"
     content="ECC, machine checks, BMC sensors, PSU redundancy, bonded links, patch drift. The layer cloud monitoring never had to have."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${serviceLd}</` + `script>`}
 </svelte:head>

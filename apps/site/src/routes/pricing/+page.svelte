@@ -65,7 +65,7 @@
     property="og:description"
     content="Free both ways. Self-hosted: AGPL-3.0-only, everything included, no node limits, your data stays on your network. Hosted: free, signups open, same features."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
 
   <meta name="twitter:card" content="summary_large_image" />
@@ -74,7 +74,7 @@
     name="twitter:description"
     content="Free both ways: self-hosted (AGPL-3.0-only, no limits) or the free hosted instance. Same features."
   />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   {@html `<script type="application/ld+json">${productLd.replace(/</g, "\\u003c")}</` + `script>`}
 </svelte:head>
 
