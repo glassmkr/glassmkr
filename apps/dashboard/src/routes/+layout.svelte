@@ -153,7 +153,7 @@
       </svg>
     </button>
     <a href="/" class="mobile-brand" onclick={closeSidebar}>
-      <img src="/logo.svg" alt="" width="20" height="20" />
+      <img src="/logo.svg?v=20260830" alt="" width="20" height="20" />
       <span>GLASSMKR</span>
     </a>
   </div>
@@ -176,7 +176,7 @@
   >
     <div class="sidebar-brand">
       <a href="/" class="brand-link" title="Dashboard home" onclick={closeSidebar}>
-        <img src="/logo.svg" alt="" width="24" height="24" />
+        <img src="/logo.svg?v=20260830" alt="" width="24" height="24" />
         <span>GLASSMKR</span>
       </a>
     </div>
@@ -292,7 +292,7 @@
     <div class="nav-inner container">
       <div class="nav-left-group">
         <span class="nav-logo">
-          <img src="/logo.svg" alt="" width="24" height="24" />
+          <img src="/logo.svg?v=20260830" alt="" width="24" height="24" />
           <span>GLASSMKR</span>
         </span>
       </div>

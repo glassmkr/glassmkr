@@ -31,6 +31,7 @@ export function stripComments(src) {
 const RETIRED = [
   /#e1843b/i,
   /#f5a623/i,
+  /#d4820a/i,
   /rgba\(\s*225\s*,\s*132\s*,\s*59/i,
   /rgba\(\s*245\s*,\s*166\s*,\s*35/i,
   /(?<![.\w])245\s*,\s*166\s*,\s*35/i,
