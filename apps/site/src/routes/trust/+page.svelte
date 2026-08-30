@@ -343,22 +343,29 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
 </article>
 
 <style>
+  /* First-class technical page on the wide shell (spec 16.2); prose keeps
+     its measure, tables and diagrams take the width. */
   .trust {
-    max-width: 800px;
+    width: min(100%, var(--page-max));
     margin: 0 auto;
-    padding: 0 24px;
+    padding: 0 var(--page-gutter);
+  }
+  .trust section p,
+  .trust section li {
+    max-width: 76ch;
   }
 
   .trust-hero {
     padding: 72px 0 48px;
   }
   .trust-hero h1 {
-    font-size: clamp(32px, 5vw, 52px);
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    line-height: 1.1;
+    font-size: clamp(2.4rem, 1.8rem + 2.4vw, 3.9rem);
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    line-height: 1.04;
     color: var(--text-primary);
-    margin: 0 0 24px;
+    margin: 0 0 22px;
+    text-wrap: balance;
   }
   .lede {
     font-size: clamp(16px, 1.8vw, 18px);

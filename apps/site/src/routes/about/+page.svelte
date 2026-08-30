@@ -22,17 +22,28 @@
 <div class="container-narrow">
   <div class="page-header">
     <h1>About Glassmkr</h1>
-    <p>Monitoring for bare metal, built and run by one operator.</p>
+    <p>Operational judgment for people who run servers but do not spend their lives operating them.</p>
   </div>
 
   <div class="divider"></div>
 
   <section>
-    <h2>Who we are</h2>
-    <p>I have spent a decade operating bare metal: racks, switches, IPMI
-        consoles, 3 AM pages about failing drives. I know what breaks and how it
-        breaks, which is the only reason the alert rules are opinionated rather
-        than generic.</p>
+    <h2>Who Glassmkr is for</h2>
+    <p>Glassmkr is for people who are responsible for a Linux server without
+       having a dedicated infrastructure team. You may be deploying an
+       application, running a game or storage server, managing a small software
+       business, or maintaining a homelab. You should not need ten years of
+       bare-metal experience to know that a drive is deteriorating or a RAID
+       array has lost redundancy.</p>
+  </section>
+
+  <section>
+    <h2>Who builds it</h2>
+    <p>I built Glassmkr from ten years of operating bare metal: racks,
+       switches, IPMI consoles, failed drives, bad memory, broken fans, and the
+       pages that arrive at 3 AM. The product turns that experience into
+       defaults, alert rules, evidence, and remediation workflows that other
+       server owners can use without reproducing the same career first.</p>
       <p>Glassmkr is built and operated by one person. The hosted service runs on
         infrastructure I administer myself.</p>
   </section>
@@ -105,8 +116,8 @@
         <li>
           <span class="principles-n">05</span>
           <div>
-            <h3>For operators, by an operator</h3>
-            <p>Hosting companies, MSPs, sysadmins, homelabs. I run the same infrastructure you do.</p>
+            <h3>Built from operations, for more than operators</h3>
+            <p>The rules come from professional infrastructure work. The product is for anyone responsible for keeping a server healthy.</p>
           </div>
         </li>
         <li>
@@ -141,24 +152,31 @@
   .container-narrow {
     position: relative;
     z-index: 1;
-    max-width: 780px;
+    width: min(100%, var(--page-max));
     margin: 0 auto;
-    padding: 0 24px;
+    padding: 0 var(--page-gutter);
+  }
+  /* Wide editorial opening (spec 16.1); body prose keeps its measure. */
+  .container-narrow section p,
+  .container-narrow section li {
+    max-width: 76ch;
   }
 
-  .page-header { padding: 80px 0 48px; }
+  .page-header { padding: clamp(48px, 7vh, 80px) 0 40px; }
   .page-header h1 {
-    font-size: clamp(28px, 4vw, 40px);
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -0.02em;
-    margin-bottom: 16px;
+    font-size: clamp(2.4rem, 1.8rem + 2.6vw, 4rem);
+    font-weight: 500;
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+    margin-bottom: 18px;
     color: var(--text-primary);
   }
   .page-header p {
-    font-size: 16px;
+    font-size: clamp(17px, 1.4vw, 20px);
+    line-height: 1.5;
     color: var(--text-secondary);
-    max-width: 560px;
+    max-width: 34em;
+    text-wrap: balance;
   }
 
   .divider {
