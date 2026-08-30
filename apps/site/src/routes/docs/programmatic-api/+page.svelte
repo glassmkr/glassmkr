@@ -32,7 +32,7 @@
     <header class="page-header">
       <p class="eyebrow">DOCS / PROGRAMMATIC API</p>
       <h1>Programmatic API + account API keys</h1>
-      <p class="docs-subtitle">For the full endpoint reference see the <a href="/docs/api">API reference</a>; for tier gating see <a href="/docs/api/tier-gating">/docs/api/tier-gating</a>. The full read+write programmatic API is on every account, bounded only by the hosted 10-node cap and the rate limits (self-hosted instances have no node limits). For fleet access from a compatible AI client (query, and with your consent manage), see the <a href="/docs/mcp">MCP server</a>.</p>
+      <p class="docs-subtitle">For the full endpoint reference see the <a href="/docs/api">API reference</a>. The full read+write programmatic API is on every account, bounded only by the hosted 10-node cap and the rate limits (self-hosted instances have no node limits). For fleet access from a compatible AI client (query, and with your consent manage), see the <a href="/docs/mcp">MCP server</a>.</p>
     </header>
 
     <section id="keys">

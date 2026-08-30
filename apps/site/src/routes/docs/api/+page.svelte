@@ -71,7 +71,7 @@
         <code>/api/</code> namespace, including a 404 for an unknown path and a 405 for the wrong
         verb. The full code list with retry guidance is at <a href="/docs/api/errors">API errors</a>.
       </p>
-      <p>For programmatic-API specifics (account keys, scopes, audit log) see the <a href="/docs/programmatic-api">Programmatic API</a> page. Nothing in the API is tier-gated; the <a href="/docs/api/tier-gating">Tier gating</a> page records what changed and when.</p>
+      <p>For programmatic-API specifics (account keys, scopes, audit log) see the <a href="/docs/programmatic-api">Programmatic API</a> page. Nothing in the API is gated: every account key with the right scope reaches the full surface.</p>
     </section>
 
     <section id="auth">
@@ -294,7 +294,7 @@
       <div class="endpoint">
         <h3>Restore server</h3>
         <div class="method-path"><span class="method method-post">POST</span> <code>/servers/:server_id/restore</code> <span class="auth-badge">Authenticated</span></div>
-        <p>Restore a single suspended server. Suspension for a missing payment method is a historical state (pre-August 2026, when Glassmkr still had a paid tier); restoring no longer requires a payment method.</p>
+        <p>Restore a single suspended server. Restoring requires nothing beyond the call itself.</p>
       </div>
 
       <div class="endpoint">
@@ -566,7 +566,7 @@
     <section id="idempotency">
       <h2><a href="#idempotency" class="anchor-link">#</a>Idempotency</h2>
       <p><code>POST /servers</code> honors an <code>Idempotency-Key</code> header (1-255 printable ASCII). The first response (success or deterministic 4xx) is cached for 24 hours; replays return the cached response with an <code>Idempotency-Replayed: true</code> header. Concurrent retries with the same key while the original is still in flight return 409.</p>
-      <p class="note">Last verified: 2026-05-22 against Crucible v0.13.3 and Dashboard v1.0. For tier-gating details see <a href="/docs/api/tier-gating">/docs/api/tier-gating</a>.</p>
+      <p class="note">Last verified: 2026-05-22 against Crucible v0.13.3 and Dashboard v1.0.</p>
     </section>
   </article>
 

@@ -692,7 +692,12 @@
   .warnings-table { display: flex; flex-direction: column; font-size: 13px; }
   .warnings-row {
     display: grid;
-    grid-template-columns: 1.4fr 2fr 0.8fr 1fr auto;
+    /* Every row is its own grid, so a content-sized track (auto, or an fr
+       track competing with one) resolves DIFFERENTLY per row and the header
+       stops lining up with the data. Fixed tracks for urgency/first-seen/
+       actions resolve identically in every row, which is what keeps the
+       label over its column. */
+    grid-template-columns: minmax(140px, 1.2fr) minmax(0, 2.4fr) 110px 100px 200px;
     gap: 12px; padding: 12px 8px;
     border-bottom: 1px solid var(--surface-border);
     align-items: center;
