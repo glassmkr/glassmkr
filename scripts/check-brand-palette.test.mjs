@@ -8,6 +8,7 @@ const ok = (c, m) => (c ? console.log(`[brand-palette-test] ok   ${m}`) : (bad++
 // THE RETIRED LITERALS must be caught.
 ok(retiredBrandHits(".x{color:#e1843b}").length > 0, "catches #e1843b");
 ok(retiredBrandHits(".x{color:#F5A623}").length > 0, "catches #F5A623 (case-insensitive)");
+ok(retiredBrandHits(".x{fill:#D4820A}").length > 0, "catches the retired logo amber #D4820A");
 ok(retiredBrandHits("border:1px solid rgba(245, 166, 35, 0.2)").length > 0, "catches the #f5a623 rgba form");
 ok(retiredBrandHits('const c="rgba(245,166,35,0.9)"').length > 0, "catches the bare canvas triple");
 // The new brand must NOT be flagged.

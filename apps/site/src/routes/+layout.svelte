@@ -105,7 +105,7 @@
 <header class="site-nav">
   <div class="nav-inner">
     <a href="/" class="nav-logo">
-      <img src="/assets/logo.svg" alt="" width="24" height="24" />
+      <img src="/assets/logo.svg?v=20260830" alt="" width="24" height="24" />
       <span>GLASSMKR</span>
     </a>
     <nav class="nav-links" aria-label="Primary">
@@ -182,7 +182,7 @@
   <div class="footer-grid">
     <div class="footer-identity">
       <a href="/" class="footer-mark">
-        <img src="/assets/logo.svg" alt="" width="20" height="20" />
+        <img src="/assets/logo.svg?v=20260830" alt="" width="20" height="20" />
         <span>GLASSMKR</span>
       </a>
       <p class="footer-desc">
