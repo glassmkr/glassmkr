@@ -186,7 +186,7 @@ curl -sS -X POST "https://app.glassmkr.com/api/v1/channels/$CHANNEL_ID/test" \
 &#125;</code></pre>
       <p>Not every error looks like this, and code that parses our responses should not assume it does. An authentication failure returns <code>&#123;"message": "Authentication failed"&#125;</code> with no code. A method mismatch returns plain text. A path that does not exist returns an HTML error page rather than JSON. Branch on the HTTP status first and treat the body as a best-effort explanation.</p>
       <p>Every response carries an <code>x-request-id</code> header. Quote that value when contacting <a href="mailto:support@glassmkr.com">support</a>; we correlate it against the audit log and application logs. It is a header, not a body field.</p>
-      <p class="note">Last verified: 2026-08-27 against the live API, by requesting each shape rather than by reading the handler.</p>
+      <p class="note">Last verified: 2026-08-30 against the live API at Crucible v1.1.1, by requesting each shape rather than by reading the handler.</p>
     </section>
   </article>
 

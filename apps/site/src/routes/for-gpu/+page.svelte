@@ -1,4 +1,5 @@
 <script lang="ts">
+  import gpu from "$lib/data/exhibits/gpu-l4-baseline.json";
   // /for-gpu per CONTENT_TRANCHE_1 spec (2026-05-17). Audience:
   // GPU / ML infrastructure operators; a high-value, narrow vertical.
   import type { PageData } from "./$types";
@@ -76,7 +77,7 @@
       drives and a kernel. We monitor the host thoroughly and tell you plainly where that stops.
     </p>
     <div class="cta-row">
-      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Install in 2 minutes</a>
+      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Monitor a server for free</a>
       <a href="https://github.com/glassmkr/crucible" class="btn btn-ghost btn-lg">View Crucible on GitHub<span class="mit-badge">AGPL-3.0-only</span></a>
     </div>
     <p class="cta-caption">Free hosted or self-hosted. Test on a single GPU box before deploying fleet-wide.</p>
@@ -85,6 +86,30 @@
       <code>curl -fsSL https://glassmkr.com/install.sh | sudo bash</code>
       <p class="install-version">Crucible v{data.crucibleVersion} on npm</p>
     </div>
+  </section>
+
+  <section class="section" aria-label="What Glassmkr watches on a GPU host">
+    <figure class="first-proof">
+      <div class="fp-head">
+        <span class="fp-title">{gpu.gpu.name} on {gpu.host.hostname}</span>
+        <span class="fp-host">the host that serves Glassmkr's own AI inference</span>
+      </div>
+      <div class="fp-body">
+        <p class="fp-consequence">This GPU is healthy, and that is the honest exhibit: the fleet has no GPU fault to show you today, so here is exactly what is being watched while it stays that way.</p>
+        <div class="fp-row"><p class="fp-label">WATCHED NOW</p>
+          <div class="fp-facts">
+            <span>ECC on, 0 uncorrected</span>
+            <span>0 XID events</span>
+            <span>{gpu.gpu.temp_c} C, no thermal slowdown</span>
+            <span>{gpu.gpu.power_draw_w} W of {gpu.gpu.power_limit_w} W</span>
+            <span>PCIe {gpu.gpu.pcie_link}</span>
+            <span>{gpu.gpu.pstate}</span>
+          </div>
+        </div>
+        <div class="fp-row"><p class="fp-label">THE HOST'S ONE REAL ALERT</p><p class="fp-mono">{gpu.alert.title}: {gpu.alert.message}</p></div>
+      </div>
+      <figcaption class="provenance">captured 2026-08-30 18:27 UTC · host {gpu.host.hostname} · live account capture · agent {gpu.host.collector_version} · driver {gpu.gpu.driver_version}</figcaption>
+    </figure>
   </section>
 
   <section class="section">

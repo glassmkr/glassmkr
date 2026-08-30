@@ -50,7 +50,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/when-monitoring-punishes-customers.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title When your monitoring tool punishes customers for doing the right thing" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">May 2026 · Engineering</p>
 
     <h1>When your monitoring tool punishes customers for doing the right thing</h1>
@@ -132,9 +131,6 @@
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 720px;
     margin: 0 auto;

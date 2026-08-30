@@ -1,4 +1,5 @@
 <script lang="ts">
+  import fleetEx from "$lib/data/exhibits/demo-fleet-raid.json";
   // /for-providers per CC_SPEC_PROVIDER_MARKETING (2026-07-15). Audience:
   // dedicated-server / bare-metal hosting providers (the channel) and,
   // bottom-up, their end customers. Positioning reconciled from the
@@ -76,7 +77,7 @@
       The in-OS health layer for the dedicated servers you rent out: SMART trends, ECC errors, PSU redundancy, GPU health. Your customers, or your platform, wire it in over one API.
     </p>
     <div class="cta-row">
-      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Install in 2 minutes</a>
+      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Monitor a server for free</a>
       <a href="https://github.com/glassmkr/crucible" class="btn btn-ghost btn-lg">View Crucible on GitHub<span class="mit-badge">AGPL-3.0-only</span></a>
     </div>
     <p class="cta-caption">Free hosted or self-hosted. Prove it on boxes you run yourself before offering it to customers.</p>
@@ -88,6 +89,24 @@
     <p class="cta-caption">
       Baking it into provisioning? Drop <code>glassmkr-crucible enroll</code> into your post-install or cloud-init: one account key, every host self-registers by machine ID. See <a href="/docs/automated-onboarding">automated fleet onboarding</a>.
     </p>
+  </section>
+
+  <section class="section" aria-label="A fleet at a glance">
+    <figure class="first-proof">
+      <div class="fp-head">
+        <span class="fp-title">Four customer-shaped hosts, one view</span>
+        <span class="fp-host">read-only sample-fleet capture</span>
+      </div>
+      <div class="fp-body">
+        <div class="fp-row">
+          {#each fleetEx.fleet as h (h.hostname)}
+            <p class="fp-mono">{h.hostname} &middot; {h.active_alerts} alert{h.active_alerts === 1 ? "" : "s"} &middot; {h.os_type} {h.os_version} &middot; {h.dmi_vendor} {h.dmi_product}</p>
+          {/each}
+        </div>
+        <p class="fp-text">Onboarding a customer box is one agent install against one collector key: no inbound ports on their machine, and the key can push that one server's telemetry and nothing else.</p>
+      </div>
+      <figcaption class="provenance">captured 2026-08-30 10:31 UTC · public demo, read-only sample-fleet capture · agent {fleetEx.host_snapshot.collector_version}</figcaption>
+    </figure>
   </section>
 
   <section class="section">

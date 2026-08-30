@@ -436,6 +436,18 @@
     {/if}
     <div class="server-header" bind:this={headerEl}>
       <h1>{server.hostname || server.name}</h1>
+      <!-- Mobile-only vitals line (review P1-6): health state and snapshot
+           age belong in the first viewport; the full metadata grid follows
+           the alert on a phone. -->
+      <p class="mobile-vitals" aria-hidden="false">
+        {#if alerts.filter((a) => !a.acknowledged).length > 0}
+          <span class="mv-alerts">{alerts.filter((a) => !a.acknowledged).length} active alert{alerts.filter((a) => !a.acknowledged).length === 1 ? "" : "s"}</span>
+        {:else}
+          <span class="mv-ok">no active alerts</span>
+        {/if}
+        <span class="mv-sep">&middot;</span>
+        <span>last seen {server.last_seen_at ? timeAgo(server.last_seen_at) : "never"}</span>
+      </p>
       <div class="header-actions">
         {#if !customer?.isDemo && hostProfiles.length > 0}
           <div class="profile-inline">
@@ -948,6 +960,36 @@
      nothing below it to scroll past. */
   .container {
     padding-bottom: 45vh;
+  }
+
+  .mobile-vitals { display: none; }
+
+  /* Mobile priority order (review P1-6): identity and freshness, then the
+     highest-priority alert with its evidence and action, then navigation,
+     then the metadata/inventory grid, then everything else. Desktop keeps
+     the denser architecture unchanged. */
+  @media (max-width: 720px) {
+    .mobile-vitals {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 8px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: var(--text-tertiary);
+      margin: 4px 0 0;
+    }
+    .mobile-vitals .mv-alerts { color: var(--g-critical); }
+    .mobile-vitals .mv-ok { color: var(--g-healthy); }
+    .mobile-vitals .mv-sep { color: var(--g-border-strong); }
+
+    .container { display: flex; flex-direction: column; }
+    .container > * { order: 10; }
+    .container > .back-link { order: 0; }
+    .container > .suspended-banner, .container > .ambiguous-banner { order: 1; }
+    .container > .server-header { order: 2; }
+    .container > section:first-of-type { order: 3; } /* Alerts */
+    .container > .section-nav { order: 4; }
+    .container > .info-grid { order: 5; }
   }
 
   /* Section Nav */

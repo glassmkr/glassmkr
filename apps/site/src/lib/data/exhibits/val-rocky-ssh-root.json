@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-08-30T18:31:39Z",
+  "source": "live account capture via the read API (val-rocky, validation fleet)",
+  "host": {
+    "hostname": "val-rocky",
+    "os": "Rocky Linux 9.8 (Blue Onyx)",
+    "hardware": "Supermicro SYS-530MT-H8TNR",
+    "collector_version": "1.1.1"
+  },
+  "alert": {
+    "alert_type": "ssh_root_password",
+    "severity": "warning",
+    "title": "SSH root login with password enabled",
+    "message": "PermitRootLogin is \"yes\" and PasswordAuthentication is \"yes\". Root can be brute-forced over SSH.",
+    "evidence": { "permitRootLogin": "yes", "passwordAuthentication": "yes" },
+    "recommendation": "Set \"PermitRootLogin prohibit-password\" in /etc/ssh/sshd_config and restart sshd. Key-based root login still works."
+  }
+}

@@ -232,3 +232,40 @@ h1 {
   .cta-row .btn-lg { justify-content: center; }
   .pricing-examples { flex-direction: column; gap: 8px; }
 }
+
+/* Route-specific first proof (review P1-5): one real exhibit before any
+   installation talk. Values render from hash-verified captures. */
+.first-proof {
+  border: 1px solid var(--g-border-strong, rgba(247,244,238,0.23));
+  border-radius: 6px;
+  background: var(--g-surface-1, #0d0d0c);
+  overflow: hidden;
+  margin: 8px 0 0;
+  text-align: left;
+}
+.first-proof .fp-head {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--g-border-subtle, rgba(247,244,238,0.075));
+  background: var(--g-surface-2, #141310);
+}
+.first-proof .fp-sev {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em;
+  color: var(--g-warning, #e5b94c); border: 1px solid var(--g-warning, #e5b94c);
+  border-radius: 2px; padding: 2px 7px; white-space: nowrap;
+}
+.first-proof .fp-sev.crit { color: var(--g-critical, #ee6a7a); border-color: var(--g-critical, #ee6a7a); }
+.first-proof .fp-title { font-size: 15px; font-weight: 500; color: var(--text-primary); }
+.first-proof .fp-host { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
+.first-proof .fp-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
+.first-proof .fp-consequence { font-size: 14.5px; line-height: 1.55; color: var(--text-primary); margin: 0; max-width: 70ch; }
+.first-proof .fp-row { margin: 0; }
+.first-proof .fp-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin: 0 0 4px; }
+.first-proof .fp-mono { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; color: var(--text-secondary); margin: 0; }
+.first-proof .fp-text { font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); margin: 0; max-width: 72ch; }
+.first-proof .fp-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.first-proof .provenance {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em;
+  color: var(--text-tertiary); border-top: 1px solid var(--g-border-subtle, rgba(247,244,238,0.075));
+  padding: 8px 18px; margin: 0;
+}

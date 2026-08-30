@@ -43,7 +43,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/the-reboot-that-delists-your-gpu-host.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title A single reboot would have de-listed our entire GPU fleet" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">June 2026 · GPU · 6 min read</p>
       <h1>A single reboot would have de-listed our entire GPU fleet. Here is the trap, and why monitoring should catch it before you hit it.</h1>
@@ -108,9 +107,6 @@ sudo update-initramfs -u</code></pre>
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

@@ -43,7 +43,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/haiku-blind-remediation.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title We gave Claude Haiku root on a broken server" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Engineering · 5 min read</p>
       <h1>We gave Claude Haiku root on a broken server</h1>
@@ -117,9 +116,6 @@
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

@@ -43,7 +43,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/smart-said-passed.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title SMART said PASSED. The drive had 477 dead sectors." width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">August 2026 · Engineering · 7 min read</p>
       <h1>SMART said PASSED. The drive had 477 dead sectors.</h1>
@@ -265,9 +264,6 @@
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

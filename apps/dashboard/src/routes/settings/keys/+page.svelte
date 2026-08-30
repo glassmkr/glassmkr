@@ -386,15 +386,16 @@
 
 <!-- Create modal -->
 {#if createOpen}
-  <div class="overlay" role="presentation" onclick={() => (createOpen = false)}>
-    <div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="overlay" role="presentation" onkeydown={(e) => e.key === "Escape" && (createOpen = false)} onclick={(e) => e.target === e.currentTarget && (createOpen = false)}>
+    <div class="modal" role="dialog" tabindex="-1">
       <h2>Create new API key</h2>
       <div class="form-row">
-        <label>Name</label>
-        <input type="text" bind:value={newName} maxlength="64" placeholder="production-deployer" />
+        <label>Name
+          <input type="text" bind:value={newName} maxlength="64" placeholder="production-deployer" />
+        </label>
       </div>
-        <div class="form-row">
-          <label>Scope</label>
+        <div class="form-row" role="radiogroup" aria-labelledby="scope-caption">
+          <span class="form-caption" id="scope-caption">Scope</span>
           <div class="scope-options">
             <label class="scope-option">
               <input type="radio" name="scope" value="read" bind:group={newScope} />
@@ -420,7 +421,7 @@
           </div>
         </div>
       <div class="form-row">
-        <label>Expires (optional)</label>
+        <span class="form-caption" id="expires-caption">Expires (optional)</span>
         <DatePicker bind:value={newExpiresAt} enableTime={true} minDate={defaultExpiryMin()} placeholder="Select date and time" />
         <div class="desc">Leave blank for an indefinite key. Maximum 5 years.</div>
       </div>
@@ -501,8 +502,8 @@
      step-up gate. Prompts for the account password, posts to
      /api/v1/account/verify-password, then replays the queued action. -->
 {#if reauthOpen}
-  <div class="overlay" role="presentation" onclick={() => (reauthOpen = false)}>
-    <div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="overlay" role="presentation" onkeydown={(e) => e.key === "Escape" && (reauthOpen = false)} onclick={(e) => e.target === e.currentTarget && (reauthOpen = false)}>
+    <div class="modal" role="dialog" tabindex="-1">
       <h2>Confirm it's you</h2>
       <p class="desc">
         Creating or rotating an API key is a sensitive operation, so we
@@ -569,8 +570,8 @@
 <!-- Revoke modal: graceful vs immediate, inline-radio so the choice is
      visible at confirm time rather than a floating checkbox. -->
 {#if revokeTarget !== null}
-  <div class="overlay" role="presentation" onclick={() => { revokeTarget = null; revokeImmediate = false; }}>
-    <div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="overlay" role="presentation" onkeydown={(e) => e.key === "Escape" && (revokeTarget = null)} onclick={(e) => { if (e.target === e.currentTarget) { revokeTarget = null; revokeImmediate = false; } }}>
+    <div class="modal" role="dialog" tabindex="-1">
       <h2>Revoke key: {revokeTarget.name}</h2>
       <p class="desc">
         Choose how soon the key stops working. For a compromised or leaked
@@ -610,6 +611,8 @@
 {/if}
 
 <style>
+  .form-caption { display: block; }
+  /* .form-caption shares whatever the form-row label rule styles. */
   .container { margin: 0 auto; }
   .back-link { font-size: 12px; color: var(--text-tertiary); text-decoration: none; display: inline-block; margin-bottom: 12px; }
   .page-title { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
@@ -654,7 +657,7 @@
   .modal { background: var(--bg); border: 1px solid var(--surface-border); border-radius: 4px; padding: 24px; max-width: 520px; width: 100%; }
   .modal h2 { margin-top: 0; }
   .form-row { margin-bottom: 16px; }
-  .form-row label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+  .form-row label, .form-row .form-caption { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
   .form-row input[type="text"] { width: 100%; padding: 8px 10px; background: var(--surface); border: 1px solid var(--surface-border); border-radius: 4px; color: var(--text-primary); font-size: 14px; }
   .scope-options { display: flex; flex-direction: column; gap: 10px; }
   /* `label.scope-option` (tag + class = (0,1,1)) beats the form-row

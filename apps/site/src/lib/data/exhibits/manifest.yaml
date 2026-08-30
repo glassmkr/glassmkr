@@ -83,3 +83,42 @@ exhibits:
       scratch box with no other purpose.
 
       Never substitute a synthetic hardware alert to close this gap.
+  - id: val-rocky-ssh-root
+    captured_at: 2026-08-30T18:31:39Z
+    host_alias: val-rocky
+    scenario_id: unarmed-baseline
+    crucible_version: 1.1.1
+    dashboard_commit: "38d53e5"
+    source_environment: validation fleet
+    viewport: responsive
+    artifact_path: apps/site/src/lib/data/exhibits/val-rocky-ssh-root.json
+    source_data_path: apps/site/src/lib/data/exhibits/val-rocky-ssh-root.json
+    sha256: 1282f61a604c5a30902628c852b39902aaee1aa437d91a55dee6bca45f1d87e8
+    notes: >
+      A real, unarmed alert from the validation fleet, read from the account
+      API on 2026-08-30: val-rocky shipped from the provider with password
+      root SSH enabled, which is exactly the class of quiet risk the
+      /for-compute audience page exists to show. Alert body, evidence, and
+      recommendation are verbatim. Renders as the first proof on
+      /for-compute.
+  - id: gpu-l4-baseline
+    captured_at: 2026-08-30T18:27:41Z
+    host_alias: glassmkr-gpu-1
+    scenario_id: unarmed-baseline
+    crucible_version: 1.1.1
+    dashboard_commit: "38d53e5"
+    source_environment: core production fleet
+    viewport: responsive
+    artifact_path: apps/site/src/lib/data/exhibits/gpu-l4-baseline.json
+    source_data_path: apps/site/src/lib/data/exhibits/gpu-l4-baseline.json
+    sha256: c9f5ef773df451e8a96b0168258fb5a053174055599dcb68dc91b9f414959bec
+    notes: >
+      The GPU telemetry surface of glassmkr-gpu-1 (the L4 that serves
+      Glassmkr's own AI inference), read from the account API on 2026-08-30,
+      plus the host's one real active alert (kernel_needs_reboot). The fleet
+      currently has NO GPU fault, and the truth test forbids inventing one:
+      the /for-gpu first proof is therefore an honestly healthy GPU baseline
+      (ECC on, zero uncorrected, no throttle) with a real actionable alert on
+      the same host. Swap in a real XID/ECC capture through this manifest if
+      one ever occurs.
+

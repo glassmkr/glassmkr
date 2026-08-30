@@ -462,8 +462,6 @@
     min-height: 24px;
     display: inline-flex;
     align-items: center;
-    display: inline-flex;
-    align-items: center;
     gap: 8px;
     font-size: 14px;
     font-weight: 600;
