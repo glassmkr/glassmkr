@@ -71,8 +71,25 @@ DEPLOYED_FILE="/home/agent/.glassmkr-deployed-sha"
 # (2026-07-25) so it does not share fate with the infrastructure it reports on.
 # apps/status now builds with adapter-cloudflare and emits no build/index.js for
 # systemd to run. Deployed with `pnpm --filter @glassmkr/status deploy:cf`.
-SERVICES=(glassmkr-site glassmkr-dashboard glassmkr-ops)
-NGINX_REPO_DIR="$REPO_DIR/infrastructure/nginx/sites"
+SERVICES=(glassmkr-site glassmkr-dashboard)
+# glassmkr-ops is deploy-managed only while the repo still carries its
+# source: after the hosted-glue split it runs as a standalone artifact from
+# /home/agent/ops-app (see the private repo's hosted/ runbook) and deploys
+# must not stop or restart it.
+if [ -d "$REPO_DIR/apps/ops" ]; then
+  SERVICES+=(glassmkr-ops)
+fi
+# Hosted-glue split (2026-08-30): nginx site configs and the ops app are
+# moving to the private repository, with server-local homes on this box.
+# Prefer the local infra dir once the cutover has created it; fall back to
+# the in-repo path so this script works identically before and after the
+# cutover and the public-repo removal can land as a separate, safe step.
+NGINX_LOCAL_DIR="/home/agent/infra/nginx/sites"
+if [ -d "$NGINX_LOCAL_DIR" ]; then
+  NGINX_REPO_DIR="$NGINX_LOCAL_DIR"
+else
+  NGINX_REPO_DIR="$REPO_DIR/infrastructure/nginx/sites"
+fi
 NGINX_SITES_AVAILABLE="/etc/nginx/sites-available"
 NGINX_SITES_ENABLED="/etc/nginx/sites-enabled"
 
