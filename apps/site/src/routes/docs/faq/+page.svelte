@@ -68,12 +68,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/faq" />
   <meta property="og:title" content="Glassmkr FAQ" />
   <meta property="og:description" content="Pricing, OS support, agent footprint, data residency, AI analysis." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Glassmkr FAQ" />
   <meta name="twitter:description" content="Pricing, OS support, agent footprint, data residency, AI analysis." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
   {@html `<script type="application/ld+json">${faqLd}</` + `script>`}

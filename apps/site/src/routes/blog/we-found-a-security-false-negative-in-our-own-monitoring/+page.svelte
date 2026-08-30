@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/we-found-a-security-false-negative-in-our-own-monitoring" />
   <meta property="og:title" content="We found a security false-negative in our own monitoring" />
   <meta property="og:description" content="The worst failure mode for a monitoring tool is the alert that stays quiet while something is wrong. We found one in our own product, caught it by dogfooding, and fixed it in Crucible 0.13.6." />
-  <meta property="og:image" content="https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="We found a security false-negative in our own monitoring" />
   <meta name="twitter:description" content="Download-only dnf-automatic on RHEL hosts silently suppressed our pending-patch alert. We caught it dogfooding, fixed it in 0.13.6, and we are telling you about it." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/we-found-a-security-false-negative-in-our-own-monitoring" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "We found a security false-negative in our own monitoring",
     description: "On RHEL-family hosts, download-only dnf-automatic timers were treated as auto-updates configured, silently suppressing the pending_security_updates alert. What the bug was, how dogfooding caught it, and the fix in Crucible 0.13.6.",
-    image: "https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260826",
+    image: "https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260830",
     datePublished: "2026-05-29",
     dateModified: "2026-05-29",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/we-found-a-security-false-negative-in-our-own-monitoring",
     articleSection: "Security"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/we-found-a-security-false-negative-in-our-own-monitoring.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title We found a security false-negative in our own monitoring" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">May 2026 · Security · 5 min read</p>
       <h1>We found a security false-negative in our own monitoring. Here is exactly what it was.</h1>
@@ -137,6 +138,9 @@ sudo systemctl restart glassmkr-crucible</code></pre>
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
 
   .post {
     padding: 56px 0 80px;

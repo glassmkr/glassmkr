@@ -8,7 +8,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/qwen3-6-vs-gemma-4-infrastructure-narration" />
   <meta property="og:title" content="We benchmarked Qwen3.6 against our production Gemma 4 on an L4" />
   <meta property="og:description" content="Three-way benchmark on a production health analysis prompt. Qwen3.6 no-think was 30% faster than Gemma 4. Thinking mode was not worth shipping. Both models hallucinated the AMD TSA acronym." />
-  <meta property="og:image" content="https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Comparison showing both Gemma 4 and Qwen3.6 hallucinated the AMD TSA vulnerability acronym in our benchmark" />
@@ -18,7 +18,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="We benchmarked Qwen3.6 against our production Gemma 4 on an L4" />
   <meta name="twitter:description" content="Qwen3.6 no-think was 30% faster than Gemma 4. Thinking mode is a trap. Both models hallucinated the AMD TSA acronym." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260830" />
   <meta name="twitter:image:alt" content="Comparison showing both Gemma 4 and Qwen3.6 hallucinated the AMD TSA vulnerability acronym" />
   <link rel="canonical" href="https://glassmkr.com/blog/qwen3-6-vs-gemma-4-infrastructure-narration" />
 
@@ -28,11 +28,11 @@
     "@type": "BlogPosting",
     headline: "We benchmarked Qwen3.6 against our production Gemma 4 on an L4",
     description: "Three-way benchmark of Gemma 4 26B-A4B, Qwen3.6 35B-A3B no-think, and Qwen3.6 35B-A3B thinking on a production infrastructure health analysis prompt. Real wall-clock numbers, VRAM footprints, and the quality-latency tradeoff that matters for narration.",
-    image: "https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260826",
+    image: "https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260830",
     datePublished: "2026-04-21",
     dateModified: "2026-04-21",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/qwen3-6-vs-gemma-4-infrastructure-narration",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -49,6 +49,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/qwen3-6-vs-gemma-4-infrastructure-narration.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title We benchmarked Qwen3.6 against our production Gemma 4 on an L4. Here's what actually mattered." width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Engineering</p>
 
     <h1>We benchmarked Qwen3.6 against our production Gemma 4 on an L4. Here's what actually mattered.</h1>
@@ -221,6 +222,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 720px;
     margin: 0 auto;

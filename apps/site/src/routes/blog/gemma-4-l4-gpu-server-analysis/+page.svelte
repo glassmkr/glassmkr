@@ -7,7 +7,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/gemma-4-l4-gpu-server-analysis" />
   <meta property="og:title" content="Running Gemma 4 on an L4 GPU for production server analysis" />
   <meta property="og:description" content="How we deployed Gemma 4 26B-A4B via llama.cpp on an NVIDIA L4 24GB GPU to power self-hosted AI health analysis for bare metal servers." />
-  <meta property="og:image" content="https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Terminal mockup: eval.py structured-output benchmark, Gemma 4 26B-A4B (3.8B active MoE) marked ship while Llama 3.1 8B, Llama 3.3 70B, and Qwen 2.5 32B are rejected" />
@@ -17,7 +17,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Running Gemma 4 on an L4 GPU for production server analysis" />
   <meta name="twitter:description" content="How we deployed Gemma 4 26B-A4B via llama.cpp on an NVIDIA L4 24GB GPU to power self-hosted AI health analysis for bare metal servers." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260830" />
   <meta name="twitter:image:alt" content="Gemma 4 26B-A4B (3.8B active) shipped; dense models 8B, 32B, and 70B did not make it" />
   <link rel="canonical" href="https://glassmkr.com/blog/gemma-4-l4-gpu-server-analysis" />
 
@@ -27,11 +27,11 @@
     "@type": "BlogPosting",
     headline: "Running Gemma 4 on an L4 GPU for production server analysis",
     description: "How we deployed Gemma 4 26B-A4B via llama.cpp on an NVIDIA L4 24GB GPU to power self-hosted AI health analysis for bare metal servers.",
-    image: "https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260826",
+    image: "https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260830",
     datePublished: "2026-04-10",
     dateModified: "2026-04-10",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/gemma-4-l4-gpu-server-analysis.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/gemma-4-l4-gpu-server-analysis",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -48,6 +48,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/gemma-4-l4-gpu-server-analysis.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title What We Learned Running Gemma 4 on an L4 GPU for Production Server Analysis" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Engineering</p>
 
     <h1>Running Gemma 4 on an L4 GPU for production server analysis</h1>
@@ -168,6 +169,9 @@ RestartSec=5</code></pre>
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 680px;
     margin: 0 auto;

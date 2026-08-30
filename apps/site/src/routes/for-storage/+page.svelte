@@ -57,7 +57,7 @@
     property="og:description"
     content="A drive can report PASSED with hundreds of dead sectors. We read the raw attributes over time, not the one-bit verdict."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/smart-said-passed.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/smart-said-passed.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${serviceLd}</` + `script>`}
 </svelte:head>

@@ -19,12 +19,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/automated-onboarding" />
   <meta property="og:title" content="Automated fleet onboarding (glassmkr-crucible enroll)" />
   <meta property="og:description" content="One account key baked into automation, each host self-registers by machine ID and gets its own collector key. Idempotent, no per-host secrets." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Automated fleet onboarding (glassmkr-crucible enroll)" />
   <meta name="twitter:description" content="One account key, zero per-host secrets. Idempotent, machine-ID keyed. Ansible + cloud-init." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/open-model-ladder-blind-remediation" />
   <meta property="og:title" content="Same model, same server, opposite result: the half of agent testing everyone forgets" />
   <meta property="og:description" content="A ladder of open-weight models, real broken servers, and a read-only key that returns 403 on any write. Graded on the box, the thing that most decided success was not size. It was whether the harness matched how the model was trained." />
-  <meta property="og:image" content="https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Same model, same server, opposite result" />
   <meta name="twitter:description" content="Nine open-weight models given root on real broken servers, graded on the box. North scores 0 in a plain-text harness and 7 with tools; Phi-4 is the mirror. The scaffold has to match how the model was trained." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/open-model-ladder-blind-remediation" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "Same model, same server, opposite result: the half of agent testing everyone forgets",
     description: "A standing blind-remediation exercise across nine open-weight models on real bare-metal servers, graded against the machine via a read-only key that returns 403 on any write. The strongest predictor of success was harness-fit, not model size.",
-    image: "https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260826",
+    image: "https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260830",
     datePublished: "2026-07-10",
     dateModified: "2026-07-10",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/open-model-ladder-blind-remediation.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/open-model-ladder-blind-remediation",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/open-model-ladder-blind-remediation.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Same model, same server, opposite result: the half of agent testing everyone forgets" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Engineering · 8 min read</p>
       <h1>Same model, same server, opposite result: the half of agent testing everyone forgets</h1>
@@ -94,7 +95,7 @@
       Claude is the disclosed reference ceiling from the Haiku post, not a fair peer to open weights, so it sits out the comparison here. One run per model per scenario. n=1. We say that up front because it means single surprising cells are anecdotes, and only the patterns that repeat across models are load-bearing. The headline is one of those patterns.
     </p>
 
-    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-matrix.png?v=3" alt="A table of nine open-weight models against five alert scenarios, cells marked genuine fix, partial, over-claimed, or no fix, all graded on the box. A 27B and a 30B top the table; the 120B lands mid-pack." width="1700" height="1948" loading="lazy" decoding="async" />
+    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-matrix.png?v=20260830" alt="A table of nine open-weight models against five alert scenarios, cells marked genuine fix, partial, over-claimed, or no fix, all graded on the box. A 27B and a 30B top the table; the 120B lands mid-pack." width="1700" height="1948" loading="lazy" decoding="async" />
 
     <p>
       The honest first read of that matrix: honesty and competence do not track size. The best operators in the set were a 27B and a 30B, ThinkingCap and Qwen3-Coder-Next, which matched or edged the 26B Gemma we run in production. The 120B was mid-pack on genuine fixes (four across the matrix), not last, and not first. We are not going to sell you "small model beats big model," because the more interesting thing is that the size axis mostly dissolved. Something else was doing the deciding.
@@ -114,7 +115,7 @@
       To fix it, the model validated and reloaded the ssh config with <code>sshd -t &amp;&amp; systemctl reload ssh</code>, but it never edited the config. Reloading an unchanged config changes nothing, and on the box root password login was still enabled. It did something, and was wrong about the effect.
     </p>
 
-    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-receipt.png?v=3" alt="Qwen3-VL's finish text claiming it disabled root password login, above the on-box sshd -T output still showing permitrootlogin yes and passwordauthentication yes." width="1700" height="1756" loading="lazy" decoding="async" />
+    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-receipt.png?v=20260830" alt="Qwen3-VL's finish text claiming it disabled root password login, above the on-box sshd -T output still showing permitrootlogin yes and passwordauthentication yes." width="1700" height="1756" loading="lazy" decoding="async" />
 
     <p>
       Execution confabulation: the model reports doing a thing it never did. gpt-oss-120b, on the same set of alerts, genuinely fixed the clock (it enabled and verified systemd-timesyncd), and then wrote:
@@ -153,13 +154,13 @@
       Phi-4 is the mirror image. In plain text it worked: it acted, ran real commands, fixed six. Handed tools, it went inert, writing a tidy plan and then stopping without a single tool call, once politely explaining that as an AI it could not run commands. It is not tool-trained, so a tool-calling harness gives it nothing to do.
     </p>
 
-    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-scaffold.png?v=3" alt="Two stacked bar charts. North-Mini scores 0 genuine fixes in the plain-text harness and 7 with native tool-calling; Phi-4 is the mirror, 6 in plain text and 0 with tools." width="1700" height="2140" loading="lazy" decoding="async" />
+    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-scaffold.png?v=20260830" alt="Two stacked bar charts. North-Mini scores 0 genuine fixes in the plain-text harness and 7 with native tool-calling; Phi-4 is the mirror, 6 in plain text and 0 with tools." width="1700" height="2140" loading="lazy" decoding="async" />
 
     <p>
       Line those two up and the point is unmissable: the scaffold has to match how the model was trained. A single fixed harness, all-text or all-tool, silently zeroes out a capable model at one end or the other. If we had only built the tool-calling harness, we would have written Phi-4 off as broken. If we had only built the text one, North. Neither would have been true. You only see it by running both, against a scoreboard the model cannot talk past.
     </p>
 
-    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-taxonomy.png?v=3" alt="Four groups: works either way (Gemma, ThinkingCap, Qwen3-Coder-Next, gpt-oss, Mistral); tool-only (North-Mini, 0 in text to 7 with tools); text-only (Phi-4, 6 in text to 0 with tools); and Laguna, which we could not serve cleanly in this harness." width="1700" height="2018" loading="lazy" decoding="async" />
+    <img class="post-figure" src="/og/open-model-ladder-blind-remediation-taxonomy.png?v=20260830" alt="Four groups: works either way (Gemma, ThinkingCap, Qwen3-Coder-Next, gpt-oss, Mistral); tool-only (North-Mini, 0 in text to 7 with tools); text-only (Phi-4, 6 in text to 0 with tools); and Laguna, which we could not serve cleanly in this harness." width="1700" height="2018" loading="lazy" decoding="async" />
 
     <p>
       And this is why we keep the honesty layer around the whole thing. If we had trusted the models' own reports, North would have looked confused in both harnesses (it narrates poorly either way), and Phi-4's polished tool-mode plan would have read like success. The read-only key is what let us see that one of those confident-looking sessions changed nothing on the box and the other changed everything.
@@ -192,6 +193,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

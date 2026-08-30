@@ -20,12 +20,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/getting-started" />
   <meta property="og:title" content="Getting started with Glassmkr" />
   <meta property="og:description" content="Register a server, install Crucible, verify the first snapshot. About five minutes end to end." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Getting started with Glassmkr" />
   <meta name="twitter:description" content="Install Crucible and ship your first snapshot. Five minutes end to end." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/manage-your-fleet-by-talking-to-it" />
   <meta property="og:title" content="Manage your fleet by talking to it" />
   <meta property="og:description" content="Glassmkr over MCP: connect an AI client with a browser sign-in, query your fleet, and (with consent) manage it. Plus how we made an LLM-invokable delete safe." />
-  <meta property="og:image" content="https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Manage your fleet by talking to it" />
   <meta name="twitter:description" content="Glassmkr over MCP: connect an AI client with a browser sign-in, query your fleet, and (with consent) manage it. Plus how we made an LLM-invokable delete safe." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/manage-your-fleet-by-talking-to-it" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "Manage your fleet by talking to it",
     description: "Glassmkr now speaks the Model Context Protocol: an AI client connects with a browser sign-in and can query your fleet and, with the scopes you grant, manage it. Plus the design that makes an LLM-invokable delete safe.",
-    image: "https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260826",
+    image: "https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260830",
     datePublished: "2026-07-21",
     dateModified: "2026-07-21",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/manage-your-fleet-by-talking-to-it.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/manage-your-fleet-by-talking-to-it",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/manage-your-fleet-by-talking-to-it.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Manage your fleet by talking to it" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Engineering · 5 min read</p>
       <h1>Manage your fleet by talking to it.</h1>
@@ -113,6 +114,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

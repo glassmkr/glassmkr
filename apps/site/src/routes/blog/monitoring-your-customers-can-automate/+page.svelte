@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/monitoring-your-customers-can-automate" />
   <meta property="og:title" content="Monitoring your customers can automate" />
   <meta property="og:description" content="The in-OS hardware-health layer for dedicated servers, provisioned like infrastructure: servers, agent, alert channels and delivery tests, all over one API." />
-  <meta property="og:image" content="https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Monitoring your customers can automate" />
   <meta name="twitter:description" content="The in-OS hardware-health layer for dedicated servers, provisioned like infrastructure: servers, agent, alert channels and delivery tests, all over one API." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/monitoring-your-customers-can-automate" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "Monitoring your customers can automate",
     description: "Dedicated servers ship with console access and traffic graphs; the layer that predicts hardware failure is usually the customer's problem to assemble. Every step of that layer is an API call, and that changes who can offer it.",
-    image: "https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260826",
+    image: "https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260830",
     datePublished: "2026-07-16",
     dateModified: "2026-07-16",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/monitoring-your-customers-can-automate.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/monitoring-your-customers-can-automate",
     articleSection: "Product"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/monitoring-your-customers-can-automate.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Monitoring your customers can automate" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Product · 4 min read</p>
       <h1>Monitoring your customers can automate.</h1>
@@ -145,6 +146,9 @@ curl -sS "https://app.glassmkr.com/api/v1/servers/$SERVER_ID/alerts?status=activ
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

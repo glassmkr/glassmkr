@@ -8,7 +8,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/training-drive-failure-model-on-l4" />
   <meta property="og:title" content="Training a drive-failure model on a GPU server's CPU" />
   <meta property="og:description" content="Quarterly retraining of our Stage 2.5 tier-ranker drive-failure model on the CPU of the L4 inference server while Gemma stays resident. 222M drive-days, 59 minutes, 5.8% inference overhead. SMART 197 beat SMART 187." />
-  <meta property="og:image" content="https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Training next to Gemma: top output showing python train.py at 2200% CPU alongside llama-server at 9% CPU on l4-ams-01" />
@@ -18,7 +18,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Training a drive-failure model on a GPU server's CPU" />
   <meta name="twitter:description" content="Retraining our drive-failure model on 2 years of Backblaze data on the same L4 server's CPU while Gemma kept serving. 59 minutes, 5.8% inference overhead. SMART 197 beat SMART 187." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260830" />
   <meta name="twitter:image:alt" content="Training next to Gemma: a drive-failure model trained on the CPU while Gemma kept serving" />
   <link rel="canonical" href="https://glassmkr.com/blog/training-drive-failure-model-on-l4" />
 
@@ -28,11 +28,11 @@
     "@type": "BlogPosting",
     headline: "Training a drive-failure model on a GPU server's CPU",
     description: "We retrained our drive-failure predictor on 2 years of Backblaze data (222M drive-days) on the CPU of our L4 inference server. Gemma stayed resident in VRAM. 59 minutes, no new compute, 5.8% inference overhead. SMART 197 beat SMART 187.",
-    image: "https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260826",
+    image: "https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260830",
     datePublished: "2026-04-21",
     dateModified: "2026-04-21",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/training-drive-failure-model-on-l4.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/training-drive-failure-model-on-l4",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -49,6 +49,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/training-drive-failure-model-on-l4.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Training a drive-failure model on a GPU server's CPU" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Engineering</p>
 
     <h1>Training a drive-failure model on a GPU server's CPU</h1>
@@ -214,6 +215,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 720px;
     margin: 0 auto;

@@ -44,12 +44,12 @@
   <meta property="og:url" content="https://glassmkr.com/trust" />
   <meta property="og:title" content="Trust at Glassmkr" />
   <meta property="og:description" content="How Glassmkr handles trust: AGPL-3.0-only agent and dashboard, servers in the Netherlands or fully self-hosted, honest gaps." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Trust at Glassmkr" />
   <meta name="twitter:description" content="AGPL-3.0-only agent and dashboard, servers in the Netherlands or self-hosted, honest gaps." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   {@html `<script type="application/ld+json">${webPageLd}</` + `script>`}
   {@html `<script type="application/ld+json">${orgLd}</` + `script>`}
 </svelte:head>

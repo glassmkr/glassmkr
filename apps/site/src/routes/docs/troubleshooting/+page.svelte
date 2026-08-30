@@ -18,12 +18,12 @@
   <meta property="og:url" content="https://glassmkr.com/docs/troubleshooting" />
   <meta property="og:title" content="Troubleshooting Glassmkr" />
   <meta property="og:description" content="Diagnose install, agent, IPMI, ZFS, GPU, and notification problems." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Troubleshooting Glassmkr" />
   <meta name="twitter:description" content="Diagnose install, agent, IPMI, ZFS, GPU, and notification problems." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

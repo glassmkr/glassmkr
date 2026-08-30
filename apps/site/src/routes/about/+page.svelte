@@ -11,12 +11,12 @@
   <meta property="og:url" content="https://glassmkr.com/about" />
   <meta property="og:title" content="About Glassmkr" />
   <meta property="og:description" content="Bare-metal monitoring built by one operator. {rules.length} alert rules, AGPL-3.0-only end to end." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="About Glassmkr" />
   <meta name="twitter:description" content="Bare-metal monitoring built by one operator. {rules.length} alert rules, fully open source." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 </svelte:head>
 
 <div class="container-narrow">

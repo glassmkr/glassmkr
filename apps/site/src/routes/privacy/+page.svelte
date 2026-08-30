@@ -10,12 +10,12 @@
   <meta property="og:url" content="https://glassmkr.com/privacy" />
   <meta property="og:title" content="Glassmkr Privacy Policy" />
   <meta property="og:description" content="What Glassmkr collects, why, how long it is kept, and the rights you have over it. Written against the GDPR and Czech Act No. 110/2019 Sb." />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Glassmkr Privacy Policy" />
   <meta name="twitter:description" content="What Glassmkr collects, why, how long it is kept, and the rights you have over it. Written against the GDPR and Czech Act No. 110/2019 Sb." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/default.png?v=20260830" />
 </svelte:head>
 
 <div class="container-narrow">

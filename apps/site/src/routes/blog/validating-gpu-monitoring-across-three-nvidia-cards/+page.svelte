@@ -6,7 +6,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/validating-gpu-monitoring-across-three-nvidia-cards" />
   <meta property="og:title" content="Validating GPU monitoring across three NVIDIA cards: L4, RTX A4000, A16" />
   <meta property="og:description" content="Three cards, eight rules. Three live-tested, five fixture-tested, and we say which. The honest version of GPU monitoring validation." />
-  <meta property="og:image" content="https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="GPU monitoring across three NVIDIA cards: L4, RTX A4000, A16" />
   <meta name="twitter:description" content="What we tested live on real GPUs, and what we refused to induce because a real fault needs a power cycle to clear." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/validating-gpu-monitoring-across-three-nvidia-cards" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -22,11 +22,11 @@
     "@type": "BlogPosting",
     headline: "Validating GPU monitoring across three NVIDIA cards: L4, RTX A4000, A16",
     description: "Before returning our validation fleet we pointed the eight GPU rules at three different NVIDIA cards. What we could safely induce, what we refused to, and what the hardware told us.",
-    image: "https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260826",
+    image: "https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260830",
     datePublished: "2026-05-31",
     dateModified: "2026-05-31",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/validating-gpu-monitoring-across-three-nvidia-cards",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -43,6 +43,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/validating-gpu-monitoring-across-three-nvidia-cards.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Validating GPU monitoring across three NVIDIA cards: L4, RTX A4000, A16" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">May 2026 · Engineering · 7 min read</p>
       <h1>Validating GPU monitoring across three NVIDIA cards: L4, RTX A4000, A16</h1>
@@ -146,6 +147,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

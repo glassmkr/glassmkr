@@ -18,14 +18,14 @@
   <meta property="og:url" content="https://glassmkr.com/docs/mcp" />
   <meta property="og:title" content="Glassmkr MCP server" />
   <meta property="og:description" content="MCP access to your fleet for compatible AI clients: query it, and with consent manage it. Authorized through your browser." />
-  <meta property="og:image" content="https://glassmkr.com/og/mcp.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/mcp.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Glassmkr MCP server" />
   <meta name="twitter:description" content="MCP access to your fleet for compatible AI clients: query it, and with consent manage it. Authorized through your browser." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/mcp.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/mcp.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>

@@ -7,7 +7,7 @@
   <meta property="og:url" content="https://glassmkr.com/blog/ipmi-smart-raid-hardware-monitoring" />
   <meta property="og:title" content="IPMI, SMART, and RAID: the hardware monitoring gap" />
   <meta property="og:description" content="Most monitoring stops at the OS layer. Here is what lives below it, why mainstream tools miss it, and what good hardware monitoring looks like." />
-  <meta property="og:image" content="https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="crucible alerts --by-priority: P1 SMART health FAILING replace now, P2 RAID degraded intervene today, P3 reallocated sectors rising plan replacement, P4 ECC errors review monthly" />
@@ -17,7 +17,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="IPMI, SMART, and RAID: the hardware monitoring gap" />
   <meta name="twitter:description" content="Most monitoring stops at the OS layer. Here is what lives below it, why mainstream tools miss it, and what good hardware monitoring looks like." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260830" />
   <meta name="twitter:image:alt" content="Priority-ordered hardware alerts: P1 SMART failing, P2 RAID degraded, P3 reallocated sectors rising, P4 ECC errors" />
   <link rel="canonical" href="https://glassmkr.com/blog/ipmi-smart-raid-hardware-monitoring" />
 
@@ -27,11 +27,11 @@
     "@type": "BlogPosting",
     headline: "IPMI, SMART, and RAID: the hardware monitoring gap",
     description: "Most monitoring stops at the OS layer. Here is what lives below it, why mainstream tools miss it, and what good hardware monitoring looks like.",
-    image: "https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260826",
+    image: "https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260830",
     datePublished: "2026-04-10",
     dateModified: "2026-04-10",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/ipmi-smart-raid-hardware-monitoring.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/ipmi-smart-raid-hardware-monitoring",
     articleSection: "Operations"
   })}</` + `script>`}
@@ -48,6 +48,7 @@
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/ipmi-smart-raid-hardware-monitoring.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title IPMI, SMART, and RAID: The Hardware Layer Your Cloud Monitoring Tool Ignores" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Operations</p>
 
     <h1>IPMI, SMART, and RAID: the hardware monitoring gap</h1>
@@ -171,6 +172,9 @@
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 680px;
     margin: 0 auto;

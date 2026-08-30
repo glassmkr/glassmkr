@@ -38,7 +38,7 @@ May 17 18:47 - May 18 10:48  16.0 h   100.5 h  -> 116.6 h        no  (+16.0 h)`;
   <meta property="og:url" content="https://glassmkr.com/blog/would-you-have-caught-my-vrm-degradation" />
   <meta property="og:title" content="Would you have caught my VRM degradation?" />
   <meta property="og:description" content="The honest answer was no: voltage alone cannot watch a DVFS core rail. Here is what we built instead, what happened when we backtested it on our own hardware, and the uptime check that kept us honest." />
-  <meta property="og:image" content="https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260830" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:site_name" content="Glassmkr" />
@@ -46,7 +46,7 @@ May 17 18:47 - May 18 10:48  16.0 h   100.5 h  -> 116.6 h        no  (+16.0 h)`;
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Would you have caught my VRM degradation?" />
   <meta name="twitter:description" content="A hard customer question, an honest no, two signals we built because of it, and the backtest on our own box that taught us to check uptime before crying hardware." />
-  <meta name="twitter:image" content="https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260826" />
+  <meta name="twitter:image" content="https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260830" />
   <link rel="canonical" href="https://glassmkr.com/blog/would-you-have-caught-my-vrm-degradation" />
 
   {@html `<script type="application/ld+json">${JSON.stringify({
@@ -54,11 +54,11 @@ May 17 18:47 - May 18 10:48  16.0 h   100.5 h  -> 116.6 h        no  (+16.0 h)`;
     "@type": "BlogPosting",
     headline: "Would you have caught my VRM degradation?",
     description: "A customer's Ryzen 9 5950X lost its VRM and asked if Glassmkr would have caught it. The honest answer was no. What we built instead, the backtest on our own MC12-LE0, and the uptime check that kept us honest.",
-    image: "https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260826",
+    image: "https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260830",
     datePublished: "2026-06-09",
     dateModified: "2026-06-09",
     author: { "@type": "Organization", name: "Glassmkr", url: "https://glassmkr.com" },
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/would-you-have-caught-my-vrm-degradation.png?v=20260830" } },
     mainEntityOfPage: "https://glassmkr.com/blog/would-you-have-caught-my-vrm-degradation",
     articleSection: "Engineering"
   })}</` + `script>`}
@@ -75,6 +75,7 @@ May 17 18:47 - May 18 10:48  16.0 h   100.5 h  -> 116.6 h        no  (+16.0 h)`;
 
 <div class="container-narrow">
   <article class="post">
+  <img class="post-hero" src="/og/would-you-have-caught-my-vrm-degradation.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Would you have caught my VRM degradation?" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">June 2026 · Engineering · 9 min read</p>
       <h1>Would you have caught my VRM degradation?</h1>
@@ -219,6 +220,9 @@ May 17 18:47 - May 18 10:48  16.0 h   100.5 h  -> 116.6 h        no  (+16.0 h)`;
 </div>
 
 <style>
+  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
+    border-radius:6px; border:1px solid var(--surface-border);
+    margin:24px 0 20px; background:var(--surface-raised); }
 
   .post {
     padding: 56px 0 80px;

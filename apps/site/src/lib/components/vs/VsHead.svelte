@@ -38,12 +38,12 @@
     "@type": "Article",
     headline,
     description: articleDescription,
-    image: "https://glassmkr.com/og/default.png?v=20260826",
+    image: "https://glassmkr.com/og/default.png?v=20260830",
     datePublished,
     dateModified,
     mainEntityOfPage: canonical,
     author: org,
-    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" } },
+    publisher: { "@type": "Organization", name: "Glassmkr", logo: { "@type": "ImageObject", url: "https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" } },
     about: [
       { "@type": "SoftwareApplication", name: "Glassmkr", url: "https://glassmkr.com" },
       { "@type": "SoftwareApplication", name: competitorName, url: competitorUrl },
@@ -59,6 +59,6 @@
   <meta property="og:url" content={canonical} />
   <meta property="og:title" content={ogTitle} />
   <meta property="og:description" content={ogDescription} />
-  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/default.png?v=20260830" />
   {@html `<script type="application/ld+json">${articleLd}</` + `script>`}
 </svelte:head>

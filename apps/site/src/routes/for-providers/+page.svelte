@@ -63,7 +63,7 @@
     property="og:description"
     content="Hardware-failure warnings before the ticket lands. In-OS health for dedicated servers, automatable end to end over one API."
   />
-  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260826" />
+  <meta property="og:image" content="https://glassmkr.com/og/introducing-glassmkr.png?v=20260830" />
 
   {@html `<script type="application/ld+json">${serviceLd}</` + `script>`}
 </svelte:head>
