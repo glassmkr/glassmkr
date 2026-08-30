@@ -76,7 +76,10 @@ SERVICES=(glassmkr-site glassmkr-dashboard)
 # source: after the hosted-glue split it runs as a standalone artifact from
 # /home/agent/ops-app (see the private repo's hosted/ runbook) and deploys
 # must not stop or restart it.
-if [ -d "$REPO_DIR/apps/ops" ]; then
+# -f on the package file, not -d on the directory: git reset --hard removes
+# tracked files but leaves the empty directory behind, and an empty dir must
+# not re-enroll ops into deploy management.
+if [ -f "$REPO_DIR/apps/ops/package.json" ]; then
   SERVICES+=(glassmkr-ops)
 fi
 # Hosted-glue split (2026-08-30): nginx site configs and the ops app are
