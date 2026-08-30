@@ -328,7 +328,13 @@
   {/if}
 
   {#if alert.recommendation}
-    <p class="alert-rec">{alert.recommendation}</p>
+    <!-- A structured action region (spec 17.3): neutral readable text under a
+         label, not brand-colored italic prose. The decision reads first; the
+         command blocks below stay subordinate to it. -->
+    <div class="alert-rec">
+      <p class="alert-rec-label">RECOMMENDED ACTION</p>
+      <p class="alert-rec-text">{alert.recommendation}</p>
+    </div>
   {/if}
 
   {#if evidence.length > 0}
@@ -639,11 +645,23 @@
   }
 
   .alert-rec {
-    font-size: 13px;
-    color: var(--accent);
-    font-style: italic;
+    border-top: 1px solid var(--g-border-subtle);
+    padding-top: 10px;
     margin: 0 0 12px 0;
-    line-height: 1.5;
+  }
+  .alert-rec-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    margin: 0 0 4px;
+  }
+  .alert-rec-text {
+    font-size: 13.5px;
+    color: var(--text-primary);
+    margin: 0;
+    line-height: 1.55;
+    max-width: 78ch;
   }
 
   .alert-evidence {

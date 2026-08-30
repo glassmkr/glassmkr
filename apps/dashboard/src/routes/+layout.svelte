@@ -361,25 +361,22 @@
     font-size: 14px;
     color: var(--text-secondary);
     text-decoration: none;
-    border-left: 3px solid transparent;
+    border-left: 2px solid transparent;
     border-radius: 0 4px 4px 0;
-    transition: color 150ms ease, transform 150ms ease, background 150ms ease;
+    /* Interaction must not make navigation drift (spec 17.1): color and
+       surface only, no hover translation. */
+    transition: color 150ms ease, background 150ms ease;
   }
   .sidebar-nav a:hover {
     color: var(--text-primary);
-    transform: translateX(2px);
+    background: var(--g-hover-surface);
     text-decoration: none;
   }
   .sidebar-nav a.active {
     color: var(--text-primary);
     font-weight: 600;
-    border-left-color: var(--accent);
-    background: rgba(255, 255, 255, 0.02);
-  }
-  .sidebar-nav a.active:hover {
-    /* No translateX shift on the active item — it's already
-       there. Keep the border + bg static. */
-    transform: none;
+    border-left-color: var(--g-brand);
+    background: var(--g-surface-2);
   }
   /* Secondary nav group: Settings + Docs. Pushed to the bottom of
      the scrollable nav so it sits next to the account/log-out block.
@@ -425,6 +422,14 @@
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+  }
+  /* Consistent app shell (spec 17.1): the shared .container is 960px for
+     marketing reading; the app's data surfaces get a 1400px ceiling with
+     24-32px gutters. :global because routes own the class. */
+  .main :global(.container) {
+    max-width: 1400px;
+    padding-left: clamp(24px, 2.5vw, 32px);
+    padding-right: clamp(24px, 2.5vw, 32px);
   }
   .layout .main {
     flex: 1;

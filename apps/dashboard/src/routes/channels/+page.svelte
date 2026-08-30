@@ -486,8 +486,8 @@
     margin-bottom: 24px;
   }
   .page-header h1 {
-    font-size: 22px;
-    font-weight: 600;
+    font-size: 28px;
+    font-weight: 500;
   }
 
   .add-form {

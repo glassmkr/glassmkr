@@ -146,7 +146,7 @@
     <figure class="chart-figure">
       <div class="chart-scroll">
         <img
-          src="/blog/smart-said-passed-trajectory.png?v=2"
+          src="/blog/smart-said-passed-trajectory.png?v=3"
           alt="Chart of one drive across 140 readings. A green band across the top shows overall health reporting PASSED in every reading. A flat dashed line marks reallocated sectors at 477, unchanged throughout. Below, the pending sector count opens at its maximum of 96, drains to zero over about two days, and after a 5.17 day gap in monitoring rises from zero three more times, peaking at 16, 32 and 16."
           width="1464"
           height="792"

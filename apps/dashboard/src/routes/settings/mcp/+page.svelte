@@ -118,9 +118,9 @@
 </div>
 
 <style>
-  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .container { margin: 0 auto; }
   .back-link { font-size: 12px; color: var(--text-tertiary); text-decoration: none; display: inline-block; margin-bottom: 12px; }
-  .page-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .page-title { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
   .page-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; max-width: 760px; line-height: 1.55; }
   .page-desc a { color: var(--accent); text-decoration: none; }
   .section { margin-bottom: 20px; padding: 24px; }

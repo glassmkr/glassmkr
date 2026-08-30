@@ -649,7 +649,7 @@
     .deployment-facts dd { margin-bottom: 10px; }
   }
   .page-title {
-    font-size: 22px;
+    font-size: 28px;
     font-weight: 600;
     margin-bottom: 8px;
   }

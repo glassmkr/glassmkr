@@ -175,7 +175,7 @@
   .demo-card p { margin: 0; max-width: 62ch; line-height: 1.6; }
   .demo-card-sub { font-size: 14px; color: var(--text-secondary); }
   .page-title {
-    font-size: 22px;
+    font-size: 28px;
     font-weight: 600;
     margin-bottom: 24px;
   }
