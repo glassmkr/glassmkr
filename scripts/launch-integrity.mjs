@@ -40,7 +40,7 @@ const CODE_EXTS = [".ts", ".svelte", ".js", ".mjs", ".css", ".md", ".yml", ".yam
 // 1. NON-SHIPPING markers on deployable surfaces.
 {
   const hits = [];
-  for (const d of ["apps/site/src", "apps/dashboard/src", "apps/status/src", "apps/ops/src", "packages/ui/src"]) {
+  for (const d of ["apps/site/src", "apps/dashboard/src", "apps/status/src", "packages/ui/src"]) {
     for (const f of walk(path.join(ROOT, d), CODE_EXTS, SKIP)) {
       const text = fs.readFileSync(f, "utf8");
       if (text.includes("NON-SHIPPING")) hits.push(path.relative(ROOT, f));

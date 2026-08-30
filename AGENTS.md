@@ -44,7 +44,6 @@ Canonical sources:
                       evaluation, trend engine, auth. Postgres + ClickHouse.
     apps/site         SvelteKit marketing and docs site (glassmkr.com).
     apps/status       Status page, deploys to Cloudflare Pages separately.
-    apps/ops          Operational scripts.
     packages/db       Postgres and ClickHouse clients.
     packages/auth     Token generation and verification.
     packages/ui       Shared styles and components. `base.css` holds the tokens.

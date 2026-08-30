@@ -101,3 +101,9 @@ apps/dashboard/docs/psu-redundancy-loss-current-state.md
 # CI (ci.yml, integration, e2e, the secret scan) ships and runs fine without
 # repository secrets. Added at the flip, 2026-08-29.
 .github/workflows/deploy.yml
+
+# Hosted-glue split (2026-08-30): operating OUR instance is private, the
+# product is public (the getsentry pattern). Source of truth for both now
+# lives in glassmkr-private under hosted/.
+apps/ops/
+infrastructure/
