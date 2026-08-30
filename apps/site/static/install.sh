@@ -1,7 +1,12 @@
 #!/bin/bash
-# Crucible installer for Ubuntu/Debian. Installs Node + smartmontools +
-# ipmitool, npm-installs @glassmkr/crucible, then delegates config/systemd
-# setup to `glassmkr-crucible init` (Crucible 0.9.1+).
+# Crucible installer. Installs Node + smartmontools + ipmitool, npm-installs
+# @glassmkr/crucible, then delegates config/systemd setup to
+# `glassmkr-crucible init` (Crucible 0.9.1+).
+#
+# Supported package managers: apt (Debian/Ubuntu) and dnf/yum (RHEL, Rocky,
+# AlmaLinux, CentOS, Fedora). On any other distribution the installer proceeds
+# if Node and npm are already present, and otherwise tells you the one-line
+# manual prerequisite; it never hard-rejects a host it could serve.
 #
 # Hosted at https://glassmkr.com/install.sh. Used by:
 #
@@ -25,20 +30,64 @@
 # invocation, so no half-a-script executes a dangerous partial command.
 set -euo pipefail
 
+# Package-manager abstraction. Set once from /etc/os-release so the rest of the
+# script never re-derives it. PKG is "apt" | "dnf" | "yum" | "" (unknown).
+PKG=""
+
+detect_pkg() {
+  # Prefer the binary that actually exists over the distro name: a host may run
+  # a RHEL derivative this script has never heard of but still ship dnf.
+  if command -v apt-get >/dev/null 2>&1; then PKG="apt"; return; fi
+  if command -v dnf >/dev/null 2>&1; then PKG="dnf"; return; fi
+  if command -v yum >/dev/null 2>&1; then PKG="yum"; return; fi
+  PKG=""
+}
+
+pkg_install() {
+  # Install one or more packages with the detected manager. Returns non-zero on
+  # failure so callers can decide whether the package is required or optional.
+  case "$PKG" in
+    apt) apt-get install -y "$@" ;;
+    dnf) dnf install -y "$@" ;;
+    yum) yum install -y "$@" ;;
+    *) return 1 ;;
+  esac
+}
+
+node_repo_setup() {
+  # Add the NodeSource repository for the detected package family, then install
+  # nodejs. deb.nodesource for apt hosts, rpm.nodesource for dnf/yum hosts.
+  case "$PKG" in
+    apt)
+      curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+      apt-get install -y nodejs
+      ;;
+    dnf|yum)
+      curl -fsSL https://rpm.nodesource.com/setup_24.x | bash -
+      pkg_install nodejs
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 main() {
   echo "=== Glassmkr Crucible Installer ==="
 
-  # OS check
   if [ ! -f /etc/os-release ]; then
-    echo "ERROR: cannot detect OS. Only Ubuntu and Debian are supported."
-    exit 1
+    echo "WARN: cannot read /etc/os-release; proceeding on package-manager detection alone."
+  else
+    . /etc/os-release
+    echo "Detected: ${PRETTY_NAME:-unknown}"
   fi
-  . /etc/os-release
-  if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
-    echo "ERROR: only Ubuntu and Debian are supported. Detected: $ID"
-    exit 1
+
+  detect_pkg
+  if [ -n "$PKG" ]; then
+    echo "Package manager: $PKG"
+  else
+    echo "No supported package manager (apt/dnf/yum) found; will use existing tools where present."
   fi
-  echo "Detected: $PRETTY_NAME"
 
   if [ "$EUID" -ne 0 ]; then
     echo "ERROR: please run as root (sudo)"
@@ -72,11 +121,19 @@ main() {
     exit 1
   fi
 
-  # Node 24 (matches the Dockerfile and the publish workflow)
+  # Node 24 (matches the Dockerfile and the publish workflow). The agent's real
+  # floor is Node 22.19 (undici 8's engines.node); 24 is what we ship and test.
   if ! command -v node >/dev/null 2>&1; then
     echo "Installing Node.js 24..."
-    curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-    apt-get install -y nodejs
+    if ! node_repo_setup; then
+      echo "ERROR: Node.js is not installed and this host has no package manager"
+      echo "the installer knows how to add a NodeSource repo for."
+      echo "Install Node.js 22.19+ with your distribution's tooling, then re-run"
+      echo "this script (it will detect the existing node and continue), or do"
+      echo "the manual install: 'npm install -g @glassmkr/crucible' then"
+      echo "'sudo glassmkr-crucible init --api-key <K>'."
+      exit 1
+    fi
   fi
   echo "Node.js: $(node --version)"
 
@@ -86,14 +143,24 @@ main() {
   # issue), fall through and use the bundled npm: non-fatal.
   npm install -g npm@latest >/dev/null 2>&1 || true
 
+  # smartmontools + ipmitool are optional: they widen coverage (SMART / IPMI)
+  # but the agent runs and reports without them. Best-effort on every distro.
   if ! command -v smartctl >/dev/null 2>&1; then
-    echo "Installing smartmontools..."
-    apt-get install -y smartmontools
+    if [ -n "$PKG" ]; then
+      echo "Installing smartmontools..."
+      pkg_install smartmontools 2>/dev/null || echo "WARN: smartmontools install failed. SMART monitoring will be limited."
+    else
+      echo "WARN: no package manager to install smartmontools. SMART monitoring will be limited."
+    fi
   fi
 
   if ! command -v ipmitool >/dev/null 2>&1; then
-    echo "Installing ipmitool (best-effort; may be unavailable in containers)..."
-    apt-get install -y ipmitool 2>/dev/null || echo "WARN: ipmitool not available. IPMI monitoring will be disabled."
+    if [ -n "$PKG" ]; then
+      echo "Installing ipmitool (best-effort; may be unavailable in containers)..."
+      pkg_install ipmitool 2>/dev/null || echo "WARN: ipmitool not available. IPMI monitoring will be disabled."
+    else
+      echo "WARN: no package manager to install ipmitool. IPMI monitoring will be disabled."
+    fi
   fi
 
   mkdir -p /var/lib/glassmkr
