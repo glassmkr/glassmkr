@@ -73,3 +73,11 @@ Component mapping, since one repository does not mean one license:
 
 The API is covered by the repository license. It is not proprietary; an earlier
 version of the OpenAPI document said it was, which was wrong.
+
+**What the code license does not cover.** The AGPL grant applies to the
+software. The Glassmkr name and logo, and the written content of the blog
+posts under `apps/site/src/routes/blog/`, are not licensed for reuse: you may
+run and modify this software (including its templates) under the AGPL, but
+you may not present a deployment as Glassmkr, use the mark or the hexagon
+logo for your own service, or republish the blog essays. Factual quotation
+with attribution is of course fine.
