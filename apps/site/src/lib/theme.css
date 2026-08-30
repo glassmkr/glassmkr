@@ -34,7 +34,48 @@ h1, h2, h3, h4 {
   line-height: 1.15;
 }
 
-/* Site ambient glow, tuned to the amber accent. */
+/* The site grid (redesign spec 6.1). Twelve columns to --page-max, gutters
+   from the shared tokens. Pages place content by column span; prose keeps its
+   own readable measure inside the columns it occupies. */
+.site-grid {
+  width: min(100%, var(--page-max));
+  margin-inline: auto;
+  padding-inline: var(--page-gutter);
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--grid-gap);
+}
+/* A non-grid wide container for full-width bands that manage their own
+   internal layout (tables, the product stage's inner grid). */
+.site-wide {
+  width: min(100%, var(--page-max));
+  margin-inline: auto;
+  padding-inline: var(--page-gutter);
+}
+/* Column spans, desktop-first; below 1024px everything stacks full-width
+   unless a band opts into its own composition. */
+.col-1-4 { grid-column: 1 / 5; }
+.col-1-6 { grid-column: 1 / 7; }
+.col-1-7 { grid-column: 1 / 8; }
+.col-1-8 { grid-column: 1 / 9; }
+.col-1-9 { grid-column: 1 / 10; }
+.col-1-12 { grid-column: 1 / 13; }
+.col-5-12 { grid-column: 5 / 13; }
+.col-8-12 { grid-column: 8 / 13; }
+@media (max-width: 1023px) {
+  .col-1-4, .col-1-6, .col-1-7, .col-1-8, .col-1-9, .col-5-12, .col-8-12 {
+    grid-column: 1 / 13;
+  }
+}
+
+/* Vertical rhythm (spec 6.3): three section bands instead of one mechanical
+   72px + top border on everything. Borders return only where a band opts in. */
+.band-major { padding-block: clamp(64px, 9vw, 144px); }
+.band-std { padding-block: clamp(56px, 7vw, 104px); }
+.band-compact { padding-block: clamp(40px, 4.5vw, 64px); }
+
+/* Site ambient glow, tuned to the brand. Scoped: mounted only where a page
+   deliberately places it (the homepage hero), never globally (spec 9.2). */
 .ambient::before {
   background: radial-gradient(ellipse, rgba(255, 107, 53, 0.05) 0%, transparent 70%);
 }

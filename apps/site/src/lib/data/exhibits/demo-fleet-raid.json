@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-08-30T10:31:00Z",
+  "source": "public demo at app.glassmkr.com/demo (read-only sample-fleet capture served by the production dashboard)",
+  "fleet": [
+    {
+      "hostname": "db-hel1-01",
+      "active_alerts": 2,
+      "os_type": "rocky",
+      "os_version": "9.4",
+      "dmi_vendor": "Supermicro",
+      "dmi_product": "SSG-620P"
+    },
+    {
+      "hostname": "web-fsn1-03",
+      "active_alerts": 1,
+      "os_type": "ubuntu",
+      "os_version": "24.04",
+      "dmi_vendor": "Dell",
+      "dmi_product": "PowerEdge R6525"
+    },
+    {
+      "hostname": "edge-sjc-02",
+      "active_alerts": 1,
+      "os_type": "debian",
+      "os_version": "12",
+      "dmi_vendor": "HPE",
+      "dmi_product": "ProLiant DL20 Gen11"
+    },
+    {
+      "hostname": "gpu-ams-a16-01",
+      "active_alerts": 0,
+      "os_type": "debian",
+      "os_version": "13",
+      "dmi_vendor": "Supermicro",
+      "dmi_product": "AS-2015A-TR"
+    }
+  ],
+  "alert": {
+    "alert_type": "raid_degraded",
+    "severity": "critical",
+    "rendered_priority": "P0 CRITICAL",
+    "title": "RAID array degraded (md0)",
+    "message": "md0 (RAID10) is running degraded: 1 of 6 devices failed (/dev/sdd). Array is still online; rebuild has not started (no spare).",
+    "recommendation": "Replace /dev/sdd and re-add it to the array, then watch the rebuild. If you operate this hardware (owned or colocated): handle the inspection or swap yourself, or dispatch a remote-hands technician. If this is rented or provider-managed: file a hardware service ticket with your provider. Either way, the physical check needs to happen on-site.",
+    "host": "db-hel1-01"
+  },
+  "host_snapshot": {
+    "hostname": "db-hel1-01",
+    "os": "rocky 9.4",
+    "collector_version": "0.13.6"
+  }
+}

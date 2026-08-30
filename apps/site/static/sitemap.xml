@@ -7,7 +7,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/about/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
@@ -27,7 +27,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/blog/ai-controlled-probe-of-alert-docs/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -37,7 +37,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/blog/gemma-4-l4-gpu-server-analysis/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -47,22 +47,22 @@
   </url>
   <url>
     <loc>https://glassmkr.com/blog/introducing-furnace/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/blog/introducing-glassmkr/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/blog/ipmi-diagnostics-bare-metal/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/blog/ipmi-smart-raid-hardware-monitoring/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -92,7 +92,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/blog/qwen3-6-vs-gemma-4-infrastructure-narration/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -112,7 +112,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/blog/training-drive-failure-model-on-l4/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -132,7 +132,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/blog/when-monitoring-punishes-customers/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -142,7 +142,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/blog/why-bare-metal-monitoring-is-different/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -152,17 +152,17 @@
   </url>
   <url>
     <loc>https://glassmkr.com/docs/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/api/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/api/errors/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -172,62 +172,62 @@
   </url>
   <url>
     <loc>https://glassmkr.com/docs/automated-onboarding/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/changelog/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/channels/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/configuration/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/faq/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/getting-started/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/mcp/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/programmatic-api/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/rules/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/self-hosting/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/troubleshooting/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://glassmkr.com/docs/troubleshooting/ipmi/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
@@ -242,7 +242,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/for-providers/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
@@ -267,7 +267,7 @@
   </url>
   <url>
     <loc>https://glassmkr.com/trust/</loc>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <priority>0.8</priority>
   </url>
   <url>

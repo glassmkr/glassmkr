@@ -229,6 +229,48 @@ for (const r of PAGES) rendered[r] = await textOf(r);
   else ok("focus", "every focusable element in main shows a focus state");
 }
 
+// 0aaab. Homepage first-fold contract (redesign spec 10.1 / 25). These grade
+// the RENDERED page at 1280x720, independent of how the components compute
+// their sizes: the H1 lands in the 150-190px band and holds at most two
+// lines, at most two buttons share the hero action row, and the product
+// stage starts by 540px with at least 160px of it visible in the viewport.
+{
+  const fCtx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const fp = await fCtx.newPage();
+  await fp.goto(BASE + "/", { waitUntil: "networkidle" });
+  const m = await fp.evaluate(() => {
+    const h1 = document.querySelector("main h1");
+    const stage = document.querySelector(".stage");
+    const btns = document.querySelectorAll(".cta-row .btn").length;
+    if (!h1) return { missing: "h1" };
+    if (!stage) return { missing: ".stage (product stage)" };
+    const h1r = h1.getBoundingClientRect();
+    const sr = stage.getBoundingClientRect();
+    const lh = parseFloat(getComputedStyle(h1).lineHeight);
+    return {
+      h1Top: Math.round(h1r.top),
+      h1Lines: Math.round(h1r.height / lh),
+      stageTop: Math.round(sr.top),
+      stageVisible: Math.round(Math.min(720, sr.bottom) - Math.max(0, sr.top)),
+      btns,
+      docW: document.documentElement.scrollWidth,
+    };
+  });
+  await fCtx.close();
+  const bad = [];
+  if (m.missing) bad.push(`homepage is missing ${m.missing}`);
+  else {
+    if (m.h1Top < 140 || m.h1Top > 200) bad.push(`h1 starts at ${m.h1Top}px (target 150-190)`);
+    if (m.h1Lines > 2) bad.push(`h1 renders ${m.h1Lines} lines (max 2)`);
+    if (m.btns > 2) bad.push(`${m.btns} buttons in the hero action row (max 2)`);
+    if (m.stageTop > 540) bad.push(`product stage starts at ${m.stageTop}px (max 540)`);
+    if (m.stageVisible < 160) bad.push(`only ${m.stageVisible}px of the stage is visible in the first viewport (min 160)`);
+    if (m.docW > 1280) bad.push(`horizontal overflow: document is ${m.docW}px wide at 1280`);
+  }
+  if (bad.length) fail("first-fold", bad.join("; "));
+  else ok("first-fold", `h1 at ${m.h1Top}px in ${m.h1Lines} lines, ${m.btns} hero buttons, stage at ${m.stageTop}px with ${m.stageVisible}px visible`);
+}
+
 // 0aaaa. prefers-reduced-motion must actually be honoured.
 {
   const rmCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
