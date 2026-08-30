@@ -35,7 +35,6 @@
         { href: "/docs/programmatic-api", label: "Programmatic API" },
         { href: "/docs/api", label: "API reference" },
         { href: "/docs/api/errors", label: "Error codes", child: true },
-        { href: "/docs/api/tier-gating", label: "Tier gating", child: true },
         { href: "/docs/automated-onboarding", label: "Automated onboarding" },
         { href: "/docs/mcp", label: "MCP" },
       ],

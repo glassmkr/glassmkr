@@ -130,7 +130,7 @@ const PAGES = [
   "/", "/pricing", "/trust", "/about", "/docs", "/blog",
   "/privacy", "/terms", "/billing-policy",
   "/docs/self-hosting", "/docs/getting-started", "/docs/configuration",
-  "/docs/channels", "/docs/api", "/docs/api/tier-gating", "/docs/faq",
+  "/docs/channels", "/docs/api", "/docs/faq",
   "/docs/mcp", "/docs/programmatic-api", "/docs/automated-onboarding",
   "/docs/rules", "/docs/troubleshooting", "/docs/troubleshooting/ipmi",
   "/docs/api/errors",

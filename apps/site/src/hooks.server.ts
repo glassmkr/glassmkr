@@ -13,6 +13,9 @@ const PERMANENT_REDIRECTS: Record<string, string> = {
   // split. Both retired pages were indexed, so they redirect rather than 404, and
   // both land on compute because that is the closest fit for a general fleet.
   "/for-sre": "/for-compute",
+  // The tier-gating docs page documented the retired Free/Pro split; the
+  // concept is gone, so the page is too. Indexed URL, hence 301 not 404.
+  "/docs/api/tier-gating": "/docs/api",
   "/for-self-hosted": "/for-compute",
 };
 

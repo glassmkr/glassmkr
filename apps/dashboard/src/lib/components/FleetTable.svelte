@@ -11,6 +11,7 @@
   // can compare down. Mobile keeps rows rather than inflating each host back
   // into a card, with the two facts that decide whether you tap through, alerts
   // and freshness, on the first line next to the hostname.
+  import { goto } from "$app/navigation";
   import { timeAgo } from "$lib/utils/time";
   import { normalizeVendor } from "$lib/utils/vendor";
   import { serverLinkPath } from "$lib/utils/server-slug";
@@ -92,6 +93,21 @@
   );
 
   let hiddenCount = $derived(servers.length - ordered.length);
+
+  // The whole row is the target, not just the hostname: every cell describes
+  // the same host, so a click anywhere on the row should open it. The anchor
+  // stays as the accessible, keyboard-reachable primary link; the row handler
+  // only fires for clicks that did not land on a link or button, and it
+  // respects modifier clicks by falling through to nothing (there is no href
+  // to open in a new tab from a div click, so those go through the anchor).
+  function openRow(e: MouseEvent, s: Row) {
+    if (e.defaultPrevented) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("a, button, input, select, label")) return;
+    if (window.getSelection()?.toString()) return;
+    goto(serverLinkPath(s, fleet));
+  }
 </script>
 
 <div class="fleet-controls">
@@ -130,7 +146,8 @@
     <thead>
       <tr>
         <th scope="col">Host</th>
-        <th scope="col" class="num">Alerts<span class="th-note"> / trend</span></th>
+        <th scope="col" class="count">Alerts</th>
+        <th scope="col" class="count">Trend</th>
         <th scope="col">Last seen</th>
         <th scope="col">Distro</th>
         <th scope="col">Hardware</th>
@@ -139,30 +156,31 @@
     <tbody>
       {#if ordered.length === 0}
         <tr class="empty-row">
-          <td colspan="5">No host matches these filters. Every one of your {servers.length} hosts is fresh and quiet.</td>
+          <td colspan="6">No host matches these filters. Every one of your {servers.length} hosts is fresh and quiet.</td>
         </tr>
       {/if}
       {#each ordered as s (s.id)}
         {@const f = freshness(s)}
         {@const alerts = s.unackedCount ?? s.alertCount ?? 0}
-        <tr>
+        <tr class="row-link" onclick={(e) => openRow(e, s)}>
           <td class="host">
             <a href={serverLinkPath(s, fleet)}>{s.name || s.hostname || s.id}</a>
             {#if s.hostname && s.name && s.hostname !== s.name}
               <span class="host-sub">{s.hostname}</span>
             {/if}
           </td>
-          <td class="num">
+          <td class="count">
             {#if alerts > 0}
               <span class="pill pill-alert">{alerts}</span>
             {:else}
               <span class="pill pill-quiet">0</span>
             {/if}
+          </td>
+          <td class="count">
             {#if (s.trendWarningCount ?? 0) > 0}
-              <!-- Prefixed rather than left as a bare number: two counts side by
-                   side read as "2 2" with nothing to say which is which, and
-                   colour alone does not carry that for everyone. -->
               <span class="pill pill-trend" title="{s.trendWarningCount} trend warning(s)">~{s.trendWarningCount}</span>
+            {:else}
+              <span class="pill pill-quiet">&ndash;</span>
             {/if}
           </td>
           <td class="seen seen-{f.state}">{f.label}</td>
@@ -267,7 +285,14 @@
   }
 
   .mono { font-family: var(--font-mono, monospace); font-size: 13px; color: var(--text-secondary); }
-  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* One centered column per count, so the value sits under its own label
+     whether or not the other count exists. */
+  .count { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; width: 4.5rem; }
+
+  /* The row is clickable; say so. Links and buttons inside keep their own
+     behavior (the click handler ignores them). */
+  .row-link { cursor: pointer; }
+  .row-link:hover td { background: var(--g-hover-surface); }
 
   /* Status color is reserved for health. Freshness is a separate axis and gets
      weight rather than hue, except when the data is stale enough that the health
@@ -289,8 +314,7 @@
   }
   .pill-alert { background: var(--red-bg, rgba(200, 80, 60, 0.14)); color: var(--red, #c05f45); }
   .pill-quiet { color: var(--text-tertiary); }
-  .pill-trend { color: var(--yellow, #d8a02f); margin-left: 6px; }
-  .th-note { opacity: 0.75; }
+  .pill-trend { color: var(--yellow, #d8a02f); }
 
   /* Mobile: still rows, not cards. Hostname, alerts and freshness on the first
      line, because those decide whether you open the host at all; distro and
@@ -309,8 +333,9 @@
     }
     .fleet td { border: none; padding: 0; }
     .host { grid-column: 1; grid-row: 1; }
-    .num { grid-column: 2; grid-row: 1; text-align: right; }
-    .seen { grid-column: 2; grid-row: 2; text-align: right; }
+    .count { grid-column: 2; grid-row: 1; text-align: right; width: auto; }
+    .count + .count { grid-row: 2; }
+    .seen { grid-column: 2; grid-row: 3; text-align: right; }
     .mono { grid-column: 1; }
   }
 </style>

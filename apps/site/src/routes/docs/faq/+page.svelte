@@ -101,10 +101,6 @@
         <p>Yes, entirely. The dashboard monorepo is AGPL-3.0-only at <a href="https://github.com/glassmkr/glassmkr">github.com/glassmkr/glassmkr</a>; the Crucible agent is AGPL-3.0-only at <a href="https://github.com/glassmkr/crucible">github.com/glassmkr/crucible</a>. One Docker Compose file runs the whole stack on your own hardware: see <a href="/docs/self-hosting">/docs/self-hosting</a>.</p>
       </details>
 
-      <details>
-        <summary>What happened to the paid Pro tier?</summary>
-        <p>Retired in August 2026, when the entire stack went open source. Everything Pro used to gate is now included for every account: 90-day retention, AI analysis, and up to 10 hosted nodes (self-hosted has no node limits). Nothing is billed; any historical charges were settled through Stripe. See the <a href="/billing-policy">billing policy</a>.</p>
-      </details>
     </section>
 
     <section id="agent">
