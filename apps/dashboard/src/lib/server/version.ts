@@ -16,7 +16,7 @@
 // be a real, installable release (not what's in-progress). Bump it only
 // after the corresponding release is live on npm.
 
-export const FALLBACK_LATEST = "1.1.1";
+export const FALLBACK_LATEST = "1.2.0";
 export const MIN_SUPPORTED_CRUCIBLE = "0.1.0";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
