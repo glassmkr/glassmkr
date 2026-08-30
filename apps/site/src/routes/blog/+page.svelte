@@ -305,11 +305,16 @@
       <div class="feature-row">
         {#each features as post, i (post.slug)}
           <a href="/blog/{post.slug}" class="feature">
-            <!-- The feature row carries the post's card, consistently: the
-                 in-article evidence charts predate the redesign palette and
-                 read as a different system next to the cards. Intrinsic size
-                 stated so the row reserves space before the image arrives. -->
-            <img class="feature-art" src={post.image} alt={post.imageAlt} width="1200" height="630" loading="eager" decoding="async" />
+            <!-- Evidence leads when a post has an honest visual (review P1-2);
+                 the typographic card is the fallback, not the default. The
+                 evidence charts now render in the redesign palette, which was
+                 the earlier inconsistency. Intrinsic size stated so the row
+                 reserves space before the image arrives. -->
+            {#if post.evidence}
+              <img class="feature-art" src={post.evidence} alt={post.evidenceAlt} width="1464" height="792" loading="eager" decoding="async" />
+            {:else}
+              <img class="feature-art" src={post.image} alt={post.imageAlt} width="1200" height="630" loading="eager" decoding="async" />
+            {/if}
             <p class="row-meta">
               <span>{post.date}</span><span class="sep">·</span><span>{post.tag}</span>
               {#if post.readTime}<span class="sep">·</span><span>{post.readTime}</span>{/if}

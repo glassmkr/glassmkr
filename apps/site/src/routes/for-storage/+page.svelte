@@ -1,4 +1,5 @@
 <script lang="ts">
+  import raid from "$lib/data/exhibits/demo-fleet-raid.json";
   // /for-storage. Use-case page, replacing the audience-shaped verticals: what you
   // run determines which rules matter, and an SRE and a self-hoster with the same
   // array need the same alerts.
@@ -71,7 +72,7 @@
       that bit can sit from reality: 477 dead sectors, and it still read PASSED.
     </p>
     <div class="cta-row">
-      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Install in 2 minutes</a>
+      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Monitor a server for free</a>
       <a href="https://github.com/glassmkr/crucible" class="btn btn-ghost btn-lg">View Crucible on GitHub<span class="mit-badge">AGPL-3.0-only</span></a>
     </div>
     <p class="cta-caption">Free hosted or self-hosted. Point it at one storage box before deploying fleet-wide.</p>
@@ -80,6 +81,22 @@
       <code>curl -fsSL https://glassmkr.com/install.sh | sudo bash</code>
       <p class="install-version">Crucible v{data.crucibleVersion} on npm</p>
     </div>
+  </section>
+
+  <section class="section" aria-label="A real storage alert">
+    <figure class="first-proof">
+      <div class="fp-head">
+        <span class="fp-sev crit">{raid.alert.rendered_priority}</span>
+        <span class="fp-title">{raid.alert.title}</span>
+        <span class="fp-host">{raid.alert.host}</span>
+      </div>
+      <div class="fp-body">
+        <p class="fp-consequence">One disk has dropped out of the RAID array. The server is still online, but it has lost redundancy.</p>
+        <div class="fp-row"><p class="fp-label">EVIDENCE</p><p class="fp-mono">{raid.alert.message}</p></div>
+        <div class="fp-row"><p class="fp-label">NEXT SAFE STEP</p><p class="fp-text">{raid.alert.recommendation}</p></div>
+      </div>
+      <figcaption class="provenance">captured 2026-08-30 10:31 UTC · host {raid.alert.host} · public demo, read-only sample-fleet capture · agent {raid.host_snapshot.collector_version}</figcaption>
+    </figure>
   </section>
 
   <section class="section">
@@ -201,7 +218,7 @@
   <section class="cta-section">
     <h2>Point it at one storage box first.</h2>
     <p>
-      Install takes two minutes and both deployment forms are free, so you can see what it says about hardware you
+      Install is one command, the first snapshot normally arrives within one collection cycle (about five minutes at the default interval), and both deployment forms are free, so you can see what it says about hardware you
       already know the history of before you trust it with the rest.
     </p>
     <div class="cta-row">

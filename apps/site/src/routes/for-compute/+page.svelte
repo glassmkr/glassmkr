@@ -1,4 +1,5 @@
 <script lang="ts">
+  import sshAlert from "$lib/data/exhibits/val-rocky-ssh-root.json";
   // /for-compute. Use-case page for general CPU compute: the broad middle of a
   // bare-metal fleet, where the distinguishing signals are the ones you only get
   // because you own the hardware.
@@ -71,7 +72,7 @@
       power supply and the bonded link are all yours to notice first.
     </p>
     <div class="cta-row">
-      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Install in 2 minutes</a>
+      <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-lg">Monitor a server for free</a>
       <a href="https://github.com/glassmkr/crucible" class="btn btn-ghost btn-lg">View Crucible on GitHub<span class="mit-badge">AGPL-3.0-only</span></a>
     </div>
     <p class="cta-caption">Free hosted or self-hosted. No agent config to write.</p>
@@ -80,6 +81,22 @@
       <code>curl -fsSL https://glassmkr.com/install.sh | sudo bash</code>
       <p class="install-version">Crucible v{data.crucibleVersion} on npm</p>
     </div>
+  </section>
+
+  <section class="section" aria-label="A real alert from an ordinary compute box">
+    <figure class="first-proof">
+      <div class="fp-head">
+        <span class="fp-sev">{sshAlert.alert.severity.toUpperCase()}</span>
+        <span class="fp-title">{sshAlert.alert.title}</span>
+        <span class="fp-host">{sshAlert.host.hostname} · {sshAlert.host.os}</span>
+      </div>
+      <div class="fp-body">
+        <p class="fp-consequence">This box shipped from the provider with password root SSH enabled. Nothing was broken yet; it was simply waiting to be found.</p>
+        <div class="fp-row"><p class="fp-label">EVIDENCE</p><p class="fp-mono">{sshAlert.alert.message}</p></div>
+        <div class="fp-row"><p class="fp-label">NEXT SAFE STEP</p><p class="fp-text">{sshAlert.alert.recommendation}</p></div>
+      </div>
+      <figcaption class="provenance">captured 2026-08-30 18:31 UTC · host {sshAlert.host.hostname} · live account capture · agent {sshAlert.host.collector_version}</figcaption>
+    </figure>
   </section>
 
   <section class="section">

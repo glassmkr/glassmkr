@@ -176,20 +176,46 @@
            (alerts and freshness) buried inside each box. Demo nodes never ingest, so
            their seeded collector_version is frozen; the table does not show a version
            column at all, which sidesteps the badge that used to need special-casing. -->
-      <FleetTable
-        servers={servers.map((s) => ({
-          ...s,
-          alertCount: alertCounts[s.id] ?? 0,
-          unackedCount: unackedCounts[s.id] ?? 0,
-          trendWarningCount: trendWarningCounts[s.id] ?? 0,
-        }))}
-        fleet={servers}
-      />
+      {#if customer?.isDemo}
+        {@const captureMs = Math.max(...servers.map((s) => (s.last_seen_at ? new Date(s.last_seen_at).getTime() : 0))) + 60_000}
+        <!-- The demo is a recorded capture (review P1-7): ages measured
+             against the wall clock made it look abandoned. Measure against
+             the capture timestamp and say so plainly. -->
+        <p class="demo-capture-note">
+          Sample capture from {new Date(captureMs).toISOString().slice(0, 10)}; timestamps are relative to the capture, not live.
+        </p>
+        <FleetTable
+          servers={servers.map((s) => ({
+            ...s,
+            alertCount: alertCounts[s.id] ?? 0,
+            unackedCount: unackedCounts[s.id] ?? 0,
+            trendWarningCount: trendWarningCounts[s.id] ?? 0,
+          }))}
+          fleet={servers}
+          nowMs={captureMs}
+        />
+      {:else}
+        <FleetTable
+          servers={servers.map((s) => ({
+            ...s,
+            alertCount: alertCounts[s.id] ?? 0,
+            unackedCount: unackedCounts[s.id] ?? 0,
+            trendWarningCount: trendWarningCounts[s.id] ?? 0,
+          }))}
+          fleet={servers}
+        />
+      {/if}
     {/if}
   {/if}
 </div>
 
 <style>
+  .demo-capture-note {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+    margin: 0 0 10px;
+  }
   /* Fleet loading skeleton */
   .fleet-skeleton {
     border: 1px solid var(--surface-border);

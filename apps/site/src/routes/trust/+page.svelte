@@ -119,6 +119,17 @@
     <p>
       Read it at <a href="https://glassmkr.com/install.sh">install.sh</a> before piping it to bash. It installs Node from NodeSource if the host does not have it, installs <code>@glassmkr/crucible</code> from npm, installs smartmontools and (best effort) ipmitool so disk and chassis checks work, sets up a systemd service, and hands off to <code>init</code> to register the node. That is the whole script; read it and check.
     </p>
+    <aside class="trust-exhibit" aria-label="Privilege boundary diagram">
+      <p class="ex-label">EXHIBIT: THE PRIVILEGE PATH</p>
+      <div class="ex-diagram">
+        <div class="ex-node"><strong>Install (root, once)</strong><span>adds the <code>glassmkr</code> user, a systemd unit, packages</span></div>
+        <div class="ex-wire" aria-hidden="true"><span>then drops privilege</span></div>
+        <div class="ex-node"><strong>Crucible daemon</strong><span>runs as <code>glassmkr</code>, unprivileged</span></div>
+        <div class="ex-wire" aria-hidden="true"><span>one fixed command per action; no shell, no caller arguments</span></div>
+        <div class="ex-node"><strong>Root-owned wrapper</strong><span>allowlisted reads: <code>smartctl</code> &middot; <code>ipmitool</code> &middot; <code>mdadm</code></span></div>
+      </div>
+      <p class="ex-caption">Each privileged read is one auditable, fixed-argument action. The wrapper source ships in the agent repository.</p>
+    </aside>
     <h3>Installation needs root once. The daemon that keeps running does not.</h3>
     <p>
       Installing is a root step, as any package install is: it adds a system
@@ -197,6 +208,17 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
 
   <section class="trust-section" id="data">
     <h2>Data handling</h2>
+    <aside class="trust-exhibit" aria-label="Data path diagram">
+      <p class="ex-label">EXHIBIT: THE DATA PATH</p>
+      <div class="ex-diagram">
+        <div class="ex-node"><strong>Your server</strong><span>Crucible reads /proc, /sys, SMART, IPMI, RAID/ZFS state</span></div>
+        <div class="ex-wire" aria-hidden="true"><span>outbound TLS only: metrics, alert state, bounded excerpts; no bulk logs, no command output, no file reads</span></div>
+        <div class="ex-node"><strong>Dashboard</strong><span>hosted: Postgres + ClickHouse, Amsterdam &middot; self-hosted: your network, we see nothing</span></div>
+        <div class="ex-wire" aria-hidden="true"><span>alerts route onward only where you configure them</span></div>
+        <div class="ex-node"><strong>Notification channels</strong><span>Telegram, Slack, email, webhook, PagerDuty, Discord</span></div>
+      </div>
+      <p class="ex-caption">The complete egress list, including the three default internet reads that carry none of your data, is in the prose alongside.</p>
+    </aside>
 
     <h3>What data leaves your server</h3>
     <ul>
@@ -226,6 +248,20 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
 
   <section class="trust-section" id="access">
     <h2>Who can access your data</h2>
+    <aside class="trust-exhibit" aria-label="Hosted versus self-hosted access">
+      <p class="ex-label">EXHIBIT: ACCESS BY DEPLOYMENT</p>
+      <div class="ex-compare">
+        <div class="ex-col">
+          <strong>Hosted</strong>
+          <span>One operator, with logged access (90-day retention), read only for support, debugging, incidents</span>
+        </div>
+        <div class="ex-col">
+          <strong>Self-hosted</strong>
+          <span>Glassmkr has no access at all; nothing about your servers reaches us</span>
+        </div>
+      </div>
+      <p class="ex-caption">If a hosted service is ruled out, self-hosting is the same product, not a downgrade.</p>
+    </aside>
     <p>
       This section applies to the hosted instance at app.glassmkr.com. A self-hosted deployment is yours alone: we have no access to it, and nothing about your servers reaches us.
     </p>
@@ -354,6 +390,78 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
   .trust section li {
     max-width: 76ch;
   }
+
+  /* Asymmetric editorial layout (review P1-3): prose keeps its measure in
+     the first column; the section's exhibit occupies a right rail on wide
+     viewports and follows its heading on mobile. */
+  @media (min-width: 1100px) {
+    .trust-section {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 400px;
+      column-gap: 48px;
+    }
+    .trust-section > * { grid-column: 1; }
+    .trust-section > h2 { grid-column: 1 / -1; }
+    .trust-section > .trust-exhibit {
+      grid-column: 2;
+      grid-row: 2 / span 60;
+      align-self: start;
+      position: sticky;
+      top: 88px;
+    }
+  }
+  .trust-exhibit {
+    border: 1px solid var(--g-border);
+    border-radius: var(--g-radius-2);
+    padding: 18px;
+    margin: 8px 0 20px;
+  }
+  .ex-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--text-tertiary);
+    margin: 0 0 14px;
+  }
+  .ex-node {
+    border: 1px solid var(--g-border-strong);
+    border-radius: var(--g-radius-2);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ex-node strong { font-size: 13.5px; color: var(--text-primary); font-weight: 500; }
+  .ex-node span { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.5; }
+  .ex-node code { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); background: none; padding: 0; }
+  .ex-wire {
+    padding: 8px 0 8px 22px;
+    position: relative;
+  }
+  .ex-wire::before {
+    content: "";
+    position: absolute;
+    left: 8px; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--g-brand);
+  }
+  .ex-wire span {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+    letter-spacing: 0.02em;
+  }
+  .ex-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ex-col {
+    border: 1px solid var(--g-border-strong);
+    border-radius: var(--g-radius-2);
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .ex-col strong { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  .ex-col span { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.5; }
+  .ex-caption { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.55; margin: 12px 0 0; }
 
   .trust-hero {
     padding: 72px 0 48px;

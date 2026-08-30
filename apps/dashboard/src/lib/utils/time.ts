@@ -1,6 +1,9 @@
 /** Returns a human-readable relative time string, e.g. "2m ago", "3h ago", "5d ago". */
-export function timeAgo(dateStr: string): string {
-  const now = Date.now();
+export function timeAgo(dateStr: string, nowMs?: number): string {
+  // nowMs lets a caller measure against a reference clock instead of the
+  // wall clock: the demo renders ages relative to its capture timestamp, so
+  // a recorded sample reads as deliberately captured rather than abandoned.
+  const now = nowMs ?? Date.now();
   const then = new Date(dateStr).getTime();
   const seconds = Math.floor((now - then) / 1000);
 

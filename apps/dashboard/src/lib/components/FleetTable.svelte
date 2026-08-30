@@ -32,7 +32,11 @@
     profile?: string | null;
   };
 
-  let { servers = [], fleet = [] }: { servers: Row[]; fleet: Row[] } = $props();
+  let {
+    servers = [],
+    fleet = [],
+    nowMs = undefined,
+  }: { servers: Row[]; fleet: Row[]; nowMs?: number } = $props();
 
   // Stale is a fact about the data, not a health verdict: a host that stopped
   // reporting is not healthy, and showing its last known state as if it were
@@ -41,8 +45,9 @@
 
   function freshness(s: Row): { label: string; state: "fresh" | "stale" | "never" } {
     if (!s.last_seen_at) return { label: "never", state: "never" };
-    const age = Date.now() - new Date(s.last_seen_at).getTime();
-    return { label: timeAgo(s.last_seen_at), state: age > STALE_AFTER_MS ? "stale" : "fresh" };
+    const ref = nowMs ?? Date.now();
+    const age = ref - new Date(s.last_seen_at).getTime();
+    return { label: timeAgo(s.last_seen_at, nowMs), state: age > STALE_AFTER_MS ? "stale" : "fresh" };
   }
 
   function hardware(s: Row): string {
@@ -141,6 +146,9 @@
   {/if}
 </div>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -- a horizontally
+     scrollable data region must be keyboard-focusable to be scrollable
+     without a pointer (and check-rendered asserts exactly that pattern). -->
 <div class="fleet-scroll" tabindex="0" role="region" aria-label="Fleet, scrolls horizontally on small screens">
   <table class="fleet">
     <thead>

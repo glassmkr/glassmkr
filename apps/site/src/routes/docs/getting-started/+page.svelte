@@ -51,7 +51,7 @@
       <div class="callout">
         <strong>Automating, or onboarding many servers?</strong> The whole flow runs over the API, no dashboard clicks. A <code>write</code>-scoped account key (<code>gmk_acct_live_</code>) creates each server with <code>POST /api/v1/servers</code>, and the response returns that server's collector key. See the <a href="/docs/programmatic-api">Programmatic API quickstart</a>.
       </div>
-      <p class="note">Last verified: 2026-08-24 against Crucible v0.15.1.</p>
+      <p class="note">Last verified: 2026-08-30 against Crucible v1.1.1 (fresh installs on four validation hosts: Rocky, Debian, Alma, Ubuntu).</p>
     </section>
 
     <section id="prerequisites">

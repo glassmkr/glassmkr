@@ -1,0 +1,33 @@
+{
+  "captured_at": "2026-08-30T18:27:41Z",
+  "source": "live account capture via the read API (glassmkr-gpu-1, the host that serves Glassmkr's own AI inference)",
+  "host": {
+    "hostname": "glassmkr-gpu-1",
+    "os": "Ubuntu 24.04.4 LTS",
+    "hardware": "Supermicro AS-3015MR-H8TNR",
+    "collector_version": "1.1.1"
+  },
+  "gpu": {
+    "name": "NVIDIA L4",
+    "driver_version": "580.173.02",
+    "ecc_mode_current": true,
+    "ecc_errors_uncorrected_aggregate": 0,
+    "ecc_errors_corrected_aggregate": 0,
+    "xid_events": 0,
+    "temp_c": 56,
+    "thermal_slowdown_active": false,
+    "power_draw_w": 30.22,
+    "power_limit_w": 72,
+    "pstate": "P0",
+    "pcie_link": "Gen4 x8",
+    "vram_used_mib": 18291,
+    "vram_total_mib": 23034
+  },
+  "alert": {
+    "alert_type": "kernel_needs_reboot",
+    "severity": "warning",
+    "title": "Reboot required for kernel update",
+    "message": "Running kernel: 7.0.0-28-generic. Installed kernel: 7.0.0-30-generic. A reboot is needed to apply the newer kernel.",
+    "recommendation": "Schedule a reboot to apply the newer kernel. Security patches may not be active until then."
+  }
+}

@@ -43,7 +43,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/monitoring-a-host-you-dont-fully-control.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Half the &quot;problems&quot; on a marketplace GPU host are required config" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">July 2026 · Product · 5 min read</p>
       <h1>Half the "problems" on a marketplace GPU host are required config. So we taught Glassmkr the difference.</h1>
@@ -107,9 +106,6 @@
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

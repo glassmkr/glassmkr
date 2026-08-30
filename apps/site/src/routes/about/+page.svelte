@@ -38,21 +38,38 @@
   </section>
 
   <section>
-    <h2>Who builds it</h2>
+    <h2>What operating experience became product behavior</h2>
     <p>I built Glassmkr from ten years of operating bare metal: racks,
        switches, IPMI consoles, failed drives, bad memory, broken fans, and the
        pages that arrive at 3 AM. The product turns that experience into
        defaults, alert rules, evidence, and remediation workflows that other
        server owners can use without reproducing the same career first.</p>
-      <p>Glassmkr is built and operated by one person. The hosted service runs on
-        infrastructure I administer myself.</p>
-  </section>
-
-  <!-- Canonical rule count: see RULES_COUNT.md at the monorepo root. -->
-  <section>
-    <h2>Why we exist</h2>
     <p>General-purpose monitoring tools like Datadog and New Relic do not understand IPMI, SMART, or RAID. They are built for cloud workloads. Traditional tools like Nagios and Zabbix can monitor hardware, but they are heavy to deploy and require extensive configuration.</p>
     <p>I wanted something opinionated: {rules.length} alerts covering what actually breaks, with defaults rather than a configuration exercise. Setup is one command on Ubuntu or Debian and a few minutes by hand elsewhere; it needs an account key, and the agent needs root once to install before it runs as its own unprivileged user. In August 2026 I open-sourced the entire stack.</p>
+  </section>
+
+  <section>
+    <h2>What one-person operation means in practice</h2>
+    <p>Glassmkr is built and operated by one person. The hosted service runs
+       on infrastructure I administer myself, monitored by the same agent and
+       the same rules you get. When something pages, it pages me.</p>
+    <p>That is also why the whole stack is open source: one-person operation
+       is a real constraint, and your exit from it cannot depend on me. If the
+       hosted service ever stops, the agent, the dashboard, and your data
+       remain yours to run.</p>
+    <figure class="fleet-artifact">
+      <figcaption class="artifact-label">THE FLEET THE RULES ARE TUNED ON (2026-08-30)</figcaption>
+      <div class="artifact-scroll" tabindex="0" role="region" aria-label="Operator fleet inventory">
+        <table>
+          <tbody>
+            <tr><td class="mono">services</td><td>Supermicro SYS-530MT-H8TNR</td><td class="mono">ubuntu 24.04</td><td>runs the hosted dashboard</td></tr>
+            <tr><td class="mono">glassmkr-gpu-1</td><td>Supermicro AS-3015MR-H8TNR</td><td class="mono">ubuntu 24.04</td><td>self-hosted AI inference (L4)</td></tr>
+            <tr><td class="mono">webhoster</td><td>Supermicro Super Server</td><td class="mono">ubuntu 24.04</td><td>this site, among others</td></tr>
+            <tr><td class="mono">val-rocky / val-debian / val-alma / val-ubuntu</td><td>4&times; Supermicro SYS-530MT-H8TNR</td><td class="mono">rocky 9.8 &middot; debian 12 &middot; alma 9.6 &middot; ubuntu 24.04</td><td>validation fleet: rules are exercised here before they ship</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </figure>
   </section>
 
   <section>
@@ -131,7 +148,7 @@
     </section>
 
     <section class="name-section">
-    <h2>The name</h2>
+    <h2>Why the name and craft matter</h2>
     <p>Glassmkr takes its name from the Bohemian glassmaking tradition: objects
         that are difficult to make and ordinary to use. That is the intended
         shape of this software too.</p>
@@ -171,6 +188,21 @@
     margin-bottom: 18px;
     color: var(--text-primary);
   }
+  /* Operator artifact (review P1-4): a real inventory, mono where the data
+     is machine-shaped. */
+  .fleet-artifact { margin: 24px 0 0; border: 1px solid var(--g-border); border-radius: var(--g-radius-2); padding: 16px 18px; max-width: none; }
+  .artifact-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin: 0 0 10px; }
+  .artifact-scroll { overflow-x: auto; }
+  .fleet-artifact table { width: 100%; border-collapse: collapse; min-width: 560px; }
+  .fleet-artifact td { padding: 8px 18px 8px 0; border-bottom: 1px solid var(--g-border-subtle); font-size: 13px; color: var(--text-secondary); vertical-align: top; line-height: 1.5; }
+  .fleet-artifact tr:last-child td { border-bottom: none; }
+  .fleet-artifact .mono { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary); white-space: nowrap; }
+
+  /* Principles as a wide editorial rhythm (review P1-4), not a narrow list. */
+  @media (min-width: 1024px) {
+    .principles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 48px; }
+  }
+
   .page-header p {
     font-size: clamp(17px, 1.4vw, 20px);
     line-height: 1.5;

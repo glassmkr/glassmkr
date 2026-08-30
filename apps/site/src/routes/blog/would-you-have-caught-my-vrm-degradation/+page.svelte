@@ -75,7 +75,6 @@ May 17 18:47 - May 18 10:48  16.0 h   100.5 h  -> 116.6 h        no  (+16.0 h)`;
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/would-you-have-caught-my-vrm-degradation.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Would you have caught my VRM degradation?" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">June 2026 · Engineering · 9 min read</p>
       <h1>Would you have caught my VRM degradation?</h1>
@@ -220,9 +219,6 @@ May 17 18:47 - May 18 10:48  16.0 h   100.5 h  -> 116.6 h        no  (+16.0 h)`;
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
 
   .post {
     padding: 56px 0 80px;

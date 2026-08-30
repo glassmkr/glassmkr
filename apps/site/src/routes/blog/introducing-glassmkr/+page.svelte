@@ -48,7 +48,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/introducing-glassmkr.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Introducing Glassmkr: bare metal monitoring built by operators" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Launch</p>
 
     <h1>Introducing Glassmkr: bare metal monitoring built by operators</h1>
@@ -145,9 +144,6 @@
 
 <style>
   .license-note { font-size: 13px; color: var(--text-tertiary); border-left: 2px solid var(--surface-border); padding-left: 12px; line-height: 1.6; }
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 720px;
     margin: 0 auto;

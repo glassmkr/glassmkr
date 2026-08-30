@@ -186,7 +186,7 @@
   .filter-bar { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; }
   .filter-field { display: flex; flex-direction: column; gap: 4px; }
   .filter-field label { font-size: 12px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
-  .filter-field input, .filter-field select { padding: 6px 8px; background: var(--surface); border: 1px solid var(--surface-border); border-radius: 4px; color: var(--text-primary); font-size: 13px; }
+  .filter-field select { padding: 6px 8px; background: var(--surface); border: 1px solid var(--surface-border); border-radius: 4px; color: var(--text-primary); font-size: 13px; }
   /* The shorthand above resets the global 32px chevron clearance. */
   .filter-field select { padding-right: 30px; }
   .audit-scroll { overflow-x: auto; }

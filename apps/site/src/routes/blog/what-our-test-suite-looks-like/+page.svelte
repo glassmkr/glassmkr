@@ -83,7 +83,6 @@ it("matches PS<N> with space OR underscore, across vendors", () => {
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/what-our-test-suite-looks-like.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title What our test suite looks like, and why" width="1200" height="630" loading="eager" decoding="async" />
     <header class="post-header">
       <p class="post-meta">June 2026 · Engineering · 8 min read</p>
       <h1>What our test suite looks like, and why.</h1>
@@ -212,9 +211,6 @@ it("matches PS<N> with space OR underscore, across vendors", () => {
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .post {
     padding: 56px 0 80px;
   }

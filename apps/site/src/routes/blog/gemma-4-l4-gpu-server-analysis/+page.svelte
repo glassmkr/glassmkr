@@ -48,7 +48,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/gemma-4-l4-gpu-server-analysis.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title What We Learned Running Gemma 4 on an L4 GPU for Production Server Analysis" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Engineering</p>
 
     <h1>Running Gemma 4 on an L4 GPU for production server analysis</h1>
@@ -169,9 +168,6 @@ RestartSec=5</code></pre>
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 680px;
     margin: 0 auto;

@@ -49,7 +49,6 @@
 
 <div class="container-narrow">
   <article class="post">
-  <img class="post-hero" src="/og/training-drive-failure-model-on-l4.png?v=20260830" alt="Glassmkr blog card with the hexagon logo and the title Training a drive-failure model on a GPU server's CPU" width="1200" height="630" loading="eager" decoding="async" />
     <p class="post-meta">April 2026 · Engineering</p>
 
     <h1>Training a drive-failure model on a GPU server's CPU</h1>
@@ -215,9 +214,6 @@
 </div>
 
 <style>
-  .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
-    border-radius:6px; border:1px solid var(--surface-border);
-    margin:24px 0 20px; background:var(--surface-raised); }
   .container-narrow {
     max-width: 720px;
     margin: 0 auto;
