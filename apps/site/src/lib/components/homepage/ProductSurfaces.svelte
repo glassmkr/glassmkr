@@ -212,7 +212,7 @@ maintenance window: suppressed</code></pre>
     font-size: 12.5px;
     color: var(--text-secondary);
   }
-  .furnace { background: rgba(245, 166, 35, 0.03); }
+  .furnace { background: rgba(255, 107, 53, 0.03); }
   .furnace .sec-label { color: var(--accent); }
   .furnace .sec-body { margin-bottom: 0; }
 

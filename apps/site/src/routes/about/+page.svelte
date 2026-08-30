@@ -248,7 +248,7 @@
 
   .name-section :global(em) {
     font-style: normal;
-    color: rgba(245, 166, 35, 0.9);
+    color: rgba(255, 107, 53, 0.9);
   }
 
   .contact-list {

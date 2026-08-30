@@ -73,7 +73,7 @@
     border: 1px solid var(--accent);
     border-radius: var(--radius-md);
     padding: 5px 11px;
-    background: rgba(245, 166, 35, 0.05);
+    background: rgba(255, 107, 53, 0.05);
   }
   .grid {
     display: grid;

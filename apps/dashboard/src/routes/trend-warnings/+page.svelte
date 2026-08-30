@@ -674,7 +674,7 @@
   .section { margin-bottom: 20px; padding: 24px; }
 
   /* Free-tier upsell card — same idiom as /settings/keys. */
-  .upsell-card { background: rgba(245, 166, 35, 0.04); border-color: rgba(245, 166, 35, 0.25); }
+  .upsell-card { background: rgba(255, 107, 53, 0.04); border-color: rgba(255, 107, 53, 0.25); }
   .upsell-row { display: flex; justify-content: space-between; gap: 24px; align-items: center; }
 
   /* Tab nav */

@@ -202,12 +202,15 @@ export const PRIORITY_LABELS: Record<number, string> = {
   4: "P4 LOW",
 };
 
+// Priority pill colors, aligned to the canonical --g-priority-* scale
+// (spec 4.4). No tier uses the brand: P2 is the warning band, P3 is info, P4
+// is a muted low tier. Each name maps to a .tag-<name> class in base.css.
 export const PRIORITY_COLORS: Record<number, string> = {
-  0: "red",
-  1: "red",
-  2: "accent",
-  3: "yellow",
-  4: "blue", // informational, calm cool tone (not a warning band)
+  0: "red", // critical
+  1: "red", // critical
+  2: "yellow", // warning (was the brand accent; decoupled per spec 4.4)
+  3: "blue", // info
+  4: "muted", // low, below the paging threshold
 };
 
 export const PRIORITY_EMOJI: Record<number, string> = {

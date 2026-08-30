@@ -241,7 +241,7 @@
   .tw-tier-scheduled { color: #3B82F6; background: #111726; }
   .tw-tier-watch     { color: #A2A9B4; background: #181B1F; }
   .tw-severity {
-    color: #F5A623;
+    color: #ff6b35;
     font-weight: 600;
   }
   .tw-corr {

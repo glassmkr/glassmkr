@@ -364,7 +364,7 @@
     margin-top: 1.75rem;
     margin-bottom: 0;
     padding-left: 14px;
-    border-left: 1px solid rgba(245, 166, 35, 0.18);
+    border-left: 1px solid rgba(255, 107, 53, 0.18);
     scroll-margin-top: 80px;
   }
   .subsection h3 {
@@ -436,7 +436,7 @@
   pre {
     background: var(--surface);
     border: 1px solid var(--surface-border);
-    border-left: 3px solid rgba(245, 166, 35, 0.35);
+    border-left: 3px solid rgba(255, 107, 53, 0.35);
     border-radius: var(--radius-md);
     padding: 14px 16px;
     overflow-x: auto;
@@ -609,7 +609,7 @@
     font-size: 0.75rem;
     padding: 2px 8px;
     border-radius: var(--radius-md);
-    background: rgba(245, 166, 35, 0.1);
+    background: rgba(255, 107, 53, 0.1);
     color: var(--accent);
     font-weight: 500;
   }
@@ -701,7 +701,7 @@
     margin: 0 0 1.5rem;
     padding: 16px 18px;
     background: var(--surface);
-    border: 1px solid rgba(245, 166, 35, 0.3);
+    border: 1px solid rgba(255, 107, 53, 0.3);
     border-radius: var(--radius-md);
     text-decoration: none;
     transition: border-color 0.15s;

@@ -663,7 +663,7 @@
      the rule loses to `.form-row label { display: block }` which
      stacks the radio above its content. */
   label.scope-option { display: flex; gap: 10px; padding: 10px; border: 1px solid var(--surface-border); border-radius: 4px; cursor: pointer; align-items: flex-start; margin-bottom: 0; }
-  label.scope-option:has(input:checked) { border-color: var(--accent); background: rgba(245, 166, 35, 0.06); }
+  label.scope-option:has(input:checked) { border-color: var(--accent); background: rgba(255, 107, 53, 0.06); }
   label.scope-option > input[type="radio"] { margin-top: 4px; flex-shrink: 0; }
   label.scope-option .desc { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
   .desc { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
@@ -676,7 +676,7 @@
   /* Free-tier soft upsell. Lighter visual than a full Pro-required block;
      sits above the always-rendered keys section so Free users see the
      create-key flow first and the upgrade prompt as secondary context. */
-  .upsell-card { background: rgba(245, 166, 35, 0.04); border-color: rgba(245, 166, 35, 0.25); }
+  .upsell-card { background: rgba(255, 107, 53, 0.04); border-color: rgba(255, 107, 53, 0.25); }
   .upsell-row { display: flex; justify-content: space-between; gap: 24px; align-items: center; }
   /* Scope display in the Free-tier create modal: a static "read" badge plus
      the upsell note, replacing the 3-radio selector. */

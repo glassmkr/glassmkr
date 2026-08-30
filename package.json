@@ -31,6 +31,8 @@
     "lint:comment-leak:test": "node scripts/lint-orphaned-comment-text.test.mjs",
     "lint:plan-language": "node scripts/lint-plan-language.mjs",
     "lint:plan-language:test": "node scripts/lint-plan-language.test.mjs",
+    "lint:brand-palette": "node scripts/check-brand-palette.mjs",
+    "lint:brand-palette:test": "node scripts/check-brand-palette.test.mjs",
     "gen-openapi:test": "node scripts/gen-openapi.test.mjs"
   },
   "devDependencies": {

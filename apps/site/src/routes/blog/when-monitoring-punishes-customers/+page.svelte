@@ -228,16 +228,16 @@
     font-size: 14px;
     font-weight: 500;
     text-decoration: none;
-    transition: all 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
   }
   .btn-amber {
-    background: rgba(245, 166, 35, 0.12);
-    border: 1px solid rgba(245, 166, 35, 0.25);
+    background: rgba(255, 107, 53, 0.12);
+    border: 1px solid rgba(255, 107, 53, 0.25);
     color: var(--accent);
   }
   .btn-amber:hover {
-    background: rgba(245, 166, 35, 0.18);
-    border-color: rgba(245, 166, 35, 0.35);
+    background: rgba(255, 107, 53, 0.18);
+    border-color: rgba(255, 107, 53, 0.35);
     text-decoration: none;
   }
 </style>

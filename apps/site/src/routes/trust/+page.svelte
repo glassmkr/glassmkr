@@ -420,7 +420,7 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
   .trust-section code {
     font-family: var(--font-mono, monospace);
     font-size: 13px;
-    background: rgba(245, 166, 35, 0.06);
+    background: rgba(255, 107, 53, 0.06);
     color: var(--accent);
     padding: 2px 5px;
     border-radius: var(--radius-sm);

@@ -1107,8 +1107,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: rgba(245, 166, 35, 0.08);
-    border: 1px solid rgba(245, 166, 35, 0.15);
+    background: rgba(255, 107, 53, 0.08);
+    border: 1px solid rgba(255, 107, 53, 0.15);
     color: var(--accent);
     font-size: 12px;
     font-weight: 600;
@@ -1180,14 +1180,14 @@
     text-decoration: none;
     white-space: nowrap;
     padding: 6px 14px;
-    border: 1px solid rgba(245, 166, 35, 0.25);
+    border: 1px solid rgba(255, 107, 53, 0.25);
     border-radius: 4px;
-    background: rgba(245, 166, 35, 0.06);
+    background: rgba(255, 107, 53, 0.06);
     transition: background 0.15s;
   }
 
   .update-release-btn:hover {
-    background: rgba(245, 166, 35, 0.12);
+    background: rgba(255, 107, 53, 0.12);
     text-decoration: none;
   }
 
@@ -1288,7 +1288,7 @@
     color: var(--text-tertiary);
     cursor: pointer;
     border-radius: 4px;
-    transition: all 0.15s;
+    transition: background-color 0.15s, color 0.15s;
   }
   .alert-tab:hover {
     color: var(--text-secondary);
@@ -1352,7 +1352,7 @@
   .tw-upgrade {
     background: #121417;
     border: 1px solid #313742;
-    border-left: 4px solid #F5A623;
+    border-left: 4px solid #ff6b35;
     border-radius: 4px;
     padding: 18px 22px;
   }

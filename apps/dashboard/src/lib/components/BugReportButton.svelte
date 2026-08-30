@@ -298,8 +298,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(245, 166, 35, 0.06);
-    border: 1px solid rgba(245, 166, 35, 0.2);
+    background: rgba(255, 107, 53, 0.06);
+    border: 1px solid rgba(255, 107, 53, 0.2);
     padding: 6px 10px;
     border-radius: 4px;
     margin-bottom: 14px;

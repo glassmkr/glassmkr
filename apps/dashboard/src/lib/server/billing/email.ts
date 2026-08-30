@@ -47,7 +47,7 @@ export function glassmkrEmailShell(opts: {
       <tr><td style="background-color:#121417;border:1px solid #313742;border-radius:12px;overflow:hidden;">
         <table role="presentation" style="width:100%;border-collapse:collapse;">
           <tr><td style="padding:24px 26px 0 26px;">
-            <span style="display:inline-block;padding:3px 11px;border-radius:999px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#0B0C0E;background-color:#F5A623;">${escapeHtml(category)}</span>
+            <span style="display:inline-block;padding:3px 11px;border-radius:999px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#0B0C0E;background-color:#ff6b35;">${escapeHtml(category)}</span>
           </td></tr>
           <tr><td style="padding:14px 26px 0 26px;">
             <div style="font-size:19px;font-weight:600;color:#ECEEF1;line-height:1.3;letter-spacing:-0.01em;">${escapeHtml(title)}</div>
@@ -58,7 +58,7 @@ export function glassmkrEmailShell(opts: {
           <tr><td style="padding:22px 26px 26px 26px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border-radius:8px;">
               <tr>
-                <td bgcolor="#F5A623" style="border-radius:8px;padding:12px 30px;" align="center">
+                <td bgcolor="#ff6b35" style="border-radius:8px;padding:12px 30px;" align="center">
                   <a href="${escapeHtml(ctaUrl)}" target="_blank" style="font-size:14px;font-weight:600;color:#0B0C0E;text-decoration:none;display:block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">${escapeHtml(ctaText)}</a>
                 </td>
               </tr>

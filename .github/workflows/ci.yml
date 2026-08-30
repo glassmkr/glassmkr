@@ -92,6 +92,11 @@ jobs:
       # refuses was live at least once after the registry said hosted is free.
       - run: pnpm lint:plan-language
       - run: pnpm lint:plan-language:test
+      # Design-system integrity (Axiom-led redesign, spec section 25): no
+      # retired brand literals, no priority painted with the brand token, no
+      # blanket transition:all. Fixtures assert the matchers still bite.
+      - run: pnpm lint:brand-palette
+      - run: pnpm lint:brand-palette:test
       # Parser fixtures for the per-method credential/privilege derivation
       # (requireProGatedAuth blind spot, Codex 2026-08-29 #9).
       - run: pnpm gen-openapi:test

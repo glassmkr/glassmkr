@@ -12,8 +12,8 @@
  *   --bg-elevated     elevated card             → footer
  *   --bg-hover        hover background          → cell hover
  *   --surface-border  card border               → divider, pane border
- *   --accent          #F5A623 amber             → selection
- *   --accent-hover    #F5A623 lighter amber     → selection hover
+ *   --accent          #ff6b35 amber             → selection
+ *   --accent-hover    #ff6b35 lighter amber     → selection hover
  *   --text-primary    high-contrast body text   → day numbers
  *   --text-secondary  muted body text           → header label
  *   --text-tertiary   lowest-contrast text      → weekday labels
