@@ -568,6 +568,32 @@
     font-size: 0.9rem;
   }
 
+  /* Guide index: link on its own line, dimmed one-line description below it.
+     Without this the <a> and its <span> render inline with no separation, so
+     the link text runs straight into the description. */
+  .guide-index {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 1rem 0;
+    padding-left: 0;
+  }
+  .guide-index li {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .guide-index li a {
+    font-weight: 500;
+    width: fit-content;
+  }
+  .guide-index li span {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.55;
+  }
+
   /* Architecture diagram */
   .arch-diagram {
     display: flex;
