@@ -31,6 +31,8 @@
     { "id": "pending_security_updates", "side": "both" },
     { "id": "kernel_vulnerabilities", "side": "both" },
     { "id": "kernel_needs_reboot", "side": "both" },
+    { "id": "boot_config_broken", "side": "dashboard", "notes": "CRITICAL. From the val-rocky boot-failure postmortem (2026-08-30): the NEXT-boot entry's root=UUID/LABEL resolves to no present filesystem, so the next reboot drops to the dracut emergency shell. Crucible 1.2.0+ snap.boot_config.default_entry_bootable===false. Capability-gated (available:true); proven silent on the four val distros. Warns in the window before the fatal reboot; no boot-grace." },
+    { "id": "boot_config_drift", "side": "dashboard", "notes": "WARNING. Boots today, but the kernel-cmdline source, the default entry, or a fallback entry points at a wrong/absent filesystem, so a future kernel update or fallback boot could strand the host (val-rocky failure mode). Crucible 1.2.0+ snap.boot_config source_regressed / default_entry_wrong_fs / unbootable_entry_count. Ack-able." },
     { "id": "unattended_upgrades_disabled", "side": "both" },
 
     { "id": "cpu_high", "side": "dashboard", "notes": "Server-side: collector ships cpu.user_percent etc.; Forge thresholds." },

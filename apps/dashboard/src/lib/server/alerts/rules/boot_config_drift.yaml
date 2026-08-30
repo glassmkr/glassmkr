@@ -1,0 +1,134 @@
+# boot_config_drift; added 1.2.0 from the val-rocky boot-failure postmortem
+# (2026-08-30). WARNING (P3): the host boots correctly today, but a boot
+# reference is drifting toward the same failure. One or more of: the
+# kernel-cmdline source (/etc/kernel/cmdline) points at a filesystem that is
+# not the mounted root, so the NEXT kernel install would inherit a wrong root;
+# the default entry resolves to a different existing filesystem than the one
+# mounted; or a fallback/rescue entry references a filesystem that no longer
+# exists. Ack-able: not urgent, but fix before the next kernel update.
+id: boot_config_drift
+priority: P3
+title: Boot configuration drift (a future or fallback boot could strand this host)
+summary: This host boots correctly now, but a boot reference (the kernel-cmdline source, the default entry, or a fallback entry) points at a wrong or absent filesystem. A future kernel update or a fallback boot could drop it to the emergency shell. Fix before the next kernel update.
+fix:
+  quick_check:
+    command: |
+      findmnt -no SOURCE,UUID /
+      # RHEL: the source future kernels inherit:
+      cat /etc/kernel/cmdline 2>/dev/null
+      # Every entry's root= and whether it resolves:
+      grep -H root=UUID /boot/loader/entries/*.conf 2>/dev/null
+      grep -H root=UUID /boot/grub/grub.cfg 2>/dev/null
+      blkid -o export | grep -E '^(UUID|LABEL)='
+    description: "Compare the mounted root UUID against (a) /etc/kernel/cmdline, (b) the default entry, and (c) every other entry. A source or entry that names a UUID different from the mounted root (or absent from blkid) is the drift."
+  verdict_prior: recoverable
+  prerequisites:
+    - SSH access
+    - The real root UUID from `findmnt -no UUID /`
+    - "No maintenance window needed to FIX (edits are read-only to the running system); only the eventual verifying reboot needs one"
+  safe_mode:
+    command: |
+      findmnt -no SOURCE,UUID,LABEL /
+      cat /etc/kernel/cmdline 2>/dev/null
+      grep -H root= /boot/loader/entries/*.conf 2>/dev/null
+      grep -h root= /boot/grub/grub.cfg 2>/dev/null | head
+      blkid
+    description: |
+      Read-only. Shows the real root, the kernel-cmdline source, every
+      entry's root=, and the full blkid table so the specific drifting
+      reference is visible.
+  variants:
+    - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
+      vendor_match: ["*"]
+      command: |
+        # RHEL family. Align the drifting reference(s) to the real root UUID.
+        REAL=$(findmnt -no UUID /)
+        echo "real root UUID: $REAL"
+
+        # Inspect the source + entries; identify the wrong UUID (OLD):
+        grep -h root=UUID /etc/kernel/cmdline /boot/loader/entries/*.conf 2>/dev/null
+
+        # Fix the source first (stops the next kernel from regressing), then
+        # any stale entries. Set OLD to the wrong UUID from above:
+        # OLD=<wrong-uuid>
+        # sudo sed -i "s/$OLD/$REAL/g" /etc/kernel/cmdline /etc/sysconfig/bootloader /boot/loader/entries/*.conf
+
+        # Verify nothing stale remains:
+        # grep -rl "$OLD" /etc/kernel/cmdline /etc/sysconfig/bootloader /boot/loader/entries 2>/dev/null
+      description: |
+        The highest-value fix is /etc/kernel/cmdline: while it disagrees
+        with the mounted root, every future kernel install bakes in a
+        wrong root and would fail to boot. Fixing it now prevents the
+        drift from becoming boot_config_broken later.
+    - distro_match: ["debian-*", "ubuntu-*"]
+      vendor_match: ["*"]
+      command: |
+        # Debian family. Drift usually means /etc/fstab or a stale grub.cfg.
+        REAL=$(findmnt -no UUID /)
+        echo "real root UUID: $REAL"
+        grep -E '\s/\s' /etc/fstab
+        # If fstab's / UUID is wrong, correct it to UUID=$REAL, then:
+        # sudo update-grub
+        # Confirm:
+        grep -H root=UUID /boot/grub/grub.cfg | head
+      description: |
+        Debian regenerates grub.cfg from /etc/fstab; correct fstab (or
+        the underlying UUID) and run update-grub rather than editing
+        grub.cfg by hand.
+    - distro_match: ["*"]
+      vendor_match: ["*"]
+      command: |
+        # Fallback: distro unknown.
+        findmnt -no SOURCE,UUID /
+        grep -rH root=UUID /boot /etc/kernel/cmdline 2>/dev/null
+        blkid
+        # Align every drifting root= reference (and the distro's entry
+        # generator source) to the mounted root UUID, then regenerate the
+        # bootloader config if applicable.
+      description: |
+        Universal: make every boot reference and the entry-generator
+        source agree with the currently mounted root filesystem.
+  validation:
+    command: |
+      findmnt -no UUID /
+      cat /etc/kernel/cmdline 2>/dev/null
+      grep -rH root=UUID /boot/loader/entries/ /boot/grub/grub.cfg 2>/dev/null
+    description: |
+      The kernel-cmdline source and every entry's root=UUID must equal
+      `findmnt -no UUID /`, and no entry may reference a UUID absent
+      from blkid. The alert auto-resolves on the next snapshot once the
+      drift is gone.
+  rollback:
+    available: false
+    command: null
+    note: |
+      Aligning boot references to the real, present root UUID is the
+      safe direction; there is nothing to roll back to. No reboot is
+      required to apply the fix (only to fully validate it), so the
+      running host is never at risk during remediation.
+  impact:
+    blast_radius: |
+      None while fixing (boot-config edits do not touch the running
+      system). Left unfixed, the drift can escalate to
+      boot_config_broken on the next kernel update, which would lose
+      the host on its following reboot.
+    estimated_duration: |
+      A few minutes to align the references. Any verifying reboot is a
+      normal 1-5 minute host outage and can be deferred to a window.
+    irreversible_steps: false
+  provenance:
+    last_verified: "2026-08-30"
+    tested_on:
+      - "val-rocky (Rocky Linux 9.8; the drift-in-source condition is exactly what preceded its boot failure)"
+      - "val-alma / val-debian / val-ubuntu (negative controls)"
+    tester: Glassmkr ops
+    research_basis: fleet-tested
+    source_note: |
+      Companion to boot_config_broken, from the same val-rocky
+      postmortem. This is the earlier, non-fatal state: the box still
+      boots, but a reference (most importantly /etc/kernel/cmdline on
+      RHEL) has drifted from the mounted root, so the next kernel
+      install would regress into an unbootable entry. Catching it here
+      gives an operator time to fix before the fatal reboot. Detection
+      + four-distro negative controls are unit-tested in the Crucible
+      boot-config collector.

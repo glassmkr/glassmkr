@@ -335,6 +335,18 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://glassmkr.com/docs/rules/boot_config_broken</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://glassmkr.com/docs/rules/boot_config_drift</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://glassmkr.com/docs/rules/clock_drift</loc>
     <lastmod>2026-08-29</lastmod>
     <changefreq>weekly</changefreq>

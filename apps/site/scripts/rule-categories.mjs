@@ -100,6 +100,8 @@ export const CATEGORY = {
   pending_security_updates: "Security & Patching",
   kernel_vulnerabilities: "Security & Patching",
   kernel_needs_reboot: "Security & Patching",
+  boot_config_broken: "Security & Patching",
+  boot_config_drift: "Security & Patching",
   unattended_upgrades_disabled: "Security & Patching",
   server_unreachable: "Security & Patching",
   ssh_config_unapplied: "Security & Patching",

@@ -489,6 +489,39 @@ const RebootEvidenceSchema = z.object({
   prior_shutdown_clean: z.boolean(),
 }).passthrough();
 
+// Boot-config integrity (Crucible 1.2.0+, val-rocky postmortem). Loose shapes
+// (nullable booleans, string root specs, capped entry array) so a newer agent
+// cannot fail ingest for the whole snapshot. Read by boot_config_broken /
+// boot_config_drift, both of which gate on `available`.
+const BootConfigSchema = z.object({
+  available: z.boolean(),
+  error: z.string().max(500).optional(),
+  mounted_root: z.object({
+    source: z.string().max(200),
+    uuid: z.string().max(200).nullable(),
+    label: z.string().max(200).nullable(),
+  }).passthrough().nullable(),
+  cmdline_source: z.object({
+    path: z.string().max(200),
+    root_spec: z.string().max(200).nullable(),
+    resolvable: z.boolean().nullable(),
+    matches_mounted: z.boolean().nullable(),
+  }).passthrough().nullable(),
+  entries: z.array(z.object({
+    source: z.string().max(40),
+    title: z.string().max(300),
+    kernel: z.string().max(120).nullable(),
+    root_spec: z.string().max(200).nullable(),
+    resolvable: z.boolean().nullable(),
+    matches_mounted: z.boolean().nullable(),
+    is_default: z.boolean(),
+  }).passthrough()).max(64),
+  default_entry_bootable: z.boolean().nullable(),
+  default_entry_wrong_fs: z.boolean().nullable(),
+  unbootable_entry_count: z.number(),
+  source_regressed: z.boolean().nullable(),
+}).passthrough();
+
 const HardwareRaidSchema = z.object({
   controllers: z.array(z.object({
     vendor: z.enum(["dell", "hpe", "lsi", "adaptec"]),
@@ -783,6 +816,7 @@ export const SnapshotSchema = z.object({
   psi: PsiSchema.optional(),
   vmstat: VmstatSchema.optional(),
   reboot_evidence: RebootEvidenceSchema.optional(),
+  boot_config: BootConfigSchema.optional(),
   hardware_raid: HardwareRaidSchema.optional(),
   process_fd: ProcessFdSchema.optional(),
   bonding: BondingSchema.optional(),
