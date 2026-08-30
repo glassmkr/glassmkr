@@ -34,7 +34,7 @@
         Netdata is a real-time monitoring platform with per-second metrics, 800+ data collectors, and ML-powered anomaly detection <sup><a href="#fn3">3</a></sup>. The Agent is GPL-3.0 <sup><a href="#fn1">1</a></sup>; the Community tier is free for up to 5 connected nodes, the Business tier is $4.50/node/month billed annually <sup><a href="#fn2">2</a></sup>.
       </p>
       <p>
-        Glassmkr is focused bare-metal monitoring, free in both deployment forms: self-hosted (AGPL-3.0-only dashboard, MIT agent, no node limits) or hosted at app.glassmkr.com (10-node per-account cap) <sup><a href="#fn-glassmkr">G</a></sup>. {ruleCount} alert rules ship tuned. The entire product, web UI included, is open source.
+        Glassmkr is focused bare-metal monitoring, free in both deployment forms: self-hosted (AGPL-3.0-only agent and dashboard, no node limits) or hosted at app.glassmkr.com (10-node per-account cap) <sup><a href="#fn-glassmkr">G</a></sup>. {ruleCount} alert rules ship tuned. The entire product, web UI included, is open source.
       </p>
       <p>
         Both products do real work; they diverge on alert philosophy. Netdata ships hundreds of default alerts and gives you tools to tune them. Glassmkr ships {ruleCount} opinionated rules and asks you not to need many more.
@@ -132,7 +132,7 @@
   <section class="vs-section">
     <h2>Self-hosting</h2>
     <p>
-      Both agents self-host, but the products diverge above that. Self-hosting Netdata means running open agents whose modern dashboard UI is closed source and CDN-delivered, with the multi-node aggregation and SSO in their closed Cloud. Self-hosting Glassmkr means running the entire product from the open repo: AGPL-3.0-only dashboard, MIT agent, one docker-compose file, no node limits, and no closed component anywhere in the path.
+      Both agents self-host, but the products diverge above that. Self-hosting Netdata means running open agents whose modern dashboard UI is closed source and CDN-delivered, with the multi-node aggregation and SSO in their closed Cloud. Self-hosting Glassmkr means running the entire product from the open repo: AGPL-3.0-only agent and dashboard, one docker-compose file, no node limits, and no closed component anywhere in the path.
     </p>
     <p><a href="/docs/self-hosting">Self-host in 10 minutes</a>.</p>
   </section>

@@ -70,6 +70,8 @@
     <!-- Canonical rule count: see RULES_COUNT.md at the monorepo root. -->
     <p><strong>Crucible</strong> is the open-source collector. One <code>curl | bash</code> install. Reads from <code>smartctl</code>, <code>ipmitool</code>, <code>mdadm</code>, <code>/proc</code>, <code>/sys</code>. Pushes a complete health snapshot every 60 seconds. Median 91 MB RSS (range 65 to 103 MB across our 7-host validation fleet), measured at v0.13.3. No kernel modules, no eBPF, no root hooks into your application stack. Available on npm. MIT licensed. Run it standalone (pipe the output wherever you want) or pair it with Dashboard. (Note: a follow-up measurement against the 0.13.6 fleet showed the figure has drifted to around 108 MB; current footprint numbers live on the <a href="/docs">docs page</a>.)</p>
 
+    <p class="license-note">Editorial note, August 2026: Crucible versions through 1.0.1 were MIT licensed. Version 1.1.0 and later are AGPL-3.0-only.</p>
+
     <p><strong>Dashboard</strong> is the optional SaaS. It receives Crucible's snapshots, stores history, renders fleet views, and sends alerts. 68 opinionated alert rules across 9 categories: storage, ZFS, filesystem, memory and CPU, network, hardware and BMC, time and services, security and patching, and GPU. Furnace, our self-hosted Gemma 4 inference on an NVIDIA L4 in Amsterdam, surfaces a verdict prior (recoverable, investigation, or vendor-side) on every alert. This is Integration 1, shipped 2026-05-20; per-snapshot LLM narration ships in Integration 2 after 2 to 4 weeks of priors-only usage data. $3/node/month with the first 3 nodes free; if 3 servers is your whole fleet, the agent stays free forever.</p>
 
     <h2>Where this came from</h2>
@@ -96,7 +98,7 @@
 
     <h2>Pricing</h2>
 
-    <p>The agent (Crucible) is MIT licensed and free. Always.</p>
+    <p>The agent (Crucible) is open source and free. Always. (MIT through v1.0.1; AGPL-3.0-only from v1.1.0.)</p>
 
     <p>Dashboard Free covers up to 3 servers, all 68 alert rules, 7-day history, and all notification channels. If that is enough for your setup, you are done.</p>
 
@@ -142,6 +144,7 @@
 </div>
 
 <style>
+  .license-note { font-size: 13px; color: var(--text-tertiary); border-left: 2px solid var(--surface-border); padding-left: 12px; line-height: 1.6; }
   .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
     border-radius:6px; border:1px solid var(--surface-border);
     margin:24px 0 20px; background:var(--surface-raised); }

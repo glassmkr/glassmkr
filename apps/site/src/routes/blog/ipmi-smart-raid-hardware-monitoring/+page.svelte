@@ -143,6 +143,8 @@
     <!-- Canonical rule count: see RULES_COUNT.md at the monorepo root. -->
     <p><a href="https://github.com/glassmkr/crucible">Crucible</a> (v0.13.3 at time of writing) is our open-source monitoring agent, MIT licensed, built specifically for bare metal servers. It is not a general-purpose collector. It collects the data that matters for physical infrastructure health and applies 68 opinionated alert rules across 9 categories based on real operational experience.</p>
 
+    <p class="license-note">Editorial note, August 2026: Crucible versions through 1.0.1 were MIT licensed. Version 1.1.0 and later are AGPL-3.0-only.</p>
+
     <p>On every collection cycle, Crucible reads from <code>smartctl</code>, <code>ipmitool</code>, <code>mdadm</code>, <code>nvidia-smi</code>, <code>/proc</code>, and <code>/sys</code> to build a complete health snapshot. SMART attributes for every drive: temperature, reallocated sectors, wear leveling, power-on hours, overall health status. IPMI sensor readings: CPU temperature, fan speeds, power supply status, voltage rails. RAID array state: active members, degraded status, rebuild progress. GPU telemetry: XID errors, ECC counters, PCIe link speed, NVLink topology, thermal and power state. OS metrics: per-core CPU, memory, swap, disk space, network interface errors.</p>
 
     <p>Each alert rule is assigned a priority level (P0 through P4) and includes evidence, diagnostic commands, and context about why the alert matters. Alerts fire through Dashboard with notifications to Slack, Telegram, or email. The AI analysis layer (Furnace) correlates alerts across the hardware and OS layers to surface root causes rather than symptoms.</p>
@@ -172,6 +174,7 @@
 </div>
 
 <style>
+  .license-note { font-size: 13px; color: var(--text-tertiary); border-left: 2px solid var(--surface-border); padding-left: 12px; line-height: 1.6; }
   .post-hero { display:block; width:100%; height:auto; aspect-ratio:1200/630;
     border-radius:6px; border:1px solid var(--surface-border);
     margin:24px 0 20px; background:var(--surface-raised); }

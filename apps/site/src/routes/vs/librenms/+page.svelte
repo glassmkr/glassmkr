@@ -35,7 +35,7 @@
         LibreNMS is a GPL-3.0 open-source network monitoring system, fully free with no commercial editions <sup><a href="#fn1">1</a></sup> <sup><a href="#fn2">2</a></sup>. Its core competence is SNMP auto-discovery across hundreds of network device families (Cisco, Juniper, Mikrotik, Arista, etc.) <sup><a href="#fn3">3</a></sup>. Originally an Observium fork in 2013 <sup><a href="#fn4">4</a></sup>.
       </p>
       <p>
-        Glassmkr is server-focused bare-metal monitoring, open source and free in both deployment forms: self-hosted (AGPL-3.0-only dashboard, MIT agent, no node limits) or hosted at app.glassmkr.com (10-node per-account cap) <sup><a href="#fn-glassmkr">G</a></sup>. {ruleCount} alert rules tuned for Linux server failure modes.
+        Glassmkr is server-focused bare-metal monitoring, open source and free in both deployment forms: self-hosted (AGPL-3.0-only agent and dashboard, no node limits) or hosted at app.glassmkr.com (10-node per-account cap) <sup><a href="#fn-glassmkr">G</a></sup>. {ruleCount} alert rules tuned for Linux server failure modes.
       </p>
       <p>
         If your primary need is monitoring switches, routers, and network appliances, LibreNMS is built for that. If your primary need is monitoring Linux servers’ hardware-level signals (SMART, IPMI, RAID, ECC, ZFS), Glassmkr fits more directly.

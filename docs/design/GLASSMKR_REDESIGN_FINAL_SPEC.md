@@ -1,6 +1,11 @@
 # Glassmkr Redesign and OSS Launch Specification
 
-**Status:** Final decision spec  
+> **SUPERSEDED on 2026-08-30. Historical design input, not current product
+> truth.** The Axiom-led execution brief replaced this document as the visual
+> authority, and the license model described below is retired: Crucible is
+> AGPL-3.0-only from v1.1.0 (v1.0.1 and earlier remain MIT).
+
+**Status:** Superseded (was: Final decision spec)  
 **Date:** 2026-08-23  
 **Audience:** Claude Code and maintainers implementing the OSS pivot  
 **Purpose:** Merge the prior redesign brief and Claude's direction into one implementation-ready specification, with all material divergences resolved.

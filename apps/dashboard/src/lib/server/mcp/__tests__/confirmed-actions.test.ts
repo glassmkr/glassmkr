@@ -407,10 +407,10 @@ describe("the enroll token target is Postgres-safe", () => {
     expect(seen.size).toBe(5);
   });
 
-  it("the fake DB rejects a NUL param, matching Postgres", () => {
+  it("the fake DB rejects a NUL param, matching Postgres", async () => {
     // Guards the guard: if this ever stops throwing, the fake has drifted from
     // Postgres and the NUL class stops being caught here.
-    expect(() => db.query("INSERT INTO t (x) VALUES ($1)", [`a${nul}b`])).rejects.toThrow(/NUL/);
+    await expect(db.query("INSERT INTO t (x) VALUES ($1)", [`a${nul}b`])).rejects.toThrow(/NUL/);
   });
 });
 

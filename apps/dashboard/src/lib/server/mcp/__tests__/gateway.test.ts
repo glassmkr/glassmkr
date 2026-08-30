@@ -1,5 +1,35 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OAuthPrincipal } from "$lib/server/auth/principal.js";
+
+// Fake audit sink (post-redesign review P0-2). The real writeAudit INSERTs
+// through the pg pool; a unit test that reaches for a real database is only
+// green when the environment happens to have no reachable DATABASE_URL, and
+// times out when it has an unreachable one. The denial audit is EXPECTED
+// behavior, so it is asserted through this recording fake instead of relied
+// on silently.
+const auditEntries: any[] = [];
+vi.mock("$lib/server/auth/audit.js", () => ({
+  writeAudit: vi.fn(async (entry: any) => {
+    auditEntries.push(entry);
+  }),
+}));
+
+// DB spy: the scope denial must happen BEFORE any database access. Every
+// pool query in this test file records itself here and fails loudly, so a
+// regression that reorders the gate behind a query turns the test red
+// rather than slow.
+const dbQueries: string[] = [];
+vi.mock("@glassmkr/db/pg", async (importOriginal) => {
+  const mod: any = await importOriginal();
+  return {
+    ...mod,
+    query: vi.fn(async (text: string) => {
+      dbQueries.push(String(text).slice(0, 80));
+      throw new Error("unit test: no database access expected on this path");
+    }),
+  };
+});
+
 import {
   getMcpSessionCountForTests,
   handleMcpGatewayRequest,
@@ -9,6 +39,8 @@ import {
 beforeEach(() => {
   process.env.MCP_OAUTH_TOKEN_PEPPER = "test-pepper-with-at-least-thirty-two-bytes";
   resetMcpSessionsForTests();
+  auditEntries.length = 0;
+  dbQueries.length = 0;
 });
 
 function principal(overrides: Partial<OAuthPrincipal> = {}): OAuthPrincipal {
@@ -168,6 +200,15 @@ describe("MCP admin tools (Phase 2b)", () => {
       const payload = (await callRes.json()) as any;
       expect(payload.result.isError).toBe(true);
       expect(JSON.stringify(payload.result)).toContain("INSUFFICIENT_SCOPE");
+      // The denial happened before any database access: no pool query ran,
+      // so the protected action (and its confirm-token lookup) never executed.
+      expect(dbQueries).toEqual([]);
+      // The denial IS audited, through the injected sink rather than a real
+      // connection: exactly one forbidden mcp_tool_call for the denied tool.
+      const denials = auditEntries.filter((e) => e.result === "forbidden");
+      expect(denials).toHaveLength(1);
+      expect(denials[0].mcp_tool).toBe("glassmkr.admin.delete_server");
+      expect(denials[0].status_code).toBe(403);
     } finally {
       delete process.env.MCP_ADMIN_ENABLED;
       resetMcpSessionsForTests();

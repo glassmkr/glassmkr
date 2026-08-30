@@ -6,8 +6,10 @@ state, network interface errors including bonds, GPU state, and kernel and patch
 state.
 
 This repository is the dashboard, the backend, the alert rules, the trend
-engine, and the remediation library, under AGPL-3.0-only. The agent is a separate
-MIT-licensed project: [glassmkr/crucible](https://github.com/glassmkr/crucible).
+engine, and the remediation library, under AGPL-3.0-only. The agent is a
+separate project, also AGPL-3.0-only since v1.1.0:
+[glassmkr/crucible](https://github.com/glassmkr/crucible). Releases through
+v1.0.1 were published under MIT and remain MIT.
 
 Every rule carries a distro-aware remediation workflow: prerequisites, the
 command, how to check it worked, and how to roll it back. Those are instructions
@@ -58,15 +60,15 @@ would rather not operate the stack, free up to 10 nodes per account. There is a
 
 The dashboard and everything in this repository is AGPL-3.0-only: if you modify
 it and run it as a service, your users get the same source access you have. The
-agent is MIT, because it goes on every machine you own and should carry the most
-permissive license that makes sense.
+agent is AGPL-3.0-only as well, from v1.1.0 onward; releases through v1.0.1
+were published under MIT and remain MIT.
 
 Component mapping, since one repository does not mean one license:
 
 | Component | License | Where |
 |---|---|---|
 | Dashboard, backend, alert rules, trend engine, remediation library | AGPL-3.0-only | this repository, [LICENSE](LICENSE) |
-| Crucible agent | MIT | [glassmkr/crucible](https://github.com/glassmkr/crucible) |
+| Crucible agent | AGPL-3.0-only (v1.1.0+; v1.0.1 and earlier remain MIT) | [glassmkr/crucible](https://github.com/glassmkr/crucible) |
 | Production dependencies | various, all permissive or compatible | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), generated from the lockfile |
 
 The API is covered by the repository license. It is not proprietary; an earlier

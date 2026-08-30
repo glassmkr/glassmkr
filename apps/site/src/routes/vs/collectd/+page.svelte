@@ -41,7 +41,7 @@
         Project status, stated factually: the last stable release is 5.12.0, published September 2020; a 6.0 series exists as release candidates (latest rc3, February 2024) described by the project as a preview with expected breaking changes <sup><a href="#fn2">2</a></sup>.
       </p>
       <p>
-        Glassmkr is a monitoring product rather than a collection daemon: the MIT Crucible agent collects hardware-level signals, and the AGPL-3.0-only dashboard evaluates {ruleCount} alert rules over them, each with a remediation command attached. Both deployment forms are free: self-hosted with no node limits, or hosted with a 10-node per-account cap.
+        Glassmkr is a monitoring product rather than a collection daemon: the AGPL-3.0-only Crucible agent collects hardware-level signals, and the dashboard (same license) evaluates {ruleCount} alert rules over them, each with a remediation command attached. Both deployment forms are free: self-hosted with no node limits, or hosted with a 10-node per-account cap.
       </p>
     </div>
   </section>
