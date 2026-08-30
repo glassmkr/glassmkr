@@ -29,40 +29,6 @@
 </svelte:head>
 
 <div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      <a href="/docs" class="sidebar-section">&larr; Back to docs</a>
-      <a href="#2026-08-30" class="sidebar-link">2026-08-30</a>
-      <a href="#2026-08-29" class="sidebar-link">2026-08-29</a>
-      <a href="#2026-08-27-1" class="sidebar-link">2026-08-27</a>
-      <a href="#2026-08-02-1" class="sidebar-link">2026-08-02</a>
-      <a href="#2026-07-31" class="sidebar-link">2026-07-31</a>
-      <a href="#2026-07-30" class="sidebar-link">2026-07-30</a>
-      <a href="#2026-07-29" class="sidebar-link">2026-07-29</a>
-      <a href="#2026-07-28" class="sidebar-link">2026-07-28</a>
-      <a href="#2026-07-24" class="sidebar-link">2026-07-24</a>
-      <a href="#2026-07-17" class="sidebar-link">2026-07-17</a>
-      <a href="#2026-07-16" class="sidebar-link">2026-07-16</a>
-      <a href="#2026-07-15" class="sidebar-link">2026-07-15</a>
-      <a href="#2026-07-14" class="sidebar-link">2026-07-14</a>
-      <a href="#2026-06-27" class="sidebar-link">2026-06-27</a>
-      <a href="#2026-06-26" class="sidebar-link">2026-06-26</a>
-      <a href="#2026-06-21" class="sidebar-link">2026-06-21</a>
-      <a href="#2026-06-16" class="sidebar-link">2026-06-16</a>
-      <a href="#2026-06-11" class="sidebar-link">2026-06-11</a>
-      <a href="#2026-06-07" class="sidebar-link">2026-06-07</a>
-      <a href="#2026-06-03" class="sidebar-link">2026-06-03</a>
-      <a href="#2026-05-29" class="sidebar-link">2026-05-29</a>
-      <a href="#2026-05-22" class="sidebar-link">2026-05-22</a>
-      <a href="#2026-05-13" class="sidebar-link">2026-05-13</a>
-      <a href="#2026-05-12-ecc-rate-based" class="sidebar-link">2026-05-12 ECC rate</a>
-      <a href="#2026-05-12-keys-ui" class="sidebar-link">2026-05-12 keys UI</a>
-      <a href="#2026-05-12" class="sidebar-link">2026-05-12 tier gating</a>
-      <a href="#2026-05-09" class="sidebar-link">2026-05-09</a>
-      <a href="#2026-05-08" class="sidebar-link">2026-05-08</a>
-      <a href="#2026-05-07" class="sidebar-link">2026-05-07</a>
-    </nav>
-  </aside>
 
   <!--
     Cloudflare Email Address Obfuscation rewrites anything shaped like
@@ -670,33 +636,9 @@ sudo systemctl restart glassmkr-crucible</code></pre>
 </div>
 
 <style>
-  .docs-layout { display: flex; max-width: 960px; margin: 0 auto; padding: 60px 24px 120px; gap: 48px; }
-  .sidebar { position: sticky; top: 80px; align-self: flex-start; flex-shrink: 0; width: 180px; max-height: calc(100vh - 100px); overflow-y: auto; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section { display: block; padding: 6px 12px; font-size: 12px; color: var(--text-tertiary); text-decoration: none; margin-bottom: 8px; }
-  .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: var(--text-tertiary); text-decoration: none; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; transition: color 0.15s, border-color 0.15s; }
-  .sidebar-link:hover { color: var(--text-secondary); }
-  .docs-content { flex: 1; min-width: 0; }
-  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin-bottom: 8px; }
-  h1 { font-size: 2.25rem; color: var(--text-primary); margin-bottom: 0.25rem; }
-  .docs-subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 2rem; line-height: 1.6; }
   .release { margin-bottom: 4rem; scroll-margin-top: 80px; }
   .release h2 { font-size: 1.4rem; color: var(--text-primary); margin-bottom: 0.5rem; position: relative; }
   .release h3 { font-size: 1.05rem; color: var(--text-primary); margin-top: 1.25rem; margin-bottom: 0.5rem; }
   p, li { color: var(--text-secondary); line-height: 1.7; margin-bottom: 0.6rem; }
-  .anchor-link { color: transparent; text-decoration: none; margin-right: 4px; font-weight: 400; transition: color 0.15s; }
-  h2:hover .anchor-link { color: var(--text-tertiary); }
-  .anchor-link:hover { color: var(--accent) !important; text-decoration: none; }
-  pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 0.75rem; }
-  pre code { font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6; color: var(--text-primary); background: transparent; padding: 0; }
-  code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: none; }
-  @media (max-width: 900px) { .sidebar { display: none; } .docs-layout { gap: 0; padding: 40px 20px 100px; } }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
-  @media (max-width: 768px) {
-    code, pre code { font-size: 12px; }
-  }
-</style>
+  /* Mobile technical-text floor: 12px minimum on a phone. */</style>

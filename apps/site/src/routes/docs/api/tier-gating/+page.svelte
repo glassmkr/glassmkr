@@ -29,18 +29,7 @@
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>
 
-<div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      <a href="/docs/api" class="sidebar-section">&larr; API reference</a>
-      <a href="#overview" class="sidebar-link">Overview</a>
-      <a href="#what-changed" class="sidebar-link">What changed</a>
-      <a href="#existing-keys" class="sidebar-link">Existing keys</a>
-      <a href="#related" class="sidebar-link">Related</a>
-    </nav>
-  </aside>
-
-  <article class="docs-content">
+<article class="docs-content">
     <header class="page-header">
       <p class="eyebrow">DOCS / API / TIER GATING</p>
       <h1>API tier gating</h1>
@@ -79,34 +68,10 @@
       <p class="note">Last verified: 2026-08-24.</p>
     </section>
   </article>
-</div>
 
 <style>
-  .docs-layout { display: flex; max-width: 960px; margin: 0 auto; padding: 60px 24px 120px; gap: 48px; }
-  .sidebar { position: sticky; top: 80px; align-self: flex-start; flex-shrink: 0; width: 180px; max-height: calc(100vh - 100px); overflow-y: auto; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section { display: block; padding: 6px 12px; font-size: 12px; color: var(--text-tertiary); text-decoration: none; margin-bottom: 8px; }
-  .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: var(--text-tertiary); text-decoration: none; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; transition: color 0.15s, border-color 0.15s; }
-  .sidebar-link:hover { color: var(--text-secondary); }
-  .docs-content { flex: 1; min-width: 0; }
-  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin-bottom: 8px; }
-  h1 { font-size: 2.25rem; color: var(--text-primary); margin-bottom: 0.25rem; }
-  .docs-subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 2rem; line-height: 1.6; }
-  section { margin-bottom: 3rem; scroll-margin-top: 80px; }
-  h2 { font-size: 1.4rem; color: var(--text-primary); margin-bottom: 0.75rem; position: relative; }
-  p, li { color: var(--text-secondary); line-height: 1.7; margin-bottom: 0.5rem; }
-  .anchor-link { color: transparent; text-decoration: none; margin-right: 4px; font-weight: 400; transition: color 0.15s; }
-  h2:hover .anchor-link { color: var(--text-tertiary); }
-  .anchor-link:hover { color: var(--accent) !important; text-decoration: none; }
-  code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
-  .note { font-size: 0.85rem; color: var(--text-tertiary); font-style: italic; margin-top: 1rem; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: none; }
-  @media (max-width: 900px) { .sidebar { display: none; } .docs-layout { gap: 0; padding: 40px 20px 100px; } }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
+  /* Mobile technical-text floor: 12px minimum on a phone. */
   @media (max-width: 768px) {
     code { font-size: 12px; }
-  }
-</style>
+  }</style>

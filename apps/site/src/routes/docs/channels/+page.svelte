@@ -29,24 +29,7 @@
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>
 
-<div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      <a href="/docs" class="sidebar-section">&larr; Back to docs</a>
-      <a href="#email" class="sidebar-link">Email</a>
-      <a href="#telegram" class="sidebar-link">Telegram</a>
-      <a href="#slack" class="sidebar-link">Slack</a>
-      <a href="#discord" class="sidebar-link">Discord</a>
-      <a href="#pagerduty" class="sidebar-link">PagerDuty</a>
-      <a href="#webhooks" class="sidebar-link">Webhooks</a>
-      <a href="#priority" class="sidebar-link">Priority filtering</a>
-      <a href="#format" class="sidebar-link">Notification format</a>
-      <a href="#updates" class="sidebar-link">Version updates</a>
-      <a href="#testing" class="sidebar-link">Testing channels</a>
-    </nav>
-  </aside>
-
-  <article class="docs-content">
+<article class="docs-content">
     <header class="page-header">
       <p class="eyebrow">DOCS / CHANNELS</p>
       <h1>Notification channels</h1>
@@ -173,40 +156,15 @@
       <p class="note">Last verified: 2026-05-22 against Crucible v0.13.3.</p>
     </section>
   </article>
-</div>
 
 <style>
-  .docs-layout { display: flex; max-width: 960px; margin: 0 auto; padding: 60px 24px 120px; gap: 48px; }
-  .sidebar { position: sticky; top: 80px; align-self: flex-start; flex-shrink: 0; width: 180px; max-height: calc(100vh - 100px); overflow-y: auto; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section { display: block; padding: 6px 12px; font-size: 12px; color: var(--text-tertiary); text-decoration: none; margin-bottom: 8px; }
-  .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: var(--text-tertiary); text-decoration: none; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; transition: color 0.15s, border-color 0.15s; }
-  .sidebar-link:hover { color: var(--text-secondary); }
-  .docs-content { flex: 1; min-width: 0; }
-  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin-bottom: 8px; }
-  h1 { font-size: 2.25rem; color: var(--text-primary); margin-bottom: 0.25rem; }
-  .docs-subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 2rem; line-height: 1.6; }
   section { margin-bottom: 3.5rem; scroll-margin-top: 80px; }
-  h2 { font-size: 1.5rem; color: var(--text-primary); margin-bottom: 1rem; position: relative; }
   h3 { font-size: 1.1rem; color: var(--text-primary); margin-top: 1.5rem; margin-bottom: 0.5rem; }
   p, li { color: var(--text-secondary); line-height: 1.7; margin-bottom: 0.75rem; }
-  .anchor-link { color: transparent; text-decoration: none; margin-right: 4px; font-weight: 400; transition: color 0.15s; }
-  h2:hover .anchor-link { color: var(--text-tertiary); }
-  .anchor-link:hover { color: var(--accent) !important; text-decoration: none; }
   pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 14px 16px; overflow-x: auto; margin: 0.75rem 0 1.25rem; }
   pre code { font-family: var(--font-mono); font-size: 0.84rem; line-height: 1.65; color: var(--text-primary); background: transparent; padding: 0; }
-  code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
-  .note { font-size: 0.85rem; color: var(--text-tertiary); font-style: italic; margin-top: 1rem; }
   .step-list { counter-reset: steps; list-style: none; padding-left: 0; }
   .step-list li { counter-increment: steps; margin: 0.9rem 0; padding-left: 2.25rem; position: relative; }
   .step-list li::before { content: counter(steps); position: absolute; left: 0; top: 0; background: var(--surface); border: 1px solid var(--surface-border); width: 1.6rem; height: 1.6rem; border-radius: 50%; text-align: center; line-height: 1.5rem; font-size: 0.85rem; color: var(--accent); font-family: var(--font-mono); }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: none; }
-  @media (max-width: 900px) { .sidebar { display: none; } .docs-layout { gap: 0; padding: 40px 20px 100px; } }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
-  @media (max-width: 768px) {
-    code, pre code { font-size: 12px; }
-  }
-</style>
+  /* Mobile technical-text floor: 12px minimum on a phone. */</style>

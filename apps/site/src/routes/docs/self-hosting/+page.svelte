@@ -33,22 +33,7 @@
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>
 
-<div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      <a href="/docs" class="sidebar-section">&larr; Back to docs</a>
-      <a href="#overview" class="sidebar-link">Overview</a>
-      <a href="#prerequisites" class="sidebar-link">Prerequisites</a>
-      <a href="#quickstart" class="sidebar-link">Quickstart</a>
-      <a href="#agent" class="sidebar-link">Pointing an agent at it</a>
-      <a href="#ai" class="sidebar-link">AI analysis (optional)</a>
-      <a href="#upgrading" class="sidebar-link">Upgrading</a>
-      <a href="#backups" class="sidebar-link">Backups</a>
-      <a href="#hosted" class="sidebar-link">Self-hosted vs hosted</a>
-    </nav>
-  </aside>
-
-  <article class="docs-content">
+<article class="docs-content">
     <header class="page-header">
       <p class="eyebrow">DOCS / SELF-HOSTING</p>
       <h1>Self-hosting</h1>
@@ -138,7 +123,6 @@ docker compose up -d</code></pre>
       <p>Same codebase. The hosted instance at <a href="https://app.glassmkr.com">app.glassmkr.com</a> is the maintained reference deployment and live demo; self-hosted is the same thing on your hardware with every gate removed by the <code>GLASSMKR_SELF_HOSTED</code> flag. If you ever move between them, agents re-point with one <code>init</code> and the API is identical.</p>
     </section>
   </article>
-</div>
 
 <style>
   /* Temporary by design: this styling goes when DASHBOARD_REPO_PUBLIC flips. */
@@ -150,28 +134,10 @@ docker compose up -d</code></pre>
      a style block at all, which left it with no sidebar, no column layout, and
      visible "#" anchor markers, because .anchor-link's transparent color was
      never applied. Rules match /docs/mcp so the pages stay consistent. */
-  .docs-layout { display: flex; max-width: 960px; margin: 0 auto; padding: 60px 24px 120px; gap: 48px; }
-  .sidebar { position: sticky; top: 80px; align-self: flex-start; flex-shrink: 0; width: 180px; max-height: calc(100vh - 100px); overflow-y: auto; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section { display: block; padding: 6px 12px; font-size: 12px; color: var(--text-tertiary); text-decoration: none; margin-bottom: 8px; }
-  .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: var(--text-tertiary); text-decoration: none; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; transition: color 0.15s, border-color 0.15s; }
-  .sidebar-link:hover { color: var(--text-secondary); }
-  .docs-content { flex: 1; min-width: 0; }
   .page-header { margin-bottom: 2rem; }
-  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin-bottom: 8px; }
-  h1 { font-size: 2.25rem; color: var(--text-primary); margin-bottom: 0.25rem; }
   .docs-subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 0; line-height: 1.6; }
-  section { margin-bottom: 3rem; scroll-margin-top: 80px; }
-  h2 { font-size: 1.4rem; color: var(--text-primary); margin-bottom: 0.75rem; position: relative; }
   h3 { font-size: 1.05rem; color: var(--text-primary); margin-top: 1.25rem; margin-bottom: 0.5rem; }
-  p, li { color: var(--text-secondary); line-height: 1.7; margin-bottom: 0.5rem; }
   ul { color: var(--text-secondary); line-height: 1.7; padding-left: 1.25rem; }
-  .anchor-link { color: transparent; text-decoration: none; margin-right: 4px; font-weight: 400; transition: color 0.15s; }
-  h2:hover .anchor-link { color: var(--text-tertiary); }
-  .anchor-link:hover { color: var(--accent) !important; text-decoration: none; }
-  pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 0.75rem; }
-  pre code { font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6; color: var(--text-primary); background: transparent; padding: 0; }
-  code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
   .callout { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid var(--accent); border-radius: var(--radius-md); padding: 14px 16px; margin: 16px 0; font-size: 0.9rem; line-height: 1.65; color: var(--text-secondary); }
   .callout strong { color: var(--accent); }
 
@@ -181,9 +147,4 @@ docker compose up -d</code></pre>
     .sidebar-nav { flex-direction: row; flex-wrap: wrap; gap: 4px 8px; }
   }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
-  @media (max-width: 768px) {
-    code, pre code { font-size: 12px; }
-  }
-</style>
+  /* Mobile technical-text floor: 12px minimum on a phone. */</style>
