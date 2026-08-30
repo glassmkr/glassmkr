@@ -1208,8 +1208,8 @@
     margin-bottom: 24px;
   }
   .server-header h1 {
-    font-size: 22px;
-    font-weight: 600;
+    font-size: 28px;
+    font-weight: 500;
   }
 
   .info-grid {

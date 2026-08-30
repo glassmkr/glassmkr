@@ -38,7 +38,7 @@
   const posts: Post[] = [
     {
       slug: "smart-said-passed",
-      evidence: "/blog/smart-said-passed-trajectory.png?v=2",
+      evidence: "/blog/smart-said-passed-trajectory.png?v=3",
       evidenceAlt: "Chart of one drive across 140 readings. A green band across the top shows overall health reporting PASSED in every reading. A flat dashed line marks reallocated sectors at 477, unchanged throughout. Below, the pending sector count opens at its maximum of 96, drains to zero over about two days, and after a 5.17 day gap in monitoring rises from zero three more times, peaking at 16, 32 and 16.",
       readTime: "7 min read",
       image: "/og/smart-said-passed.png?v=20260830",
@@ -305,13 +305,11 @@
       <div class="feature-row">
         {#each features as post, i (post.slug)}
           <a href="/blog/{post.slug}" class="feature">
-            {#if i === 0 && post.evidence}
-              <!-- Intrinsic size stated so the row reserves space before the
-                   image arrives (CLS: 0.0719 on this index without it). -->
-              <img class="feature-art" src={post.evidence} alt={post.evidenceAlt} width="1464" height="792" loading="eager" decoding="async" />
-            {:else}
-              <img class="feature-art" src={post.image} alt={post.imageAlt} width="1200" height="630" loading="eager" decoding="async" />
-            {/if}
+            <!-- The feature row carries the post's card, consistently: the
+                 in-article evidence charts predate the redesign palette and
+                 read as a different system next to the cards. Intrinsic size
+                 stated so the row reserves space before the image arrives. -->
+            <img class="feature-art" src={post.image} alt={post.imageAlt} width="1200" height="630" loading="eager" decoding="async" />
             <p class="row-meta">
               <span>{post.date}</span><span class="sep">·</span><span>{post.tag}</span>
               {#if post.readTime}<span class="sep">·</span><span>{post.readTime}</span>{/if}

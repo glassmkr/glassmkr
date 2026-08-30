@@ -667,8 +667,8 @@
   @media (max-width: 640px) {
     .tier-legend-row { grid-template-columns: 1fr; gap: 4px; }
   }
-  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-  .page-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .container { margin: 0 auto; }
+  .page-title { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
   .page-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
 
   .section { margin-bottom: 20px; padding: 24px; }

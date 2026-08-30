@@ -49,7 +49,7 @@
   }
   .toast-success { border-color: var(--green); color: var(--green); }
   .toast-error   { border-color: var(--red);   color: var(--red); }
-  .toast-info    { border-color: var(--accent); color: var(--accent); }
+  .toast-info    { border-color: var(--g-info); color: var(--g-info); }
 
   @keyframes slideIn {
     from { opacity: 0; transform: translateX(20px); }

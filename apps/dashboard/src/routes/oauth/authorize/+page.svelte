@@ -108,8 +108,8 @@
   }
   h1 {
     margin: 6px 0 10px;
-    font-size: 22px;
-    font-weight: 600;
+    font-size: 28px;
+    font-weight: 500;
     line-height: 1.25;
     overflow-wrap: anywhere;
   }

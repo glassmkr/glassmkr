@@ -121,7 +121,21 @@
     </div>
 
     {#if loading}
-      <p class="muted">Loading servers...</p>
+      <!-- Table-shaped skeleton (spec 17.2): the loading state holds the shape
+           of what arrives, not a sentence in an empty canvas. Shimmer is
+           disabled under prefers-reduced-motion. -->
+      <div class="fleet-skeleton" aria-label="Loading servers" role="status">
+        <div class="sk-head"></div>
+        {#each Array(5) as _, i (i)}
+          <div class="sk-row">
+            <span class="sk-cell w-host"></span>
+            <span class="sk-cell w-sm"></span>
+            <span class="sk-cell w-sm"></span>
+            <span class="sk-cell w-md"></span>
+            <span class="sk-cell w-md"></span>
+          </div>
+        {/each}
+      </div>
     {:else if servers.length === 0}
       <div class="empty-state">
         <h2>Add your first server</h2>
@@ -176,6 +190,43 @@
 </div>
 
 <style>
+  /* Fleet loading skeleton */
+  .fleet-skeleton {
+    border: 1px solid var(--surface-border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .sk-head {
+    height: 38px;
+    background: var(--g-surface-2);
+    border-bottom: 1px solid var(--g-border-subtle);
+  }
+  .sk-row {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    padding: 0 16px;
+    height: 46px;
+    border-bottom: 1px solid var(--g-border-subtle);
+  }
+  .sk-row:last-child { border-bottom: none; }
+  .sk-cell {
+    height: 12px;
+    border-radius: 2px;
+    background: var(--g-surface-3);
+    animation: sk-pulse 1.4s ease-in-out infinite;
+  }
+  .w-host { width: 160px; }
+  .w-sm { width: 48px; }
+  .w-md { width: 96px; }
+  @keyframes sk-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sk-cell { animation: none; }
+  }
+
   .landing {
     text-align: center;
     padding: 80px 0 40px;
@@ -219,8 +270,8 @@
     margin-bottom: 24px;
   }
   .dash-header h1 {
-    font-size: 22px;
-    font-weight: 600;
+    font-size: 28px;
+    font-weight: 500;
   }
 
   .empty-state {
@@ -293,8 +344,4 @@
   .step-desc { font-size: 13px; color: var(--text-tertiary); margin: 0; }
 
 
-  .muted {
-    color: var(--text-tertiary);
-    font-size: 14px;
-  }
 </style>

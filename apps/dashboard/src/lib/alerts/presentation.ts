@@ -224,8 +224,8 @@ export const PRIORITY_EMOJI: Record<number, string> = {
 export const SLACK_COLORS: Record<number, string> = {
   0: "#b91c1c", // darker red so P0 reads more urgent than P1 in Slack
   1: "#f85149",
-  2: "#d4820a",
-  3: "#d29a22",
+  2: "#e5b94c", // warning band (canonical --g-warning; was the old amber)
+  3: "#79a8e8", // info band (canonical --g-info; P3 is info, not a second yellow)
   4: "#3b82f6", // blue: informational, below the paging threshold
 };
 
