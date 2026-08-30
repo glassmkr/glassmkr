@@ -11,7 +11,6 @@
   import "@fontsource/ibm-plex-sans/600.css";
   import "@fontsource/commit-mono/400.css";
   import "@fontsource/commit-mono/500.css";
-  import { Footer } from "@glassmkr/ui";
   import { page } from "$app/stores";
   import { afterNavigate } from "$app/navigation";
   import type { Snippet } from "svelte";
@@ -99,48 +98,32 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<svg width="0" height="0" style="position:absolute"><filter id="noise"><feTurbulence baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter></svg>
-<div class="noise-overlay"></div>
-<div class="ambient"></div>
-<div class="glass-edges">
-  <div class="glass-edge"></div>
-  <div class="glass-edge"></div>
-  <div class="glass-edge"></div>
-  <div class="glass-edge"></div>
-  <div class="glass-edge"></div>
-  <div class="glass-edge"></div>
-</div>
+<!-- Global decoration removed per redesign spec 9.2: no glass edges, no
+     noise overlay, no global ambient field. The one allowed warm ambient
+     lives inside the homepage hero, mounted by that page. -->
 
 <header class="site-nav">
-  <div class="container nav-inner">
-    <div class="nav-left">
-      <a href="/" class="nav-logo">
-        <img src="/assets/logo.svg" alt="" width="24" height="24" />
-        <span>GLASSMKR</span>
-      </a>
-      <div class="nav-links">
-        <!-- Launch navigation per GLASSMKR_REDESIGN_FINAL_SPEC 13.1: no mega
-             menu. Use-case and comparison routes stay indexed and reachable
-             from the footer and in-page links. -->
-        <a href="/docs" class="nav-link">Docs</a>
-        <a href="/blog" class="nav-link" class:active={pathname.startsWith("/blog")}>Blog</a>
-        <a href="/trust" class="nav-link" class:active={pathname === "/trust"}>Trust</a>
-        <a href="/pricing" class="nav-link">Pricing</a>
-        <!-- The demo is the fastest way to see the product without installing
-             anything, and the launch post points at it by name. It was lost when
-             the nav was simplified, surviving only in the footer. Plain nav-link
-             rather than the old separate pill, to fit the simplified nav. -->
-        <a href="https://app.glassmkr.com/demo" class="nav-link">Live demo</a>
-        <a href="https://github.com/glassmkr/crucible" class="nav-link">GitHub</a>
-      </div>
-    </div>
+  <div class="nav-inner">
+    <a href="/" class="nav-logo">
+      <img src="/assets/logo.svg" alt="" width="24" height="24" />
+      <span>GLASSMKR</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/#how-it-works" class="nav-link">How it works</a>
+      <a href="/docs" class="nav-link" class:active={pathname.startsWith("/docs")}>Docs</a>
+      <a href="/blog" class="nav-link" class:active={pathname.startsWith("/blog")}>Blog</a>
+      <a href="/vs" class="nav-link" class:active={pathname.startsWith("/vs")}>Compare</a>
+      <a href="/trust" class="nav-link" class:active={pathname === "/trust"}>Trust</a>
+      <a href="/pricing" class="nav-link" class:active={pathname === "/pricing"}>Pricing</a>
+      <a href="https://app.glassmkr.com/demo" class="nav-link">Live demo</a>
+    </nav>
     <div class="nav-right">
       {#if loggedIn}
-        <a href="https://app.glassmkr.com" class="btn btn-primary btn-small">Dashboard</a>
         <a href="https://app.glassmkr.com/api/v1/auth/logout" class="nav-link nav-login">Log out</a>
+        <a href="https://app.glassmkr.com" class="btn btn-solid-brand">Dashboard</a>
       {:else}
         <a href="https://app.glassmkr.com/login" class="nav-link nav-login">Log in</a>
-        <a href="/docs/self-hosting" class="btn btn-primary btn-small">Self-host</a>
+        <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand">Monitor a server</a>
       {/if}
       <button
         class="nav-hamburger"
@@ -158,19 +141,21 @@
 
 {#if mobileOpen}
   <div class="mobile-menu">
+    <a href="/#how-it-works" class="mobile-link" onclick={closeMobile}>How it works</a>
     <a href="/docs" class="mobile-link" onclick={closeMobile}>Docs</a>
     <a href="/blog" class="mobile-link" onclick={closeMobile}>Blog</a>
+    <a href="/vs" class="mobile-link" onclick={closeMobile}>Compare</a>
     <a href="/trust" class="mobile-link" onclick={closeMobile}>Trust</a>
     <a href="/pricing" class="mobile-link" onclick={closeMobile}>Pricing</a>
     <a href="https://app.glassmkr.com/demo" class="mobile-link" onclick={closeMobile}>Live demo</a>
-    <a href="https://github.com/glassmkr/crucible" class="mobile-link" onclick={closeMobile}>GitHub</a>
+    <a href="https://github.com/glassmkr/glassmkr" class="mobile-link" onclick={closeMobile}>GitHub</a>
     <div class="mobile-divider"></div>
     {#if loggedIn}
-      <a href="https://app.glassmkr.com" class="btn btn-primary mobile-cta" onclick={closeMobile}>Dashboard</a>
+      <a href="https://app.glassmkr.com" class="btn btn-solid-brand mobile-cta" onclick={closeMobile}>Dashboard</a>
       <a href="https://app.glassmkr.com/api/v1/auth/logout" class="mobile-link" onclick={closeMobile}>Log out</a>
     {:else}
       <a href="https://app.glassmkr.com/login" class="mobile-link" onclick={closeMobile}>Log in</a>
-      <a href="/docs/self-hosting" class="btn btn-primary mobile-cta" onclick={closeMobile}>Self-host</a>
+      <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand mobile-cta" onclick={closeMobile}>Monitor a server</a>
     {/if}
   </div>
 {/if}
@@ -191,189 +176,145 @@
   </div>
 {/if}
 
-<Footer>
-  <div class="footer-content">
-    <div class="footer-row">
-      <p class="footer-left">Crucible, Dashboard, and backend under AGPL-3.0-only. &copy; 2026 Glassmkr.</p>
-      <div class="footer-links">
-        <a href="/docs">Docs</a>
-        <a href="/blog">Blog</a>
-        <a href="/vs">Compare</a>
-        <a href="https://github.com/glassmkr">GitHub</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
-        <a href="/billing-policy">Billing</a>
-        <a href="/trust">Trust</a>
-      </div>
+<!-- Footer on the wide grid (spec 9.3): identity left, product and docs
+     links middle, source/legal right, license line across the bottom. -->
+<footer class="site-footer">
+  <div class="footer-grid">
+    <div class="footer-identity">
+      <a href="/" class="footer-mark">
+        <img src="/assets/logo.svg" alt="" width="20" height="20" />
+        <span>GLASSMKR</span>
+      </a>
+      <p class="footer-desc">
+        Open-source Linux server monitoring that explains what needs attention
+        and gives you the next command to run.
+      </p>
+      <p class="footer-oss">Open source, hosted or self-hosted.</p>
     </div>
-    <p class="footer-bottom">Hosted in Amsterdam.</p>
+    <nav class="footer-col" aria-label="Product">
+      <p class="footer-col-label">PRODUCT</p>
+      <a href="https://app.glassmkr.com/demo">Live demo</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/for-storage">Storage servers</a>
+      <a href="/for-compute">Bare-metal compute</a>
+      <a href="/for-gpu">GPU and ML</a>
+      <a href="/for-providers">Hosting providers</a>
+      <a href="/vs">Compare</a>
+    </nav>
+    <nav class="footer-col" aria-label="Documentation">
+      <p class="footer-col-label">DOCS</p>
+      <a href="/docs">Documentation</a>
+      <a href="/docs/getting-started">Getting started</a>
+      <a href="/docs/self-hosting">Self-hosting</a>
+      <a href="/docs/rules">Alert rules</a>
+      <a href="/blog">Blog</a>
+      <a href="/about">About</a>
+    </nav>
+    <nav class="footer-col" aria-label="Source and legal">
+      <p class="footer-col-label">SOURCE</p>
+      <a href="https://github.com/glassmkr/glassmkr">GitHub</a>
+      <a href="https://status.glassmkr.com">Status</a>
+      <a href="/trust">Trust</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/billing-policy">Billing</a>
+    </nav>
   </div>
-</Footer>
+  <div class="footer-bottom">
+    <p>Crucible, Dashboard, and backend under AGPL-3.0-only. &copy; 2026 Glassmkr.</p>
+    <p class="footer-host">Hosted in Amsterdam.</p>
+  </div>
+</footer>
 
 <style>
-  /* Nav */
+  /* Nav (spec 9.1): 64px, flat full-width header, one bottom hairline, logo
+     on the wide grid's left edge, one solid brand action. */
   .site-nav {
     position: sticky;
     top: 0;
     z-index: 100;
-    padding: 14px 0;
-    background: rgba(8, 9, 12, 0.85);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--surface-border);
+    background: rgba(7, 7, 6, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--g-border-subtle);
   }
   .nav-inner {
+    width: min(100%, var(--page-max));
+    margin-inline: auto;
+    padding-inline: var(--page-gutter);
+    height: 64px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-  }
-  .nav-left {
-    display: flex;
-    align-items: center;
-    gap: 32px;
+    gap: 24px;
   }
   .nav-logo {
     display: inline-flex;
     align-items: center;
     gap: 8px;
     text-decoration: none;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.12em;
+    flex: none;
   }
   .nav-logo:hover {
     text-decoration: none;
   }
-  /* Nav links grouped into a rounded pill. The demo used to sit outside
-     this group in its own pill; it now lives inside as a plain link,
-     because the simplified navigation has no separate CTA slot. */
-  /* No pill container. A rounded, tinted, bordered capsule around the nav
-     links is the most template-like detail on the page, and the references
-     this design follows all use plain links. */
   .nav-links {
     display: flex;
     align-items: center;
-    gap: 22px;
+    gap: 26px;
+    min-width: 0;
   }
   .nav-link {
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 14px;
     font-weight: 500;
+    white-space: nowrap;
     transition: color 0.15s;
-  }
-  .nav-link:hover, .nav-link.active {
-    color: var(--text-primary);
-    text-decoration: none;
-  }
-
-  /* "For" dropdown: hover-revealed on desktop. The trigger uses
-     the same .nav-link styling so it sits naturally with the other
-     nav items. The dropdown menu appears below the trigger with a
-     small entrance animation and a slight upward offset so it
-     visually connects to the trigger. */
-  .nav-dropdown {
     position: relative;
-    display: inline-block;
   }
-  .nav-dropdown-trigger {
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-family: inherit;
+  .nav-link:hover {
+    color: var(--text-primary);
+    text-decoration: none;
   }
-  .nav-dropdown-trigger:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 4px;
-    border-radius: var(--radius-sm);
-  }
-  .nav-dropdown.active .nav-dropdown-trigger {
+  /* Current page: text plus a small brand indicator, not a filled background. */
+  .nav-link.active {
     color: var(--text-primary);
   }
-  .nav-dropdown-trigger :global(.nav-dropdown-chevron) {
-    opacity: 0.7;
-    transition: transform 0.15s;
-  }
-  .nav-dropdown:hover .nav-dropdown-trigger :global(.nav-dropdown-chevron),
-  .nav-dropdown:focus-within .nav-dropdown-trigger :global(.nav-dropdown-chevron) {
-    transform: rotate(180deg);
-  }
-  .nav-dropdown-menu {
+  .nav-link.active::after {
+    content: "";
     position: absolute;
-    top: calc(100% + 12px);
-    left: -16px;
-    min-width: 248px;
-    background: rgba(13, 14, 16, 0.96);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-md);
-    padding: 6px;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(-4px);
-    transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
-    z-index: 200;
-  }
-  .nav-dropdown:hover .nav-dropdown-menu,
-  .nav-dropdown:focus-within .nav-dropdown-menu {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-  }
-  .nav-dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 9px 12px;
-    color: var(--text-secondary);
-    text-decoration: none;
-    border-radius: var(--radius-md);
-    transition: color 0.12s, background 0.12s;
-  }
-  .nav-dropdown-item:hover {
-    background: rgba(255, 107, 53, 0.08);
-    text-decoration: none;
-  }
-  .nav-dropdown-item :global(.nav-dropdown-icon) {
-    color: var(--text-tertiary);
-    flex: none;
-    transition: color 0.12s;
-  }
-  .nav-dropdown-item:hover :global(.nav-dropdown-icon) { color: var(--accent); }
-  .nav-dropdown-text { display: flex; flex-direction: column; gap: 1px; }
-  .nav-dropdown-label { font-size: 13.5px; color: var(--text-primary); }
-  .nav-dropdown-item:hover .nav-dropdown-label { color: var(--accent); }
-  .nav-dropdown-sub { font-size: 12px; color: var(--text-tertiary); line-height: 1.3; }
-
-  .mobile-section-label {
-    font-family: var(--font-mono, monospace);
-    font-size: 12px;
-    letter-spacing: 0.18em;
-    color: var(--text-tertiary);
-    margin: 0 0 4px;
-    padding: 8px 16px 0;
-  }
-  .mobile-sublink {
-    padding-left: 28px;
+    left: 0;
+    right: 0;
+    bottom: -6px;
+    height: 2px;
+    background: var(--g-brand);
   }
   .nav-right {
     display: flex;
     align-items: center;
-    gap: 12px;
-  }
-  /* The global .btn-small class sets font-size:12px, which makes
-     the Dashboard / Sign up button text smaller than the surrounding
-     14px nav links. Match the nav font-size so the row reads as one
-     consistent element. */
-  .nav-right :global(.btn-small) {
-    font-size: 14px;
+    gap: 18px;
+    flex: none;
   }
   .nav-login {
     color: var(--text-tertiary);
+  }
+  /* The one solid action: brand fill, near-black text (spec 18.1). */
+  :global(.btn.btn-solid-brand) {
+    background: var(--g-brand);
+    color: var(--g-bg);
+    border: 1px solid var(--g-brand);
+    font-weight: 500;
+    font-size: 14px;
+    padding: 7px 16px;
+  }
+  :global(.btn.btn-solid-brand:hover) {
+    background: var(--g-brand-hover);
+    border-color: var(--g-brand-hover);
+    color: var(--g-bg);
   }
 
   /* Hamburger */
@@ -404,64 +345,57 @@
     transform: rotate(-45deg) translate(5px, -5px);
   }
 
-  /* Mobile menu */
+  /* Mobile menu: attached full-width panel below the header; every link a
+     44px touch target (spec 9.1). */
   .mobile-menu {
     position: fixed;
-    top: 49px;
+    top: 64px;
     left: 0;
     right: 0;
     bottom: 0;
-    background: var(--bg);
+    background: var(--g-bg);
     z-index: 99;
     display: flex;
     flex-direction: column;
-    padding: 24px;
-    gap: 4px;
+    padding: 16px 20px 24px;
+    gap: 0;
+    overflow-y: auto;
   }
   .mobile-link {
     color: var(--text-primary);
     text-decoration: none;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 500;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--surface-border);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--g-border-subtle);
   }
   .mobile-link:hover {
     text-decoration: none;
   }
   .mobile-divider {
-    height: 1px;
-    margin: 8px 0;
+    height: 12px;
   }
   .mobile-cta {
     margin-top: 8px;
     text-align: center;
     justify-content: center;
     padding: 12px;
+    min-height: 44px;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 900px) {
     .nav-links {
       display: none;
     }
     .nav-right .nav-link,
-    .nav-right .btn {
+    .nav-right :global(.btn) {
       display: none;
     }
     .nav-hamburger {
       display: flex;
     }
-  }
-
-  .noise-overlay {
-    position: fixed;
-    inset: 0;
-    filter: url(#noise);
-    opacity: 0.03;
-    pointer-events: none;
-    z-index: 9999;
-    width: 100%;
-    height: 100%;
   }
 
   main {
@@ -476,7 +410,7 @@
     flex-wrap: wrap;
     gap: 12px 16px;
     padding: 14px 24px;
-    border-top: 1px solid var(--surface-border);
+    border-top: 1px solid var(--g-border-subtle);
   }
   .cookie-notice p {
     font-size: 13px;
@@ -485,66 +419,113 @@
     text-align: center;
   }
   .cookie-notice a {
-    color: var(--accent);
+    color: var(--g-brand);
     text-decoration: none;
   }
   .cookie-notice a:hover {
     text-decoration: underline;
   }
 
-  /* Footer */
-  .footer-content {
-    width: 100%;
+  /* Footer (spec 9.3): wide grid, identity + three link columns, one
+     brand rule as the molten-signal termination. */
+  .site-footer {
+    border-top: 1px solid var(--g-border-subtle);
+    margin-top: 48px;
+    position: relative;
   }
-  .footer-row {
-    display: flex;
-    justify-content: space-between;
+  .site-footer::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: var(--page-gutter);
+    width: 72px;
+    height: 2px;
+    background: var(--g-brand);
+  }
+  .footer-grid {
+    width: min(100%, var(--page-max));
+    margin-inline: auto;
+    padding: 48px var(--page-gutter) 32px;
+    display: grid;
+    grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(140px, 1fr));
+    gap: 32px;
+  }
+  .footer-mark {
+    display: inline-flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-  .footer-left {
-    color: var(--text-tertiary);
+    gap: 8px;
+    text-decoration: none;
+    color: var(--text-primary);
     font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+  }
+  .footer-mark:hover { text-decoration: none; }
+  .footer-desc {
+    margin: 14px 0 6px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    max-width: 34ch;
+  }
+  .footer-oss {
     margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.03em;
   }
-  .footer-links {
+  .footer-col {
     display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 2px;
   }
-  .footer-links a {
+  .footer-col-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--text-tertiary);
+    margin: 0 0 8px;
+  }
+  .footer-col a {
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 13px;
-    /* 13px text gives a 21px box, under the 24px minimum for a standalone
-       control. These are the site's only navigation on a phone once the header
-       collapses, and they sit 16px apart in a wrapping row, so a near-miss hits
-       the neighbour rather than nothing. Padding rather than a height keeps the
-       row wrapping naturally; the negative margin keeps the visual gap the
-       design intends, so nothing moves. */
     display: inline-flex;
     align-items: center;
-    min-height: 24px;
-    padding: 3px 0;
-    margin: -3px 0;
+    min-height: 26px;
+    width: fit-content;
   }
-  .footer-links a:hover {
+  .footer-col a:hover {
     color: var(--text-primary);
     text-decoration: none;
   }
   .footer-bottom {
-    text-align: center;
-    color: var(--text-tertiary);
-    font-size: 12px;
-    margin: 16px 0 0;
-    padding-top: 14px;
-    border-top: 1px solid var(--surface-border);
-    opacity: 0.7;
+    width: min(100%, var(--page-max));
+    margin-inline: auto;
+    padding: 14px var(--page-gutter) 20px;
+    border-top: 1px solid var(--g-border-subtle);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 16px;
   }
-  @media (max-width: 720px) {
-    .footer-row { justify-content: center; text-align: center; }
-    .footer-left { width: 100%; }
-    .footer-links { justify-content: center; }
+  .footer-bottom p {
+    color: var(--text-tertiary);
+    font-size: 12.5px;
+    margin: 0;
+  }
+  @media (max-width: 860px) {
+    .footer-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .footer-identity {
+      grid-column: 1 / -1;
+    }
+  }
+  @media (max-width: 480px) {
+    .footer-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

@@ -1,128 +1,158 @@
 <script lang="ts">
-  // Hero per GLASSMKR_REDESIGN_FINAL_SPEC section 14.1: the exact factual
-  // hierarchy (what it monitors, self-hostable, licenses, hosted optional),
-  // the canonical Compose quickstart as the hero command (never curl|bash),
-  // and one product evidence exhibit below. License labels come from the
-  // configured product facts, never typed into copy.
-  import HeroSurface from "./HeroSurface.svelte";
-  import ComposeQuickstart from "$lib/components/ComposeQuickstart.svelte";
-  import { CRUCIBLE_LICENSE, DASHBOARD_LICENSE_LABEL } from "$lib/product-facts";
-
+  // Hero per the visual spec (10.1, 10.2) with the exact copy from the
+  // server-owner content redesign (5.2). Two buttons, one tertiary text link,
+  // no deployment command in the hero, hosted route primary. The node cap
+  // comes from configured product facts, never a literal.
+  import ProductStage from "./ProductStage.svelte";
+  import { HOSTED_NODE_CAP } from "$lib/product-facts";
 </script>
 
 <section class="hero">
-  <p class="eyebrow">OPEN SOURCE · CRUCIBLE {CRUCIBLE_LICENSE} · GLASSMKR {DASHBOARD_LICENSE_LABEL}</p>
+  <div class="ambient" aria-hidden="true"></div>
+  <div class="site-grid hero-grid">
+    <div class="col-1-9 hero-copy">
+      <p class="eyebrow">OPEN SOURCE LINUX SERVER MONITORING</p>
 
-  <h1>Open-source monitoring for bare metal.</h1>
+      <h1>
+        Know when your server is in trouble, and
+        <span class="h1-accent">what to do next.</span>
+      </h1>
 
-  <p class="subhead">
-    Glassmkr watches SMART, IPMI, ECC, RAID, ZFS, and network hardware, then
-    shows the evidence and the next command to run. Self-host the full stack
-    or use the hosted service.
-  </p>
+      <p class="subhead">
+        Glassmkr watches the Linux and hardware signals most people never
+        configure, explains what needs attention, and gives you the next
+        command to run. Install one agent. Use the free hosted dashboard or run
+        the complete stack yourself.
+      </p>
 
-  <div class="cta-row">
-    <a href="https://github.com/glassmkr/crucible" class="btn btn-primary btn-lg">View on GitHub</a>
-    <a href="https://app.glassmkr.com/register" class="btn btn-ghost btn-lg">Use the hosted service</a>
-    <a href="/docs/self-hosting" class="btn btn-ghost btn-lg">Self-host Glassmkr</a>
+      <div class="cta-row">
+        <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand btn-hero">Monitor a server for free</a>
+        <a href="https://app.glassmkr.com/demo" class="btn btn-hero btn-quiet">Explore the live demo</a>
+      </div>
+      <p class="cta-caption">
+        No card. Hosted accounts are free up to {HOSTED_NODE_CAP} nodes.
+        Self-hosted has no node limit.
+        <a href="https://github.com/glassmkr/glassmkr" class="source-link">View the source on GitHub</a>
+      </p>
+    </div>
+
+    <div class="col-1-12 hero-stage">
+      <ProductStage />
+    </div>
   </div>
-
-  <div class="hero-quickstart">
-    <ComposeQuickstart />
-  </div>
-
-  <p class="audience-line">
-    If you can run software on a Linux server but would not call yourself a
-    Linux administrator, Glassmkr is designed for you.
-  </p>
-
-  <HeroSurface />
 </section>
 
 <style>
-  /* Left-aligned, not centred. A centred headline, subhead, button row and
-     code block stacked down the middle is the template signal the brief named,
-     and the references this follows are all left-aligned. Vertical space is
-     tightened so the evidence exhibit reaches the fold. */
   .hero {
-    padding: 56px 24px 44px;
-    text-align: left;
-    max-width: 1120px;
-    margin: 0 auto;
+    position: relative;
+    padding-top: clamp(50px, 7.2vh, 78px);
+    overflow: hidden;
+  }
+  /* The one allowed ambient field (spec 9.2): a subtle warm radial behind the
+     hero only, never global, hidden from assistive tech. */
+  .ambient {
+    position: absolute;
+    inset: -20% -10% auto;
+    height: 640px;
+    pointer-events: none;
+    background: radial-gradient(ellipse 70% 55% at 28% 8%, rgba(255, 107, 53, 0.07) 0%, transparent 70%);
+  }
+  .hero-grid {
+    position: relative;
+    row-gap: 0;
   }
 
   .eyebrow {
     font-family: var(--font-mono);
     font-size: 12px;
-    letter-spacing: 0.14em;
-    color: var(--accent);
-    margin: 0 0 16px;
+    letter-spacing: 0.16em;
+    color: var(--g-brand);
+    margin: 0 0 14px;
   }
 
   h1 {
-    font-size: clamp(32px, 4.6vw, 54px);
-    font-weight: 600;
-    letter-spacing: -0.015em;
-    line-height: 1.1;
+    /* Display scale (spec 5.2): large, weight 500, tight leading and
+       tracking, at most two lines at 1280. */
+    font-size: clamp(2.5rem, 2rem + 2.8vw, 4.6rem);
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    line-height: 1.0;
     margin: 0 0 16px;
-    max-width: 20ch;
+    /* The approved H1 is 58 characters and the hero copy spans nine columns
+       (about 1000px). "No more than two lines" is a hard requirement; the
+       72-76px size is a target, so the size yields the last few pixels. */
+    max-width: 1120px;
     color: var(--text-primary);
     text-wrap: balance;
   }
+  /* One solid brand phrase, no gradient (spec 10.2). */
+  .h1-accent {
+    color: var(--g-brand);
+  }
 
   .subhead {
-    max-width: 62ch;
-    margin: 0 0 26px;
-    font-size: clamp(15px, 1.5vw, 17px);
-    line-height: 1.6;
+    max-width: 70ch;
+    margin: 0 0 20px;
+    font-size: 16px;
+    line-height: 1.5;
     color: var(--text-secondary);
   }
 
   .cta-row {
     display: flex;
-    justify-content: flex-start;
-    gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 20px;
+    gap: 12px;
+    margin-bottom: 10px;
   }
-
-  .btn-lg {
+  :global(.btn.btn-hero) {
     padding: 11px 22px;
-    font-size: 14.5px;
-    font-weight: 500;
-    border-radius: var(--radius-md);
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
+    font-size: 15px;
+    min-height: 44px;
   }
-
-  .btn-ghost {
+  :global(.btn.btn-quiet) {
+    background: transparent;
+    border: 1px solid var(--g-border-strong);
+    color: var(--text-primary);
+  }
+  :global(.btn.btn-quiet:hover) {
+    border-color: var(--g-brand-edge);
     background: transparent;
     color: var(--text-primary);
-    border: 1px solid var(--surface-border);
   }
-  .btn-ghost:hover { border-color: var(--accent); text-decoration: none; }
-  .btn-ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* Audience-recognition line (prelaunch spec B1): shipped once, here, and
-     nowhere else. Quiet on purpose; it addresses the reader the H1 does not,
-     without costing the expert reader anything. */
-  .audience-line {
-    max-width: 640px;
-    margin: 0 0 22px;
-    font-size: 14.5px;
-    line-height: 1.6;
+  .cta-caption {
+    font-size: 13px;
     color: var(--text-tertiary);
+    margin: 0 0 26px;
+    max-width: 78ch;
+  }
+  .source-link {
+    color: var(--text-secondary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    margin-left: 6px;
+  }
+  .source-link:hover {
+    color: var(--text-primary);
   }
 
-  .hero-quickstart {
-    max-width: 640px;
-    margin: 0 0 4px;
+  .hero-stage {
+    padding-bottom: 8px;
   }
 
-  @media (max-width: 720px) {
-    .hero { padding: 48px 20px 48px; }
-    .cta-row { flex-direction: column; align-items: stretch; }
-    .btn-lg { justify-content: center; }
+  @media (max-width: 767px) {
+    .hero {
+      padding-top: 36px;
+    }
+    h1 {
+      line-height: 1.04;
+    }
+    .cta-row :global(.btn) {
+      width: 100%;
+      justify-content: center;
+    }
+    .cta-caption {
+      margin-bottom: 28px;
+    }
   }
 </style>

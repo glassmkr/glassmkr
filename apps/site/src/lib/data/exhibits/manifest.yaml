@@ -11,6 +11,35 @@
 # on a phone instead of becoming an unreadable screenshot.
 
 exhibits:
+  - id: demo-fleet-raid
+    captured_at: 2026-08-30T10:31:00Z
+    host_alias: db-hel1-01
+    scenario_id: demo-sample-fleet
+    crucible_version: 0.13.6
+    dashboard_commit: "13cad34"
+    source_environment: public demo
+    viewport: responsive
+    artifact_path: apps/site/src/lib/data/exhibits/demo-fleet-raid.json
+    source_data_path: apps/site/src/lib/data/exhibits/demo-fleet-raid.json
+    sha256: 6dc924616825c37bb28c8c6f57782b5f708d70d35ba4f880ad946869d41138c0
+    notes: >
+      The read-only sample fleet the public demo serves at
+      app.glassmkr.com/demo, captured verbatim from the production dashboard's
+      own API on 2026-08-30: the four demo hosts with their alert counts, and
+      the db-hel1-01 raid_degraded alert exactly as the product renders it
+      (the dashboard shows it as P0 CRITICAL; severity=critical bumps the
+      rule's worst-case P1 per the canonical priority model). This is recorded
+      demonstration data and every surface that renders it says so; the demo
+      itself carries the same "read-only capture, not a live system" ribbon.
+      The collector_version (0.13.6) is the version recorded in the sample
+      capture, which predates the current release; the provenance line states
+      the source rather than pretending the sample is a live fleet.
+
+      The homepage product stage renders this exhibit. It replaced a
+      hand-written fleet table (storage-fra-2, web-ams-1, db-ams-1) whose
+      hostnames and telemetry were invented, which the redesign spec's truth
+      test forbids.
+
   - id: val-debian-os-eol
     captured_at: 2026-08-27T06:42:52Z
     host_alias: val-debian

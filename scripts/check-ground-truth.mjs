@@ -7,7 +7,7 @@
 //
 // Checks:
 //   1. quickstart     The Compose quickstart is byte-identical across
-//                     SELF_HOSTING.md (canonical), ComposeQuickstart.svelte,
+//                     SELF_HOSTING.md (canonical),
 //                     and /docs/self-hosting.
 //   2. rulecount      No hardcoded global rule-count literal on active site
 //                     surfaces (rules.json .length is the only source).
@@ -68,12 +68,10 @@ if (!only || only === "quickstart") {
   if (!m) fail("quickstart", "cannot find the fenced Quickstart block in SELF_HOSTING.md");
   else {
     const canonical = m[1];
-    const component = fs.readFileSync(path.join(SITE, "src/lib/components/ComposeQuickstart.svelte"), "utf8");
-    const cm = component.match(/QUICKSTART = `([\s\S]*?)`/);
-    if (!cm) fail("quickstart", "cannot find QUICKSTART string in ComposeQuickstart.svelte");
-    else if (cm[1] !== canonical) fail("quickstart", "ComposeQuickstart.svelte differs from SELF_HOSTING.md");
-    else ok("quickstart", "ComposeQuickstart.svelte matches SELF_HOSTING.md");
-
+    // ComposeQuickstart.svelte was retired with the Axiom-led homepage: the
+    // deployment command left the hero (visual spec 10.1) and the quickstart
+    // now renders only on /docs/self-hosting, which stays byte-identical to
+    // SELF_HOSTING.md below. check-rendered.mjs asserts the rendered page too.
     const docsPage = fs.readFileSync(path.join(SITE, "src/routes/docs/self-hosting/+page.svelte"), "utf8");
     if (!docsPage.includes(canonical)) fail("quickstart", "/docs/self-hosting quickstart differs from SELF_HOSTING.md");
     else ok("quickstart", "/docs/self-hosting matches SELF_HOSTING.md");

@@ -1,67 +1,69 @@
 <script lang="ts">
-  // Slightly different background tone (#0d0d0d vs page's #0a0a0a) per
-  // spec. No form, no email capture, no FAQ.
+  // Closing action (content redesign 5.10, exact copy). One primary, one
+  // secondary, one text route to the source.
 </script>
 
-<section class="closing">
-  <div class="inner">
-    <h2>Run it where your trust model lives.</h2>
-    <a href="/docs/self-hosting" class="btn btn-primary btn-lg">Self-host in 10 minutes</a>
-    <p class="fineprint">Or <a href="https://app.glassmkr.com/register">use the hosted version</a>: free, no credit card, no email blasts.</p>
-    <p class="subtitle">
-      One compose file, one agent command. AGPL-3.0-only end to end, everything readable.
-    </p>
+<section class="closing band-std">
+  <div class="site-grid">
+    <div class="col-1-8">
+      <h2>See what Glassmkr notices on one server.</h2>
+      <p class="body">
+        Start with a server whose history you know. The hosted service is free,
+        and you can remove the agent or point it at a self-hosted dashboard
+        later.
+      </p>
+      <div class="actions">
+        <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand btn-hero">Monitor a server for free</a>
+        <a href="https://app.glassmkr.com/demo" class="btn btn-hero btn-quiet">Browse the live demo</a>
+      </div>
+      <p class="source">
+        <a href="https://github.com/glassmkr/glassmkr">Read the source &rarr;</a>
+      </p>
+    </div>
   </div>
 </section>
 
 <style>
   .closing {
-    padding: 96px 24px;
-    background: #0d0d0d;
-    border-top: 1px solid var(--surface-border);
+    border-top: 1px solid var(--g-border-subtle);
   }
-  .inner {
-    max-width: 720px;
-    margin: 0 auto;
-    text-align: center;
-  }
-
   h2 {
-    font-size: clamp(28px, 4.4vw, 42px);
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    line-height: 1.2;
-    color: var(--text-primary);
-    margin: 0 0 32px;
-  }
-
-  .btn-lg {
-    display: inline-block;
-    padding: 14px 28px;
-    font-size: 15px;
+    font-size: var(--type-h2);
     font-weight: 500;
-    border-radius: var(--radius-md);
-    text-decoration: none;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin: 0 0 14px;
+    text-wrap: balance;
   }
-  /* Primary CTA state model lives in packages/ui/base.css; this
-     button picks it up via the .btn-primary class. */
-
-  .fineprint {
-    margin: 24px 0 0;
-    font-size: 12.5px;
-    color: var(--text-tertiary);
-    font-family: var(--font-mono, monospace);
-  }
-
-  .subtitle {
-    margin: 18px auto 0;
-    max-width: 540px;
-    font-size: 14px;
+  .body {
+    font-size: 15px;
     line-height: 1.6;
     color: var(--text-secondary);
+    margin: 0 0 24px;
+    max-width: 58ch;
   }
-
-  @media (max-width: 720px) {
-    .closing { padding: 72px 20px; }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .source a {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+  }
+  .source a:hover {
+    color: var(--text-primary);
+  }
+  @media (max-width: 640px) {
+    .actions :global(.btn) {
+      width: 100%;
+      justify-content: center;
+    }
   }
 </style>
