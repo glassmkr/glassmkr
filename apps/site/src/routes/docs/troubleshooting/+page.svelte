@@ -28,32 +28,7 @@
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>
 
-<div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      <a href="/docs" class="sidebar-section">&larr; Back to docs</a>
-      <a href="#topics" class="sidebar-link">Topic pages</a>
-      <a href="#service-fails" class="sidebar-link">Service fails to start</a>
-      <a href="#offline" class="sidebar-link">Server shows offline</a>
-      <a href="#delayed" class="sidebar-link">Metrics delayed</a>
-      <a href="#smart" class="sidebar-link">SMART missing</a>
-      <a href="#ipmi-missing" class="sidebar-link">IPMI / thermal missing</a>
-      <a href="#zfs" class="sidebar-link">ZFS module not loaded</a>
-      <a href="#gpu" class="sidebar-link">GPU tier-1 unavailable</a>
-      <a href="#psi" class="sidebar-link">PSI alerts never fire</a>
-      <a href="#telegram" class="sidebar-link">Telegram not arriving</a>
-      <a href="#spam" class="sidebar-link">Email goes to spam</a>
-      <a href="#cpu" class="sidebar-link">High Crucible CPU</a>
-      <a href="#limit" class="sidebar-link">Server limit reached</a>
-      <a href="#disabled" class="sidebar-link">Servers disabled</a>
-      <a href="#config" class="sidebar-link">Config not taking effect</a>
-      <a href="#per-core" class="sidebar-link">Per-core CPU</a>
-      <a href="#muted" class="sidebar-link">Muted rules firing</a>
-      <a href="#help" class="sidebar-link">Getting help</a>
-    </nav>
-  </aside>
-
-  <article class="docs-content">
+<article class="docs-content">
     <header class="page-header">
       <p class="eyebrow">DOCS / TROUBLESHOOTING</p>
       <h1>Troubleshooting</h1>
@@ -297,38 +272,11 @@ sudo reboot</code></pre></li>
       <p class="note">Last verified: 2026-05-31 against Crucible v0.13.6. Resource footprint figures are from a 10-host validation-fleet measurement on 2026-05-31.</p>
     </section>
   </article>
-</div>
 
 <style>
-  .docs-layout { display: flex; max-width: 960px; margin: 0 auto; padding: 60px 24px 120px; gap: 48px; }
   .sidebar { position: sticky; top: 80px; align-self: flex-start; flex-shrink: 0; width: 200px; max-height: calc(100vh - 100px); overflow-y: auto; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section { display: block; padding: 6px 12px; font-size: 12px; color: var(--text-tertiary); text-decoration: none; margin-bottom: 8px; }
-  .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: var(--text-tertiary); text-decoration: none; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; transition: color 0.15s, border-color 0.15s; }
-  .sidebar-link:hover { color: var(--text-secondary); }
-  .docs-content { flex: 1; min-width: 0; }
-  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin-bottom: 8px; }
-  h1 { font-size: 2.25rem; color: var(--text-primary); margin-bottom: 0.25rem; }
-  .docs-subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 2rem; line-height: 1.6; }
-  section { margin-bottom: 3rem; scroll-margin-top: 80px; }
-  h2 { font-size: 1.4rem; color: var(--text-primary); margin-bottom: 0.75rem; position: relative; }
   p, li { color: var(--text-secondary); line-height: 1.7; margin-bottom: 0.6rem; }
   ol { padding-left: 1.4rem; }
   ol li { margin-bottom: 1rem; }
-  .anchor-link { color: transparent; text-decoration: none; margin-right: 4px; font-weight: 400; transition: color 0.15s; }
-  h2:hover .anchor-link { color: var(--text-tertiary); }
-  .anchor-link:hover { color: var(--accent) !important; text-decoration: none; }
-  pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 0.75rem; }
-  pre code { font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6; color: var(--text-primary); background: transparent; padding: 0; }
-  code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
-  .note { font-size: 0.85rem; color: var(--text-tertiary); font-style: italic; margin-top: 1rem; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: none; }
-  @media (max-width: 900px) { .sidebar { display: none; } .docs-layout { gap: 0; padding: 40px 20px 100px; } }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
-  @media (max-width: 768px) {
-    code, pre code { font-size: 12px; }
-  }
-</style>
+  /* Mobile technical-text floor: 12px minimum on a phone. */</style>

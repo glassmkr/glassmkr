@@ -167,17 +167,6 @@
 </svelte:head>
 
 <div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      {#each sections as s}
-        <a
-          href="#{s.id}"
-          class="sidebar-link"
-          class:active={activeId === s.id}
-        >{s.label}</a>
-      {/each}
-    </nav>
-  </aside>
 
   <!-- Canonical rule count: see RULES_COUNT.md at the monorepo root. -->
     <div class="docs-content">
@@ -825,11 +814,8 @@
     text-decoration: none;
   }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
+  /* Mobile technical-text floor: 12px minimum on a phone. */
   @media (max-width: 768px) {
     .arch-arrow-label { font-size: 12px; }
-    table, thead th, tbody td { font-size: 12px; }
-    code, pre code { font-size: 12px; }
   }
 </style>

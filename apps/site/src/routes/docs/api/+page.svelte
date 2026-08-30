@@ -46,25 +46,7 @@
   {@html `<script type="application/ld+json">${apiLd}</` + `script>`}
 </svelte:head>
 
-<div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      <a href="/docs" class="sidebar-section">&larr; Back to docs</a>
-      <a href="#auth" class="sidebar-link">Authentication</a>
-      <a href="#servers" class="sidebar-link">Servers</a>
-      <a href="#ingest" class="sidebar-link">Ingest</a>
-      <a href="#health" class="sidebar-link">Health</a>
-      <a href="#channels" class="sidebar-link">Channels</a>
-      <a href="#alerts" class="sidebar-link">Alerts</a>
-      <a href="#billing" class="sidebar-link">Billing</a>
-      <a href="#meta" class="sidebar-link">Meta</a>
-      <a href="#rate-limits" class="sidebar-link">Rate limits</a>
-      <a href="#pagination" class="sidebar-link">Pagination</a>
-      <a href="#idempotency" class="sidebar-link">Idempotency</a>
-    </nav>
-  </aside>
-
-  <article class="docs-content">
+<article class="docs-content">
     <header class="page-header">
       <p class="eyebrow">DOCS / API</p>
       <h1>API reference</h1>
@@ -587,34 +569,14 @@
       <p class="note">Last verified: 2026-05-22 against Crucible v0.13.3 and Dashboard v1.0. For tier-gating details see <a href="/docs/api/tier-gating">/docs/api/tier-gating</a>.</p>
     </section>
   </article>
-</div>
 
 <style>
   .docs-layout { display: flex; max-width: 980px; margin: 0 auto; padding: 60px 24px 120px; gap: 48px; }
-  .sidebar { position: sticky; top: 80px; align-self: flex-start; flex-shrink: 0; width: 180px; max-height: calc(100vh - 100px); overflow-y: auto; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section { display: block; padding: 6px 12px; font-size: 12px; color: var(--text-tertiary); text-decoration: none; margin-bottom: 8px; }
-  .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: var(--text-tertiary); text-decoration: none; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; transition: color 0.15s, border-color 0.15s; }
-  .sidebar-link:hover { color: var(--text-secondary); }
-  .docs-content { flex: 1; min-width: 0; }
-  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin-bottom: 8px; }
-  h1 { font-size: 2.25rem; color: var(--text-primary); margin-bottom: 0.25rem; }
-  .docs-subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 2rem; line-height: 1.6; }
-  section { margin-bottom: 3rem; scroll-margin-top: 80px; }
-  h2 { font-size: 1.5rem; color: var(--text-primary); margin-bottom: 1rem; position: relative; }
   h3 { font-size: 1.05rem; color: var(--text-primary); margin-top: 0.5rem; margin-bottom: 0.5rem; }
   p { color: var(--text-secondary); line-height: 1.7; margin-bottom: 0.75rem; }
-  .anchor-link { color: transparent; text-decoration: none; margin-right: 4px; font-weight: 400; transition: color 0.15s; }
-  h2:hover .anchor-link { color: var(--text-tertiary); }
-  .anchor-link:hover { color: var(--accent) !important; text-decoration: none; }
   pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 1rem; }
   pre code { font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.55; color: var(--text-primary); background: transparent; padding: 0; white-space: pre; }
-  code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
-  .note { font-size: 0.85rem; color: var(--text-tertiary); font-style: italic; margin-top: 1rem; }
-  .table-scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1rem; font-size: 0.875rem; }
-  thead th { text-align: left; padding: 8px 12px; color: var(--text-tertiary); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--surface-border); }
-  tbody td { padding: 7px 12px; color: var(--text-secondary); border-bottom: 1px solid rgba(61, 54, 48, 0.4); vertical-align: top; }
   .endpoint { margin: 1.75rem 0; padding-bottom: 1.25rem; border-bottom: 1px solid var(--surface-border); }
   .endpoint:last-child { border-bottom: none; }
   .method-path { display: flex; align-items: center; gap: 0.6rem; margin: 0.4rem 0; flex-wrap: wrap; }
@@ -624,14 +586,5 @@
   .method-put { background: rgba(250, 204, 21, 0.12); color: #facc15; }
   .method-delete { background: rgba(248, 113, 113, 0.12); color: #f87171; }
   .auth-badge { font-size: 0.78rem; padding: 0.18rem 0.5rem; background: var(--surface); border: 1px solid var(--surface-border); border-radius: var(--radius-md); color: var(--text-tertiary); }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: none; }
-  @media (max-width: 900px) { .sidebar { display: none; } .docs-layout { gap: 0; padding: 40px 20px 100px; } }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
-  @media (max-width: 768px) {
-    table, thead th, tbody td { font-size: 12px; }
-    code, pre code { font-size: 12px; }
-  }
-</style>
+  /* Mobile technical-text floor: 12px minimum on a phone. */</style>

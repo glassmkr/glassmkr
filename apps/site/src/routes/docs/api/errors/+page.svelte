@@ -47,18 +47,7 @@
   {@html `<script type="application/ld+json">${breadcrumbLd}</` + `script>`}
 </svelte:head>
 
-<div class="docs-layout">
-  <aside class="sidebar">
-    <nav class="sidebar-nav">
-      <a href="/docs/api" class="sidebar-section">&larr; API reference</a>
-      <a href="#envelope" class="sidebar-link">The envelope</a>
-      <a href="#deciding" class="sidebar-link">Deciding what to do</a>
-      <a href="#codes" class="sidebar-link">Code reference</a>
-      <a href="#oauth" class="sidebar-link">OAuth is different</a>
-    </nav>
-  </aside>
-
-  <article class="docs-content">
+<article class="docs-content">
     <header class="page-header">
       <p class="eyebrow">DOCS / API / ERRORS</p>
       <h1>API errors</h1>
@@ -142,18 +131,10 @@
       </p>
     </section>
   </article>
-</div>
 
 <style>
   .docs-layout { display: flex; max-width: 980px; margin: 0 auto; padding: 60px 24px 120px; gap: 48px; }
-  .sidebar { position: sticky; top: 80px; align-self: flex-start; flex-shrink: 0; width: 180px; max-height: calc(100vh - 100px); overflow-y: auto; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-section { display: block; padding: 6px 12px; font-size: 12px; color: var(--text-tertiary); text-decoration: none; margin-bottom: 8px; }
   .sidebar-link { display: block; padding: 6px 12px; font-size: 13px; color: var(--text-tertiary); text-decoration: none; border-left: 2px solid transparent; }
-  .sidebar-link:hover { color: var(--text-secondary); }
-  .docs-content { flex: 1; min-width: 0; }
-  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-tertiary); margin-bottom: 8px; }
-  h1 { font-size: 2.25rem; color: var(--text-primary); margin-bottom: 0.25rem; }
   .docs-subtitle { font-size: 1.05rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 2.5rem; }
   section { margin-bottom: 2.5rem; }
   h2 { font-size: 1.35rem; color: var(--text-primary); margin: 0 0 0.75rem; }
@@ -163,10 +144,7 @@
   li { margin-bottom: 6px; }
   pre { background: var(--surface); border: 1px solid var(--surface-border); border-left: 3px solid rgba(255, 107, 53, 0.35); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0.5rem 0 1rem; }
   pre code { font-family: var(--font-mono); font-size: 13px; line-height: 1.55; color: var(--text-primary); background: transparent; padding: 0; }
-  code { font-family: var(--font-mono); background: var(--surface); padding: 2px 6px; border-radius: var(--radius-md); font-size: 0.88em; }
   table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1rem; font-size: 0.875rem; min-width: 40rem; }
   thead th { text-align: left; padding: 8px 12px; color: var(--text-tertiary); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--surface-border); }
   tbody td { padding: 8px 12px; color: var(--text-secondary); border-bottom: 1px solid rgba(61, 54, 48, 0.4); vertical-align: top; }
-  tbody tr:target { background: rgba(255, 107, 53, 0.06); }
-  @media (max-width: 900px) { .sidebar { display: none; } .docs-layout { gap: 0; padding: 40px 20px 100px; } }
-</style>
+  tbody tr:target { background: rgba(255, 107, 53, 0.06); }</style>

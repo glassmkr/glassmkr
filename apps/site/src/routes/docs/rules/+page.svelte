@@ -191,9 +191,7 @@
     margin: 0;
   }
 
-  /* Mobile technical-text floor (taste pass 4.1): 12px minimum on a
-     phone; wide tables scroll rather than shrink. */
+  /* Mobile technical-text floor: 12px minimum on a phone. */
   @media (max-width: 768px) {
     code { font-size: 12px; }
-  }
-</style>
+  }</style>
