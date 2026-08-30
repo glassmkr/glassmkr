@@ -10,15 +10,20 @@
  */
 
 .vertical {
-  max-width: 880px;
+  width: min(100%, var(--page-max));
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 var(--page-gutter);
+}
+/* Inner prose keeps a readable measure on the wide shell. */
+.vertical section > p,
+.vertical .hero ~ * p {
+  max-width: 76ch;
 }
 
-/* Hero */
+/* Hero: left proposition (spec 15), not a centered template. */
 .hero {
-  padding: 80px 0 64px;
-  text-align: center;
+  padding: clamp(48px, 7vh, 80px) 0 56px;
+  text-align: left;
 }
 .eyebrow {
   font-family: var(--font-mono, monospace);
@@ -29,24 +34,26 @@
   margin: 0 0 24px;
 }
 h1 {
-  font-size: clamp(34px, 5.4vw, 56px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.1;
+  font-size: clamp(2.4rem, 1.8rem + 2.6vw, 4rem);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
   color: var(--text-primary);
-  margin: 0 0 24px;
+  margin: 0 0 20px;
+  max-width: 20ch;
+  text-wrap: balance;
 }
 .subhead {
-  max-width: 680px;
-  margin: 0 auto 32px;
-  font-size: clamp(15px, 1.6vw, 17px);
-  line-height: 1.65;
+  max-width: 64ch;
+  margin: 0 0 28px;
+  font-size: 16px;
+  line-height: 1.6;
   color: var(--text-secondary);
 }
 
 .cta-row {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 14px;
   flex-wrap: wrap;
   margin: 0 0 16px;
