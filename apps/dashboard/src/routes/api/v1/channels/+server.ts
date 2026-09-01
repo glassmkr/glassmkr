@@ -101,8 +101,15 @@ export const POST: RequestHandler = async (event) => {
     // create time for immediate feedback. (slack/telegram/email keep their
     // existing looser validation: slack's webhook_url and telegram's chat_id are
     // checked by their senders.)
+    // Accept `url` as a documented alias for `webhook_url` (Grok red-team H21:
+    // the OpenAPI/docs describe `url`, but the senders read `webhook_url`, so a
+    // doc-following caller got a 400). Normalize before validating.
+    if ((channel_type === "discord" || channel_type === "webhook")
+        && !channelConfig.webhook_url && typeof channelConfig.url === "string") {
+      channelConfig.webhook_url = channelConfig.url;
+    }
     if ((channel_type === "discord" || channel_type === "webhook") && !channelConfig.webhook_url) {
-      return json({ error: `${channel_type} requires a webhook_url in config` }, { status: 400 });
+      return json({ error: `${channel_type} requires a webhook_url (or url) in config` }, { status: 400 });
     }
     // G3 (launch hardening, 2026-08-24): validate the destination at CREATE
     // time, not at first alert. Same SSRF policy as the send path (scheme,

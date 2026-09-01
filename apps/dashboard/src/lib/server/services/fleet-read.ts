@@ -107,7 +107,11 @@ export async function listServersForCustomer(
     last_seen_at: server.last_seen_at,
     collector_version: server.collector_version,
     active_alerts: asNumber(server.active_alerts),
-    disk_health_rollup: server.disk_health_rollup ?? "healthy",
+    // A server that has never pushed a snapshot has no SMART data yet, so it is
+    // "pending", not "healthy" (Grok red-team H3: an empty server showing
+    // healthy disks reads as "monitoring is already working"). Once it reports,
+    // an absent disk_health_state row means no concern -> healthy.
+    disk_health_rollup: server.last_seen_at ? (server.disk_health_rollup ?? "healthy") : "pending",
     created_at: server.created_at,
     tags: Array.isArray(server.tags) ? server.tags : [],
     profile: server.profile ?? null,

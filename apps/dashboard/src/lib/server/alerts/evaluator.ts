@@ -61,7 +61,7 @@ export interface Snapshot {
     main_power_fault_now: boolean | null;
     power_control_fault_now: boolean | null;
   };
-  ipmi: { available: boolean; /** One-shot IPMI capability probe (Crucible 0.12.0+); explains WHY available is false. `reason` is a loose string, not a union of the five reasons Crucible ships today, so a newer agent's new reason type-checks here and is handled at runtime by ipmi_monitoring_unavailable. Optional: absent on pre-detection agents. */ detection?: { available: boolean; method?: string; ipmitool_version?: string | null; reason?: string; detail?: string; ipmitool_below_cve_floor?: boolean }; /** Crucible 0.14.9+: `/dev/ipmi*` node the kernel created, or null. Re-checked every snapshot (unlike `detection`, which is one-shot at agent start). Non-null = positive evidence a BMC exists; null = UNDETERMINED, never "no BMC". */ bmc_device_node?: string | null; /** Crucible 0.14.9+: outcome of THIS snapshot's collection. `failed` alongside a non-null bmc_device_node is the "BMC present but not answering" signal. */ probe?: { status: string; detail?: string }; bmc_vendor?: "dell" | "hpe" | "supermicro" | "lenovo" | "cisco" | "openbmc" | "unknown"; sensors: Array<{ name: string; value: number | string; unit: string; status: string; upper_critical?: number; type?: string }>; ecc_errors: { correctable: number; uncorrectable: number } | null; ecc_errors_from_sel?: { correctable: number; uncorrectable: number; newest_event_timestamp: string | null }; psu_redundancy_state?: "fully_redundant" | "redundancy_lost" | "redundancy_degraded" | "unknown"; sel_entries_count: number | null; sel_events_recent?: Array<{ id: number; timestamp: string; sensor: string; sensor_type: string; event: string; direction: string; severity: string; parser_quality?: "fleet-tested" | "stub" | "unknown" }>; fans?: Array<{ name: string; rpm: number; status: string }> };
+  ipmi: { available: boolean; /** One-shot IPMI capability probe (Crucible 0.12.0+); explains WHY available is false. `reason` is a loose string, not a union of the five reasons Crucible ships today, so a newer agent's new reason type-checks here and is handled at runtime by ipmi_monitoring_unavailable. Optional: absent on pre-detection agents. */ detection?: { available: boolean; method?: string; ipmitool_version?: string | null; reason?: string; detail?: string; ipmitool_below_cve_floor?: boolean }; /** Crucible 0.14.9+: `/dev/ipmi*` node the kernel created, or null. Re-checked every snapshot (unlike `detection`, which is one-shot at agent start). Non-null = positive evidence a BMC exists; null = UNDETERMINED, never "no BMC". */ bmc_device_node?: string | null; /** Crucible 0.14.9+: outcome of THIS snapshot's collection. `failed` alongside a non-null bmc_device_node is the "BMC present but not answering" signal. */ probe?: { status: string; detail?: string }; bmc_vendor?: "dell" | "hpe" | "supermicro" | "lenovo" | "cisco" | "openbmc" | "unknown"; sensors: Array<{ name: string; value: number | string; unit: string; status: string; upper_critical?: number; type?: string }>; ecc_errors: { correctable: number; uncorrectable: number } | null; ecc_errors_from_sel?: { correctable: number; uncorrectable: number; newest_event_timestamp: string | null }; psu_redundancy_state?: "fully_redundant" | "redundancy_lost" | "redundancy_degraded" | "unknown"; sel_entries_count: number | null; sel_percent_used?: number | null; sel_overflow?: boolean | null; sel_events_recent?: Array<{ id: number; timestamp: string; sensor: string; sensor_type: string; event: string; direction: string; severity: string; parser_quality?: "fleet-tested" | "stub" | "unknown" }>; fans?: Array<{ name: string; rpm: number; status: string }> };
   os_alerts: { oom_kills_recent: number; zombie_processes: number; time_drift_ms: number };
   security?: {
     ssh: { permitRootLogin: string; passwordAuthentication: string; rootPasswordExposed: boolean; configApplied?: boolean; configMtime?: number | null; configLoadedAt?: number | null } | null;
@@ -2846,14 +2846,25 @@ const rules: AlertRule[] = [
         (e) => /log( area)? full|logging disabled/i.test(e.event) && e.direction === "Asserted",
       );
 
-      // (b) Near-full heuristic on the absolute entry count.
+      // (b) Near-full heuristic on the absolute entry count. BMC SEL capacity
+      // varies (some are only 512 entries), so this is a coarse fallback.
       const NEAR_FULL_ENTRIES = 3000;
       const count = snap.ipmi.sel_entries_count;
       const countNearFull = typeof count === "number" && count >= NEAR_FULL_ENTRIES;
 
-      if (!logFullEvent && !countNearFull) return [];
+      // (c) Authoritative fullness from `ipmitool sel info` (Crucible 1.2.1+):
+      // percent-used or the overflow flag. This is what catches a BMC that is
+      // 100% full at its own (small) capacity, which the entry-count heuristic
+      // misses entirely (Grok red-team H12: 512/512, overflow true).
+      const pct = snap.ipmi.sel_percent_used;
+      const overflow = snap.ipmi.sel_overflow === true;
+      const pctFull = typeof pct === "number" && pct >= 90;
 
-      const trigger = logFullEvent ? "log_full_event" : "entry_count_heuristic";
+      if (!logFullEvent && !countNearFull && !pctFull && !overflow) return [];
+
+      const trigger = logFullEvent ? "log_full_event"
+        : (overflow || pctFull) ? "sel_info_fullness"
+        : "entry_count_heuristic";
       const countStr = typeof count === "number" ? `${count}` : "an unknown number of";
       const titleCount = typeof count === "number" ? `${count} entries` : "log-full event";
       return [{
@@ -2868,6 +2879,8 @@ const rules: AlertRule[] = [
         evidence: {
           trigger,
           sel_entries_count: count,
+          sel_percent_used: pct ?? null,
+          sel_overflow: overflow,
           near_full_threshold: NEAR_FULL_ENTRIES,
           log_full_event: logFullEvent ?? null,
         },
