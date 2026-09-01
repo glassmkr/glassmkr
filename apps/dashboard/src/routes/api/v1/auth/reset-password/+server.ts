@@ -4,6 +4,7 @@ import { getSourceIp } from "$lib/server/auth/source-ip";
 import type { RequestHandler } from "./$types";
 import { resetPasswordByToken } from "@glassmkr/auth";
 import { takeRateLimitHit } from "@glassmkr/auth/rate-limit";
+import { validatePassword } from "$lib/server/auth/password-policy";
 
 const WINDOW_MS = 15 * 60 * 1000;
 
@@ -35,12 +36,14 @@ export const POST: RequestHandler = async (event) => {
   if (typeof token !== "string" || token.length === 0) {
     return json({ error: "This reset link is invalid or has expired. Request a new one." }, { status: 400 });
   }
-  if (typeof password !== "string" || password.length < 8) {
-    return json({ error: "Password must be at least 8 characters" }, { status: 400 });
+  const pwError = validatePassword(password);
+  if (pwError) {
+    return json({ error: pwError }, { status: 400 });
   }
 
   try {
-    const result = await resetPasswordByToken(token, password);
+    // validatePassword above rejected any non-string, so this is safe.
+    const result = await resetPasswordByToken(token, password as string);
     if (result.status === "success") {
       // Deliberately do NOT create a session here: the user logs in fresh with
       // the new password. Keeps the reset endpoint out of the session-issuing

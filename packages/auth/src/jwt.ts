@@ -66,7 +66,11 @@ export function verifyToken(
   token: string,
 ): (Pick<CustomerPayload, "id" | "email" | "plan"> & { iat?: number }) | null {
   try {
-    const decoded = jwt.verify(token, getJwtSecret()) as {
+    // Pin HS256 (C-4). With a string secret jsonwebtoken already limits to
+    // HMAC, but it would otherwise accept HS384/HS512 signed with the same
+    // secret; pinning the exact algorithm we sign with is defence in depth
+    // against any future algorithm-confusion footgun.
+    const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ["HS256"] }) as {
       id: string;
       email: string;
       plan?: string;
