@@ -119,7 +119,7 @@
     </nav>
     <div class="nav-right">
       {#if loggedIn}
-        <a href="https://app.glassmkr.com/api/v1/auth/logout" class="nav-link nav-login">Log out</a>
+        <a href="https://app.glassmkr.com/logout" class="nav-link nav-login">Log out</a>
         <a href="https://app.glassmkr.com" class="btn btn-primary">Dashboard</a>
       {:else}
         <a href="https://app.glassmkr.com/login" class="nav-link nav-login">Log in</a>
@@ -152,7 +152,7 @@
     <div class="mobile-divider"></div>
     {#if loggedIn}
       <a href="https://app.glassmkr.com" class="btn btn-primary mobile-cta" onclick={closeMobile}>Dashboard</a>
-      <a href="https://app.glassmkr.com/api/v1/auth/logout" class="mobile-link" onclick={closeMobile}>Log out</a>
+      <a href="https://app.glassmkr.com/logout" class="mobile-link" onclick={closeMobile}>Log out</a>
     {:else}
       <a href="https://app.glassmkr.com/login" class="mobile-link" onclick={closeMobile}>Log in</a>
       <a href="https://app.glassmkr.com/register" class="btn btn-primary mobile-cta" onclick={closeMobile}>Monitor a server</a>

@@ -264,24 +264,24 @@ async function sendSlack(
     {
       type: "section",
       fields: [
-        { type: "mrkdwn", text: `*Server:*\n${server.hostname || server.name}` },
+        { type: "mrkdwn", text: `*Server:*\n${escapeSlackMrkdwn(server.hostname || server.name)}` },
         { type: "mrkdwn", text: `*Confidence:*\n${finding.severity}${correlationBadge}` },
       ],
     },
-    { type: "section", text: { type: "mrkdwn", text: narration.evidence_summary } },
-    { type: "context", elements: [{ type: "mrkdwn", text: `_${narration.uncertainty_statement}_` }] },
+    { type: "section", text: { type: "mrkdwn", text: escapeSlackMrkdwn(narration.evidence_summary) } },
+    { type: "context", elements: [{ type: "mrkdwn", text: `_${escapeSlackMrkdwn(narration.uncertainty_statement)}_` }] },
   ];
 
   if (narration.recommended_checks.length > 0) {
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text: `*Next checks:*\n${narration.recommended_checks.slice(0, 3).map(c => `\u2022 ${c}`).join("\n")}` },
+      text: { type: "mrkdwn", text: `*Next checks:*\n${narration.recommended_checks.slice(0, 3).map(c => `\u2022 ${escapeSlackMrkdwn(c)}`).join("\n")}` },
     });
   }
   if (narration.recommended_actions.length > 0) {
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text: `*Recommended actions:*\n${narration.recommended_actions.slice(0, 3).map(a => `\u2022 ${a}`).join("\n")}` },
+      text: { type: "mrkdwn", text: `*Recommended actions:*\n${narration.recommended_actions.slice(0, 3).map(a => `\u2022 ${escapeSlackMrkdwn(a)}`).join("\n")}` },
     });
   }
   blocks.push({

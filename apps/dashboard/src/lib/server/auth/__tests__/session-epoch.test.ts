@@ -48,15 +48,13 @@ describe("isSessionStale", () => {
     expect(isSessionStale(iat, epoch)).toBe(false);
   });
 
-  it("accepts a token minted exactly at session_epoch (only strictly older is rejected)", () => {
+  it("REJECTS a token minted in the same second as the epoch (round-2 #6)", () => {
     const iat = 1_000_000;
-    expect(isSessionStale(iat, new Date(iat * 1000))).toBe(false);
-  });
-
-  it("floors sub-second epoch precision so an iat in the same second is not spuriously rejected", () => {
-    const iat = 1_000_000;
-    // Epoch 800ms into the same second floors to iat; not strictly older.
-    expect(isSessionStale(iat, new Date(iat * 1000 + 800))).toBe(false);
+    // A token whose iat equals the epoch's second was almost certainly minted
+    // before the sub-second epoch instant, so it must be treated as stale.
+    expect(isSessionStale(iat, new Date(iat * 1000))).toBe(true);
+    // Epoch 800ms into that same second: also stale (the captured-just-before case).
+    expect(isSessionStale(iat, new Date(iat * 1000 + 800))).toBe(true);
   });
 });
 

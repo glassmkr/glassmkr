@@ -122,3 +122,31 @@ describe("resolveOAuthCustomer - allowed paths", () => {
     expect((query as any).mock.calls[1][1]).toEqual(["mixed@example.com"]);
   });
 });
+
+describe("resolveOAuthCustomer - create-conflict race (round-2 #1)", () => {
+  it("REFUSES to link when a race created an UNVERIFIED account after the lookup", async () => {
+    (query as any).mockResolvedValueOnce({ rows: [] }); // no existing link
+    (query as any).mockResolvedValueOnce({ rows: [] }); // no email match at step 2
+    clientQuery.mockResolvedValueOnce({ rows: [] }); // INSERT customers -> ON CONFLICT (raced)
+    clientQuery.mockResolvedValueOnce({
+      rows: [{ id: "raced-attacker", email: "victim@example.com", email_verified: false }],
+    }); // re-select finds the racing UNVERIFIED row
+    const r = await resolveOAuthCustomer(base);
+    expect(r.status).toBe("needs_recovery");
+    // never reached the oauth_identities INSERT: only the INSERT + re-select ran
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("links when the race created an ALREADY-VERIFIED account (safe)", async () => {
+    (query as any).mockResolvedValueOnce({ rows: [] });
+    (query as any).mockResolvedValueOnce({ rows: [] });
+    clientQuery.mockResolvedValueOnce({ rows: [] }); // INSERT -> conflict
+    clientQuery.mockResolvedValueOnce({
+      rows: [{ id: "raced-legit", email: "victim@example.com", email_verified: true }],
+    }); // re-select finds a verified row
+    clientQuery.mockResolvedValueOnce({ rows: [] }); // INSERT oauth_identities
+    const r = await resolveOAuthCustomer(base);
+    expect(r.status).toBe("ok");
+    expect((r as any).customer.id).toBe("raced-legit");
+  });
+});

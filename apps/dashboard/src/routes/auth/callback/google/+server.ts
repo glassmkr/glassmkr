@@ -101,6 +101,9 @@ export const GET: RequestHandler = async (event) => {
     const jwt = generateToken(resolved.customer);
     const redirectTo = safeLocalRedirect(event.cookies.get("oauth_redirect"));
     event.cookies.delete("oauth_redirect", { path: "/", domain: cookieDomain() });
+    // Clear any sibling-planted domain-scoped guardian_token so the host-only
+    // cookie below cannot be shadowed by an equal-name cookie (round-2 #2).
+    event.cookies.delete("guardian_token", { path: "/", domain: cookieDomain() });
     // Non-sensitive logged-in hint the marketing site reads (shared domain).
     event.cookies.set(SIGNED_IN_HINT, "1", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: COOKIE_MAX_AGE });
     // "Last used" hint for the login page (long-lived, non-sensitive).
