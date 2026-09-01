@@ -475,7 +475,7 @@ function writeSitemap(rules) {
 
 const rules = loadRules();
 const crucibleVersion = await fetchLatestCrucible();
-const docs = generateDocsMarkdown();
+const docs = generateDocsMarkdown({ AGENT_VERSION: crucibleVersion, FALLBACK_CRUCIBLE_VERSION: crucibleVersion, ruleCount: rules.length });
 writeJson(rules);
 // Per-rule Markdown twins. llms.txt tells machines that every page is served as
 // Markdown at its URL plus .md, and for the 70 rule pages plus the rule index
