@@ -418,7 +418,7 @@
           </div>
           <div class="stat-item">
             <span class="label">Retention</span>
-            <span>{stats.retention_days ?? 7} days</span>
+            <span>{stats.retention_days ?? 90} days</span>
           </div>
         </div>
       {/if}
@@ -533,7 +533,7 @@
         <h2>Audit log</h2>
         <p class="desc">
           Every authenticated API call on your account, filterable by date
-          range and action. 365-day retention on Pro.
+          range and action.
         </p>
         <a href="/settings/audit" class="btn btn-small">
           Open audit log &rarr;

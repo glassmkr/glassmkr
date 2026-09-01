@@ -3689,7 +3689,7 @@ const rules: AlertRule[] = [
         type: "boot_config_broken",
         severity: "critical",
         title: "Next boot will fail: boot entry points at a missing root filesystem",
-        message: `The boot entry the bootloader will select next${kern} sets ${badSpec}, but no such filesystem exists on this host. The currently mounted root is ${mounted?.source ?? "unknown"} (UUID ${mounted?.uuid ?? "unknown"}). This host is running now, but the NEXT reboot will drop to the emergency shell and not come back. Fix the boot configuration before rebooting. This is exactly the failure mode from the val-rocky postmortem (a kernel update inherited a stale root=UUID).`,
+        message: `The boot entry the bootloader will select next${kern} sets ${badSpec}, but no such filesystem exists on this host. The currently mounted root is ${mounted?.source ?? "unknown"} (UUID ${mounted?.uuid ?? "unknown"}). This host is running now, but the NEXT reboot will drop to the emergency shell and not come back. Fix the boot configuration before rebooting. This is the classic stale-root-UUID failure: a kernel update inherited a boot entry whose root filesystem UUID no longer exists.`,
         evidence: {
           mounted_root: mounted,
           default_entry: def,
@@ -3739,7 +3739,7 @@ const rules: AlertRule[] = [
         type: "boot_config_drift",
         severity: "warning",
         title: "Boot configuration drift: a future or fallback boot could strand this host",
-        message: `This host boots correctly today, but ${reasons.join("; and ")}. Left unaddressed, a kernel update or a fallback boot can drop the box to the emergency shell (the val-rocky failure mode). The mounted root is ${mounted?.source ?? "unknown"} (UUID ${mounted?.uuid ?? "unknown"}).`,
+        message: `This host boots correctly today, but ${reasons.join("; and ")}. Left unaddressed, a kernel update or a fallback boot can drop the box to the emergency shell. The mounted root is ${mounted?.source ?? "unknown"} (UUID ${mounted?.uuid ?? "unknown"}).`,
         evidence: {
           mounted_root: mounted,
           cmdline_source: bc.cmdline_source,
