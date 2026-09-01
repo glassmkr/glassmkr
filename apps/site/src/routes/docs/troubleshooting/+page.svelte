@@ -47,7 +47,7 @@
       <p><strong>Symptom:</strong> <code>systemctl status glassmkr-crucible</code> shows <code>failed</code> or <code>inactive (dead)</code>.</p>
       <ol>
         <li>Check the service logs: <pre><code>journalctl -u glassmkr-crucible --no-pager -n 50</code></pre></li>
-        <li>If you see a YAML parse error, re-run the init wizard with the same key to rewrite the config from scratch: <pre><code>sudo glassmkr-crucible init --api-key &lt;your_collector_key&gt;</code></pre>
+        <li>If you see a YAML parse error, re-run the init wizard with <code>--force</code> to rewrite the config from scratch: <pre><code>sudo glassmkr-crucible init --api-key &lt;your_collector_key&gt; --force</code></pre>
           The wizard validates the key against the Dashboard before writing the config, so a typo surfaces immediately. Common YAML mistakes include tabs instead of spaces, missing quotes around strings with special characters, and incorrect indentation.</li>
         <li>If you see <code>permission denied</code>, ensure the configuration file is readable: <pre><code>ls -la /etc/glassmkr/crucible.yaml /etc/glassmkr/collector.yaml 2&gt;/dev/null</code></pre>
           The file should be owned by root with mode 0600. Pre-0.13.5 installs have the file at the legacy <code>/etc/glassmkr/collector.yaml</code> path; the agent reads either.</li>

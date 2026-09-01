@@ -73,6 +73,10 @@ node_repo_setup() {
 }
 
 main() {
+  # L5: a restrictive inherited umask (077, common on CIS-hardened hosts) makes
+  # `npm install -g` write the package 0700 root:root, after which the unprivileged
+  # service user cannot exec it (203/EXEC). Pin a sane umask for the install.
+  umask 022
   echo "=== Glassmkr Crucible Installer ==="
 
   if [ ! -f /etc/os-release ]; then
@@ -168,6 +172,22 @@ main() {
 
   echo "Installing @glassmkr/crucible..."
   npm install -g @glassmkr/crucible
+  # L4: pick up the freshly-installed shim (the shell caches command paths), and
+  # ensure the package is readable/executable even if a strict umask slipped
+  # through above.
+  hash -r 2>/dev/null || true
+  GM_NODE_ROOT="$(npm root -g 2>/dev/null || true)"
+  [ -n "$GM_NODE_ROOT" ] && chmod -R a+rX "$GM_NODE_ROOT/@glassmkr" 2>/dev/null || true
+  # L4: if a standalone binary shadows the npm install on PATH, `glassmkr-crucible`
+  # would run the OLD code (old init -> old wrapper -> unit points at the old
+  # binary). Warn loudly so the operator removes it.
+  GM_RESOLVED="$(command -v glassmkr-crucible 2>/dev/null || true)"
+  GM_INSTALLED_VER="$(node -e "console.log(require(\"$GM_NODE_ROOT/@glassmkr/crucible/package.json\").version)" 2>/dev/null || true)"
+  GM_PATH_VER="$(glassmkr-crucible --version 2>/dev/null | tr -d "v" || true)"
+  if [ -n "$GM_INSTALLED_VER" ] && [ -n "$GM_PATH_VER" ] && [ "$GM_INSTALLED_VER" != "$GM_PATH_VER" ]; then
+    echo "WARNING: 'glassmkr-crucible' on PATH is $GM_PATH_VER ($GM_RESOLVED) but npm just installed $GM_INSTALLED_VER."
+    echo "         An older standalone binary is shadowing the npm install. Remove $GM_RESOLVED so the new agent version is used, then re-run this installer."
+  fi
 
   # Hand off to init: validates the key, writes /etc/glassmkr/crucible.yaml
   # (and migrates a legacy /etc/glassmkr/collector.yaml in place when present
@@ -189,7 +209,7 @@ main() {
     INGEST_ORIGIN=$(printf '%s' "$INGEST_URL" | sed -E 's#^(https?://[^/]+).*$#\1#')
     URL_FLAGS=(--ingest-url "$INGEST_URL" --allow-endpoint-origin "$INGEST_ORIGIN")
   fi
-  glassmkr-crucible init --api-key "$API_KEY" "${NAME_FLAG[@]}" "${URL_FLAGS[@]}" $NO_START
+  glassmkr-crucible init --api-key "$API_KEY" --force "${NAME_FLAG[@]}" "${URL_FLAGS[@]}" $NO_START
 
   echo ""
   echo "=== Installation complete ==="
