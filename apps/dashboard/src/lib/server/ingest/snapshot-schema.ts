@@ -267,6 +267,8 @@ const IpmiSchema = z.object({
   // `null` (Crucible 0.9.4+) when IPMI couldn't be probed; same
   // reasoning as `ecc_errors`.
   sel_entries_count: z.number().nullable(),
+  sel_percent_used: z.number().nullable().optional(),
+  sel_overflow: z.boolean().nullable().optional(),
   sel_events_recent: z.array(IpmiSelEventSchema).optional(),
   fans: z.array(IpmiFanSchema).optional(),
 }).passthrough();

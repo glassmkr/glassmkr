@@ -1287,6 +1287,26 @@ describe("ipmi_sel_full", () => {
     expect(a.severity).toBe("warning");
     expect((a.evidence as any).trigger).toBe("log_full_event");
   });
+  it("fires on authoritative SEL fullness (percent/overflow) even at a small entry count (H12)", () => {
+    // Grok red-team: a BMC 100% full at its own 512-entry capacity, overflow
+    // true. The entry-count heuristic (>=3000) misses it; sel info fullness
+    // catches it.
+    const s = healthySnapshot();
+    s.ipmi.sel_entries_count = 512;
+    s.ipmi.sel_percent_used = 100;
+    s.ipmi.sel_overflow = true;
+    const [a] = alertsOf("ipmi_sel_full", s);
+    expect(a.severity).toBe("warning");
+    expect((a.evidence as any).trigger).toBe("sel_info_fullness");
+    expect((a.evidence as any).sel_overflow).toBe(true);
+  });
+  it("does NOT fire at low percent with no overflow / event (negative for the new trigger)", () => {
+    const s = healthySnapshot();
+    s.ipmi.sel_entries_count = 42;
+    s.ipmi.sel_percent_used = 8;
+    s.ipmi.sel_overflow = false;
+    expect(alertsOf("ipmi_sel_full", s)).toHaveLength(0);
+  });
   it("fires on the near-full entry-count heuristic (>= 3000)", () => {
     const s = healthySnapshot();
     s.ipmi.sel_entries_count = 3200;
