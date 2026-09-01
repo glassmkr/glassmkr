@@ -283,16 +283,26 @@ export const POST: RequestHandler = async (event) => {
     // evaluateAlerts; rules without a cross_snapshot block see
     // ctx === undefined and behave exactly as today.
     // Per CC_SPEC_CROSS_SNAPSHOT_LIBRARY_2026-05-19.md §2.2.
-    const crossSnapshotData = await runPrePass(server.id, mutedRules, {
-      pg: async (sql, params) => query(sql, params ?? []),
-    });
-
-    const alertResults = evaluateAlerts(
-      snap,
-      { ...overrides, muted_rules: mutedRules, collection_interval_seconds: collectionIntervalSeconds },
-      suppressed,
-      crossSnapshotData,
-    );
+    // The snapshot is already stored (above), so a failure in the cross-snapshot
+    // pre-pass or the rule evaluation must NOT 500 the ingest and make the agent
+    // log "Push failed" + retry a duplicate. Degrade to "no alerts this cycle"
+    // (the next snapshot re-evaluates) and keep the request a 200. This was the
+    // first-post-reboot ingest 500 the red-team saw (Grok H14): the pre-pass and
+    // evaluateAlerts were unwrapped, so any hiccup there failed the whole push.
+    let alertResults: ReturnType<typeof evaluateAlerts> = [];
+    try {
+      const crossSnapshotData = await runPrePass(server.id, mutedRules, {
+        pg: async (sql, params) => query(sql, params ?? []),
+      });
+      alertResults = evaluateAlerts(
+        snap,
+        { ...overrides, muted_rules: mutedRules, collection_interval_seconds: collectionIntervalSeconds },
+        suppressed,
+        crossSnapshotData,
+      );
+    } catch (evalErr: any) {
+      console.error(`[ingest] alert evaluation failed for ${server.id}; snapshot stored, alerts skipped this cycle:`, evalErr?.message ?? evalErr);
+    }
 
     // 3a. Evaluate interface_errors (three-tier, needs previous snapshot's
     // network array for the sustained-2-intervals gate at the orange
