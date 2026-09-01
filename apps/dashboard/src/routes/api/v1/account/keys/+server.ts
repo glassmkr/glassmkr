@@ -323,8 +323,8 @@ export const POST: RequestHandler = async (event) => {
         api_key: key.raw,
         message:
           "Save this API key. The plaintext will not be shown again. " +
-          "Store it in a secret manager and use it as: " +
-          "Authorization: Bearer " + key.raw,
+          "Store it in a secret manager and send it as the header: " +
+          "Authorization: Bearer <api_key>",
       },
       { status: 201 },
     );
