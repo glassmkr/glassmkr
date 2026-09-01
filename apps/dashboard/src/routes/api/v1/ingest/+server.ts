@@ -118,6 +118,19 @@ export const POST: RequestHandler = async (event) => {
       return json({ error: "Invalid JSON" }, { status: 400 });
     }
 
+    // P-7 (Grok + Codex security review): the collector key binds the server, so
+    // every write below uses the authenticated server.id and a body server_id is
+    // otherwise IGNORED. Reject a body server_id that disagrees rather than
+    // returning success, so a confused client cannot believe it posted onto a
+    // different server. (This is not a tenant escape: the key already decides.)
+    const bodyServerId = (rawSnap as { server_id?: unknown }).server_id;
+    if (typeof bodyServerId === "string" && bodyServerId && bodyServerId !== server.id) {
+      return json(
+        { error: "server_id does not match the authenticated collector key" },
+        { status: 400 },
+      );
+    }
+
     // Phase 1: Zod validation in log-mode. Failures don't block; we
     // record structured issues to a dedicated logger so we can detect
     // schema/reality drift before flipping to reject mode.
