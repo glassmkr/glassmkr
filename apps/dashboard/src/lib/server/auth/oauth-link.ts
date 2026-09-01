@@ -110,9 +110,7 @@ export async function resolveOAuthCustomer(
     return { status: "registration_disabled" };
   }
 
-  const created = await withTransaction(async (client) => {
-    // Tolerate a concurrent create of the same email: insert-or-select, then
-    // link. The unique index is on lower(email) (migration 044).
+  const outcome = await withTransaction<{ row: any } | { recovery: true }>(async (client) => {
     const ins = await client.query(
       `INSERT INTO customers (email, display_name, email_verified, plan)
        VALUES ($1, $2, true, 'free')
@@ -122,11 +120,20 @@ export async function resolveOAuthCustomer(
     );
     let row = ins.rows[0];
     if (!row) {
+      // Lost a race: another request created this email between the step-2
+      // lookup and this INSERT. The racing row may be an attacker
+      // pre-registration, so apply the SAME verified-both-sides rule as the link
+      // path (finding #1) - only link to an ALREADY email-verified account,
+      // otherwise refuse and route to recovery. A freshly INSERTed row above is
+      // verified by construction and skips this check.
       const again = await client.query(
         `SELECT ${CUSTOMER_COLS} FROM customers WHERE lower(email) = $1`,
         [email],
       );
       row = again.rows[0];
+      if (!row || !row.email_verified) {
+        return { recovery: true };
+      }
     }
     await client.query(
       `INSERT INTO oauth_identities (customer_id, provider, provider_user_id, provider_email)
@@ -134,8 +141,9 @@ export async function resolveOAuthCustomer(
        ON CONFLICT (provider, provider_user_id) DO NOTHING`,
       [row.id, provider, providerUserId, email],
     );
-    return row;
+    return { row };
   });
 
-  return { status: "ok", customer: mapCustomer(created) };
+  if ("recovery" in outcome) return { status: "needs_recovery" };
+  return { status: "ok", customer: mapCustomer(outcome.row) };
 }

@@ -50,7 +50,12 @@ function redactEmail(e: string): string {
 function redactUrl(u: string): string {
   try {
     const url = new URL(u);
-    return `${url.protocol}//${url.host}/…`;
+    // A credential can live in the hostname (e.g. a token as the leftmost
+    // subdomain of a generic webhook), so mask everything but the last two host
+    // labels (round-2 #8). hooks.slack.com -> •••.slack.com; example.com stays.
+    const labels = url.hostname.split(".");
+    const host = labels.length > 2 ? `•••.${labels.slice(-2).join(".")}` : url.hostname;
+    return `${url.protocol}//${host}/…`;
   } catch {
     return "•••";
   }

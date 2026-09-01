@@ -46,6 +46,10 @@ export const POST: RequestHandler = async (event) => {
     }
 
     const token = generateToken(customer);
+    // Clear any sibling-planted domain-scoped guardian_token first, so the
+    // host-only cookie below is the ONLY one and cannot be shadowed by an
+    // attacker's equal-name cookie (round-2 #2).
+    event.cookies.delete("guardian_token", { path: "/", domain: cookieDomain() });
     // HOST-ONLY auth cookie (LB-3): drop the shared Domain so the credential is
     // scoped to app.glassmkr.com and cannot be read by the marketing site.
     event.cookies.set("guardian_token", token, { ...COOKIE_OPTIONS, domain: undefined });

@@ -23,9 +23,11 @@ function clearAllCookies(event: any) {
 async function revokeBrowserSessions(event: any): Promise<void> {
   const id = event.locals.customer?.id;
   if (!id) return;
-  await query("UPDATE customers SET browser_session_epoch = NOW() WHERE id = $1", [id]).catch(
-    () => {},
-  );
+  // Do NOT swallow a failure (round-2 #5): if this write fails the token is
+  // still valid, so logout must not report success. Let it throw - the POST
+  // handler then leaves cookies in place and returns an error, so the user
+  // retries instead of believing the session was revoked.
+  await query("UPDATE customers SET browser_session_epoch = NOW() WHERE id = $1", [id]);
 }
 
 // POST is the real logout: it revokes and is Origin-protected by the CSRF hook,

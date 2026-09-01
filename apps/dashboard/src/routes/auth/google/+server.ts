@@ -7,7 +7,10 @@ import { safeLocalRedirect } from "$lib/auth/local-redirect.js";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const CALLBACK_BASE = oauthCallbackBase();
-const COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: "lax" as const, maxAge: 600, path: "/", domain: cookieDomain() };
+// Host-only (no Domain): these ephemeral OAuth cookies must not be settable or
+// readable from a sibling origin. A domain-scoped oauth_state could be tossed
+// from a sibling to win the callback's CSRF check (round-2 #3).
+const COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: "lax" as const, maxAge: 600, path: "/" };
 
 // GET /auth/google - Redirect to Google OAuth
 export const GET: RequestHandler = async (event) => {
@@ -16,6 +19,9 @@ export const GET: RequestHandler = async (event) => {
   }
 
   const state = crypto.randomBytes(16).toString("hex");
+  // Clear any sibling-planted domain-scoped shadow first, so only the host-only
+  // value below can satisfy the callback's state check (round-2 #3).
+  event.cookies.delete("oauth_state", { path: "/", domain: cookieDomain() });
   event.cookies.set("oauth_state", state, COOKIE_OPTS);
 
   // Preserve post-login redirect (e.g., /settings for Pro upgrade)

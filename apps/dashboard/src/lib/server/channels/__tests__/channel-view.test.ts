@@ -27,10 +27,16 @@ describe("publicChannelView - never leaks a secret", () => {
     expect(v.destination.startsWith("Key ")).toBe(true);
   });
 
-  it("redacts a webhook url to scheme + host", () => {
+  it("redacts a webhook url to scheme + registrable host, masking a credential subdomain (round-2 #8)", () => {
     const v = publicChannelView(row({ channel_type: "slack", config: { webhook_url: "https://hooks.example.test/services/aaa/bbb/notreal" } }));
-    expect(v.destination).toBe("https://hooks.example.test/…");
+    expect(v.destination).toBe("https://•••.example.test/…");
     expect(JSON.stringify(v)).not.toContain("notreal");
+  });
+
+  it("masks a token-bearing subdomain so it is not exposed (round-2 #8)", () => {
+    const v = publicChannelView(row({ channel_type: "webhook", config: { webhook_url: "https://sekrettoken.hooks.example/path" } }));
+    expect(v.destination).toBe("https://•••.hooks.example/…");
+    expect(JSON.stringify(v)).not.toContain("sekrettoken");
   });
 
   it("treats the url alias as a secret and redacts it (P-6 leak path)", () => {

@@ -58,6 +58,9 @@ export const POST: RequestHandler = async (event) => {
     // Auto-login: set the HOST-ONLY auth cookie (LB-3: no Domain, so the
     // marketing site and sibling subdomains cannot read the credential).
     const token = generateToken(customer);
+    // Clear any sibling-planted domain-scoped guardian_token first so the
+    // host-only cookie cannot be shadowed by an equal-name cookie (round-2 #2).
+    event.cookies.delete("guardian_token", { path: "/", domain: cookieDomain() });
     event.cookies.set("guardian_token", token, {
       httpOnly: true,
       secure: true,
