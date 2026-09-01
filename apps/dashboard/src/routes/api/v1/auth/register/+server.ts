@@ -10,6 +10,7 @@ import { getSourceIp } from "$lib/server/auth/source-ip";
 import { enforceIpRateLimit, rateLimitedResponse } from "$lib/server/auth/rate-limit-middleware";
 import { sendAlert } from "$lib/server/alerts/telegram";
 import { sendVerificationEmail } from "$lib/server/account/email";
+import { validatePassword } from "$lib/server/auth/password-policy";
 
 const REGISTER_WINDOW_MS = 60 * 60 * 1000;
 
@@ -40,8 +41,9 @@ export const POST: RequestHandler = async (event) => {
     if (!email || !password) {
       return json({ error: "Email and password are required" }, { status: 400 });
     }
-    if (password.length < 8) {
-      return json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    const pwError = validatePassword(password);
+    if (pwError) {
+      return json({ error: pwError }, { status: 400 });
     }
 
     const { customer, verificationToken } = await createCustomer(email, password, display_name);
