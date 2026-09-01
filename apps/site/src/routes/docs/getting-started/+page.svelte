@@ -118,6 +118,7 @@ sudo glassmkr-crucible init --api-key gmk_cru_live_your_key_here</code></pre>
 
       <p>Check with <code>node -v</code> first. Several distributions still ship Node 16 or 18 by default, including AlmaLinux and Rocky, and the agent refuses to start below 22.19.0. Either add your distribution's current Node repository, or use the binary above and skip Node entirely.</p>
       <p>Run <code>glassmkr-crucible init --help</code> to see the full flag list (custom server name, alternate Dashboard URL, etc.).</p>
+      <p><strong>Already installed, or moving this box to a different account/key?</strong> A plain <code>init</code> preserves the existing config and keeps the old key. To switch, add <code>--force</code>: <code>sudo glassmkr-crucible init --api-key - --force</code>. The one-line installer above always passes <code>--force</code>, so re-running it re-points the agent.</p>
     </section>
 
     <section id="step-4">
