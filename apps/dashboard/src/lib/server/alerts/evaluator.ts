@@ -1187,7 +1187,7 @@ const rules: AlertRule[] = [
           title: `Disk ${disk.mount} at ${disk.percent_used}%`,
           message: `${disk.device} mounted at ${disk.mount}: ${fmtGB(disk.used_gb)} used of ${fmtGB(disk.total_gb)}. ${fmtGB(disk.available_gb)} available.`,
           evidence: { device: disk.device, mount: disk.mount, percent_used: disk.percent_used, available_gb: disk.available_gb },
-          recommendation: `Check large files with \`du -sh /* | sort -rh | head -20\`. Check for old logs, tmp files, or unused packages.`,
+          recommendation: `Find what is filling ${disk.mount}: \`sudo du -xsh ${disk.mount}/* 2>/dev/null | sort -rh | head -20\` (the -x keeps it on this one filesystem). Common culprits: old logs, tmp files, unrotated journals, unused packages.`,
         });
       }
       return results;
@@ -1366,7 +1366,7 @@ const rules: AlertRule[] = [
         title: `${snap.os_alerts.oom_kills_recent} OOM kill(s) detected`,
         message: `The kernel out-of-memory killer terminated ${snap.os_alerts.oom_kills_recent} process(es) recently. Services may be down.`,
         evidence: { oom_kills_recent: snap.os_alerts.oom_kills_recent },
-        recommendation: "Check `dmesg | grep -i 'out of memory'` for details. Identify which process was killed and why. Add RAM or set memory limits.",
+        recommendation: "Check `dmesg | grep -i 'killed process'` to see which process was killed. For a systemd unit, check its `MemoryMax`/`MemoryHigh` first: a too-low limit OOM-kills a healthy workload (raise or remove the limit). Otherwise fix the leak or the workload; add RAM only if the whole host is genuinely out of memory.",
       }];
     },
   },
@@ -3323,7 +3323,7 @@ const rules: AlertRule[] = [
         title: "SSH root login with password enabled",
         message: `PermitRootLogin is "${snap.security.ssh.permitRootLogin}" and PasswordAuthentication is "${snap.security.ssh.passwordAuthentication}". Root can be brute-forced over SSH.`,
         evidence: { permitRootLogin: snap.security.ssh.permitRootLogin, passwordAuthentication: snap.security.ssh.passwordAuthentication },
-        recommendation: 'Set "PermitRootLogin prohibit-password" in /etc/ssh/sshd_config and restart sshd. Key-based root login still works.',
+        recommendation: 'Set "PermitRootLogin prohibit-password", then reload sshd. On modern distros a drop-in in /etc/ssh/sshd_config.d/ overrides the main file (first match wins), so set it there or make sure no drop-in re-enables root password login. Verify with `sudo sshd -T | grep permitrootlogin`. Key-based root login still works.',
       }];
     },
   },
@@ -4665,7 +4665,7 @@ const rules: AlertRule[] = [
             : {}),
           fix_commands: fixCmds,
         },
-        recommendation: "One or more systemd services have crashed and are not running. Check service logs with journalctl for the root cause, then restart the service. Consider adding Restart=on-failure to the unit file to enable automatic recovery.",
+        recommendation: "One or more systemd units have failed. Check the cause with `journalctl -u <unit> -e`, then restart it, OR run `sudo systemctl reset-failed <unit>` for a Type=oneshot unit that has already done its job (restarting a oneshot just re-runs and re-fails). For a long-running service, `Restart=on-failure` in the unit enables automatic recovery. A failed .mount means a filesystem is not mounted: fix /etc/fstab or the device before remounting.",
       }];
     },
   },
@@ -4916,7 +4916,7 @@ const rules: AlertRule[] = [
             ? `Time sync daemon (${source}) is running but the kernel clock is not synchronized. System time is drifting.`
             : "No NTP daemon is running and the kernel clock is not synchronized. System time is drifting.",
           evidence: { source, synced: false, daemon_running: snap.ntp.daemon_running, daemon_name: snap.ntp.daemon_name },
-          recommendation: "Unsynchronized clocks break TLS validation, database replication, log correlation, and cron scheduling. Start the NTP daemon (`sudo systemctl start chrony` or `sudo systemctl start systemd-timesyncd`) and confirm with `timedatectl status`.",
+          recommendation: "Unsynchronized clocks break TLS validation, database replication, log correlation, and cron scheduling. Start the time daemon (the unit name varies by distro: `chronyd` on RHEL/Rocky/Alma, `chrony` on Debian/Ubuntu, or `systemd-timesyncd`), e.g. `sudo systemctl enable --now chronyd 2>/dev/null || sudo systemctl enable --now chrony`, and confirm with `timedatectl status`.",
         }];
       }
       if (!snap.ntp.daemon_running) {
