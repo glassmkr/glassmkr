@@ -11,6 +11,7 @@ import {
   expandChannelPriorities,
 } from "$lib/alerts/presentation";
 import { getFixCommands, topFixLines, sortByPriority } from "./notify-utils";
+import { escapeHtml, escapeSlackMrkdwn, escapeDiscord } from "$lib/server/notify/escape";
 import { serverDetailUrl } from "$lib/utils/server-slug";
 import { sendEmail } from "./email";
 import { buildContextBlock } from "./context";
@@ -189,30 +190,32 @@ function buildTelegramAlert(alert: Alert, server: Server, contextBlock?: string)
   const p = getPriority(alert.alert_type, alert.severity);
   const emoji = PRIORITY_EMOJI[p] || "\u{1F7E1}";
   const label = PRIORITY_LABELS[p] || "P3 MEDIUM";
-  const serverLabel = `<code>${server.hostname || server.name}</code>` + (server.ip ? ` (${server.ip})` : "");
+  // Escape every host-derived field for Telegram HTML; the template tags stay
+  // literal (C-1). dashboardUrl is our own generated URL, not host input.
+  const serverLabel = `<code>${escapeHtml(server.hostname || server.name)}</code>` + (server.ip ? ` (${escapeHtml(server.ip)})` : "");
   const commands = getFixCommands(alert.alert_type, alert.evidence, server);
   const dashboardUrl = serverDetailUrl(server);
 
-  let text = `${emoji} <b>${label}: ${alert.title}</b>\n`;
+  let text = `${emoji} <b>${label}: ${escapeHtml(alert.title)}</b>\n`;
   text += `Server: ${serverLabel}\n`;
   text += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n`;
-  text += `${alert.message}\n`;
+  text += `${escapeHtml(alert.message)}\n`;
 
   // Phase 1 context enrichment: a text block between message and
   // recommendation for rules that have a CONTEXT_METRICS entry. See
   // CC_ALERT_CONTEXT_ENRICHMENT.md. Rendered inside <pre> so the
   // columnar layout stays readable on mobile Telegram.
   if (contextBlock) {
-    text += `\n<pre>${contextBlock}</pre>\n`;
+    text += `\n<pre>${escapeHtml(contextBlock)}</pre>\n`;
   }
 
   if (alert.recommendation) {
-    text += `\n${alert.recommendation}\n`;
+    text += `\n${escapeHtml(alert.recommendation)}\n`;
   }
 
   if (commands.length > 0) {
     const cmdText = topFixLines(commands);
-    text += `\n<b>Fix:</b>\n<pre>${cmdText}</pre>\n`;
+    text += `\n<b>Fix:</b>\n<pre>${escapeHtml(cmdText)}</pre>\n`;
   }
 
   text += `\n<a href="${dashboardUrl}">View in Dashboard</a>`;
@@ -220,12 +223,12 @@ function buildTelegramAlert(alert: Alert, server: Server, contextBlock?: string)
 }
 
 function buildTelegramResolved(alert: Alert, server: Server): string {
-  const serverLabel = `<code>${server.hostname || server.name}</code>`;
+  const serverLabel = `<code>${escapeHtml(server.hostname || server.name)}</code>`;
   const duration = alert.first_seen
     ? formatDuration(Date.now() - new Date(alert.first_seen).getTime())
     : "unknown duration";
 
-  return `\u2705 <b>RESOLVED: ${alert.title}</b>\nServer: ${serverLabel}\n\nWas firing for ${duration}.`;
+  return `\u2705 <b>RESOLVED: ${escapeHtml(alert.title)}</b>\nServer: ${serverLabel}\n\nWas firing for ${duration}.`;
 }
 
 async function sendTelegram(
@@ -302,13 +305,13 @@ function buildSlackAlert(alert: Alert, server: Server): any {
     },
     {
       type: "section",
-      text: { type: "mrkdwn", text: alert.message },
+      text: { type: "mrkdwn", text: escapeSlackMrkdwn(alert.message) },
     },
     {
       type: "section",
       fields: [
-        { type: "mrkdwn", text: `*Server:*\n${server.hostname || server.name}` },
-        { type: "mrkdwn", text: `*IP:*\n${server.ip || "N/A"}` },
+        { type: "mrkdwn", text: `*Server:*\n${escapeSlackMrkdwn(server.hostname || server.name)}` },
+        { type: "mrkdwn", text: `*IP:*\n${escapeSlackMrkdwn(server.ip || "N/A")}` },
       ],
     },
   ];
@@ -316,15 +319,17 @@ function buildSlackAlert(alert: Alert, server: Server): any {
   if (alert.recommendation) {
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text: `_${alert.recommendation}_` },
+      text: { type: "mrkdwn", text: `_${escapeSlackMrkdwn(alert.recommendation)}_` },
     });
   }
 
   if (commands.length > 0) {
-    const cmdText = topFixLines(commands);
+    // A Slack code block renders literally (no mrkdwn), so escaping the & < >
+    // would corrupt copyable commands; only neutralise a ``` fence breakout.
+    const safeCmd = topFixLines(commands).replace(/`{3,}/g, "");
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text: `*Fix:*\n\`\`\`${cmdText}\`\`\`` },
+      text: { type: "mrkdwn", text: `*Fix:*\n\`\`\`${safeCmd}\`\`\`` },
     });
   }
 
@@ -368,7 +373,7 @@ async function sendSlack(
   }
 
   if (resolvedAlerts.length > 0) {
-    const resolvedList = resolvedAlerts.map(a => `\u2022 ${a.title}`).join("\n");
+    const resolvedList = resolvedAlerts.map(a => `\u2022 ${escapeSlackMrkdwn(a.title)}`).join("\n");
     attachments.push({
       color: RESOLVED_COLOR,
       blocks: [
@@ -376,7 +381,7 @@ async function sendSlack(
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `\u2705 *${resolvedAlerts.length} resolved* on *${server.hostname || server.name}*\n${resolvedList}`,
+            text: `\u2705 *${resolvedAlerts.length} resolved* on *${escapeSlackMrkdwn(server.hostname || server.name)}*\n${resolvedList}`,
           },
         },
       ],
@@ -416,14 +421,18 @@ function buildDiscordEmbed(alert: Alert, server: Server): Record<string, unknown
   const p = getPriority(alert.alert_type, alert.severity);
   const label = PRIORITY_LABELS[p] || "P3 MEDIUM";
   const commands = getFixCommands(alert.alert_type, alert.evidence, server);
+  // Embed title / description / field values render Discord markdown, so escape
+  // host-derived text (C-1). The Fix code block renders literally, so it is only
+  // fence-neutralised, not escaped, to keep the commands copyable.
+  const safeCmd = commands.length > 0 ? topFixLines(commands).replace(/`{3,}/g, "") : "";
   const fields: Array<Record<string, unknown>> = [
-    { name: "Server", value: `${server.hostname || server.name}${server.ip ? ` (${server.ip})` : ""}` },
+    { name: "Server", value: `${escapeDiscord(server.hostname || server.name)}${server.ip ? ` (${escapeDiscord(server.ip)})` : ""}` },
   ];
-  if (alert.recommendation) fields.push({ name: "Recommendation", value: alert.recommendation.slice(0, 1024) });
-  if (commands.length > 0) fields.push({ name: "Fix", value: ("```\n" + topFixLines(commands) + "\n```").slice(0, 1024) });
+  if (alert.recommendation) fields.push({ name: "Recommendation", value: escapeDiscord(alert.recommendation).slice(0, 1024) });
+  if (commands.length > 0) fields.push({ name: "Fix", value: ("```\n" + safeCmd + "\n```").slice(0, 1024) });
   return {
-    title: `${label}: ${alert.title}`.slice(0, 256),
-    description: alert.message.slice(0, 4096),
+    title: `${label}: ${escapeDiscord(alert.title)}`.slice(0, 256),
+    description: escapeDiscord(alert.message).slice(0, 4096),
     color: DISCORD_COLORS[p] ?? DISCORD_COLORS[3],
     url: serverDetailUrl(server),
     fields,
@@ -444,8 +453,8 @@ async function sendDiscord(
     .map((a) => buildDiscordEmbed(a, server));
   if (resolvedAlerts.length > 0) {
     embeds.push({
-      title: `Resolved: ${resolvedAlerts.length} on ${server.hostname || server.name}`.slice(0, 256),
-      description: resolvedAlerts.map((a) => `• ${a.title}`).join("\n").slice(0, 4096),
+      title: `Resolved: ${resolvedAlerts.length} on ${escapeDiscord(server.hostname || server.name)}`.slice(0, 256),
+      description: resolvedAlerts.map((a) => `• ${escapeDiscord(a.title)}`).join("\n").slice(0, 4096),
       color: DISCORD_RESOLVED,
     });
   }

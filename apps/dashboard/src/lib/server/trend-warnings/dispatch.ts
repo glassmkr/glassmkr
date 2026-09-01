@@ -8,6 +8,7 @@
 
 import { Resend } from "resend";
 import { DEFAULT_PRIORITIES } from "$lib/alerts/priority";
+import { escapeSlackMrkdwn } from "$lib/server/notify/escape";
 import { query } from "@glassmkr/db/pg";
 import { clickhouse } from "@glassmkr/db/clickhouse";
 import { safeFetch, SsrfBlockedError } from "$lib/server/net/safe-fetch";
@@ -194,7 +195,7 @@ async function sendTelegram(
   const url = dashboardUrl(server, warningId);
   const emoji = URGENCY_EMOJI[tier];
   const label = URGENCY_LABEL[tier];
-  const correlationBadge = finding.correlation_match ? ` (${finding.correlation_match})` : "";
+  const correlationBadge = finding.correlation_match ? ` (${escapeHtml(finding.correlation_match)})` : "";
 
   let text = `${emoji} <b>Trend Warning: ${label}</b>\n`;
   text += `Server: ${serverLabel}\n`;
@@ -253,7 +254,7 @@ async function sendSlack(
   const emoji = URGENCY_EMOJI[tier];
   const label = URGENCY_LABEL[tier];
   const color = URGENCY_COLORS[tier].border;
-  const correlationBadge = finding.correlation_match ? ` \u2022 ${finding.correlation_match}` : "";
+  const correlationBadge = finding.correlation_match ? ` \u2022 ${escapeSlackMrkdwn(finding.correlation_match)}` : "";
 
   const blocks: any[] = [
     {
