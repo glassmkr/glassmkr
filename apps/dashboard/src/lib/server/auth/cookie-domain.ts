@@ -41,3 +41,21 @@ export function cookieAttrs(event: { url: URL }): string {
   const domain = cookieDomain();
   return `${cookieSecure(event) ? "; Secure" : ""}${domain ? `; Domain=${domain}` : ""}`;
 }
+
+// The attribute suffix for the AUTH cookie (guardian_token). It is deliberately
+// HOST-ONLY: no Domain attribute, so it is scoped to app.glassmkr.com and can
+// never be read on the marketing site or a sibling subdomain. LB-3 (2026-09-01):
+// a Domain=.glassmkr.com auth cookie let a marketing-site XSS reach the app API
+// with the victim's session, and permitted sibling cookie-tossing. The marketing
+// site's logged-in display now reads the separate, non-sensitive SIGNED_IN_HINT
+// cookie instead of the credential.
+export function authCookieAttrs(event: { url: URL }): string {
+  return cookieSecure(event) ? "; Secure" : "";
+}
+
+// A non-sensitive presence flag ("1") shared across .glassmkr.com so the
+// marketing site can show logged-in state WITHOUT holding the session JWT. It
+// carries no credential: leaking it reveals only that some browser has a live
+// session. Set alongside guardian_token on login/register/OAuth and cleared on
+// logout.
+export const SIGNED_IN_HINT = "gmk_signed_in";

@@ -13,6 +13,12 @@ export interface CustomerPayload {
   // working once the owner resets. NULL/absent = no reset has invalidated
   // sessions, the default for every account. Only populated by getCustomerById.
   sessionEpoch?: Date | null;
+  // Browser (guardian_token) sessions issued before this instant are no longer
+  // honored. Set to NOW() on logout (migration 045). Kept SEPARATE from
+  // sessionEpoch so a logout revokes browser sessions WITHOUT revoking MCP OAuth
+  // grants (which bind sessionEpoch). NULL/absent = no logout has invalidated
+  // browser sessions. Only populated by getCustomerById.
+  browserSessionEpoch?: Date | null;
 }
 
 export interface Server {

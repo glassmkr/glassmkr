@@ -256,7 +256,12 @@
 
     <div class="sidebar-account">
       <p class="account-email" title={customer.email}>{customer.email}</p>
-      <a href="/api/v1/auth/logout" class="account-logout">Log out</a>
+      <!-- POST so the endpoint revokes the session (browser_session_epoch) and
+           the CSRF hook Origin-protects it; a GET link could be triggered
+           cross-site and would not revoke (P-1). -->
+      <form method="POST" action="/api/v1/auth/logout" class="logout-form">
+        <button type="submit" class="account-logout">Log out</button>
+      </form>
     </div>
   </aside>
 
@@ -424,12 +429,21 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .logout-form {
+    margin: 0;
+  }
   .account-logout {
     display: inline-block;
     font-size: 13px;
     color: var(--text-secondary);
     text-decoration: none;
     transition: color 150ms ease;
+    /* Was an <a>; now a submit button, so reset the native button chrome. */
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
   }
   .account-logout:hover {
     color: var(--text-primary);
