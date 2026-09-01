@@ -47,10 +47,9 @@
   function startEdit(ch: any) {
     editingId = ch.id;
     editName = ch.name;
-    if (ch.channel_type === "telegram") editValue = ch.config?.chat_id || "";
-    else if (ch.channel_type === "email") editValue = ch.config?.email || "";
-    else if (ch.channel_type === "pagerduty") editValue = ch.config?.routing_key || ch.config?.integration_key || "";
-    else editValue = ch.config?.webhook_url || "";
+    // The secret is no longer returned by the API (P-3). Start blank: a blank
+    // value on save keeps the existing secret, a new value replaces it.
+    editValue = "";
     const prios = ch.priorities || DEFAULT_PRIORITIES;
     // Show the toggles the way the alert actually routes. A row stored before
     // P0 existed lists P1 without P0, and the dispatcher treats that as "also
@@ -66,18 +65,28 @@
 
   async function saveEdit(ch: any) {
     try {
-      let config: Record<string, string> = {};
-      if (ch.channel_type === "telegram") config = { chat_id: editValue };
-      else if (ch.channel_type === "email") config = { email: editValue };
-      else if (ch.channel_type === "pagerduty") config = { routing_key: editValue };
-      else config = { webhook_url: editValue };
-
       const prios = Object.entries(editPriorities).filter(([, v]) => v).map(([k]) => k);
       if (prios.length === 0) { toast.show("Select at least one priority level", "error"); return; }
 
+      // Only send config (the secret) when the user entered a NEW value. A blank
+      // field keeps the existing secret unchanged (keep-on-omit), so editing the
+      // name or priorities never wipes it (P-3).
+      const body: Record<string, unknown> = {
+        name: editName,
+        priorities: prios,
+        notify_minor_update: editNotifyMinorUpdate,
+      };
+      const v = editValue.trim();
+      if (v) {
+        if (ch.channel_type === "telegram") body.config = { chat_id: v };
+        else if (ch.channel_type === "email") body.config = { email: v };
+        else if (ch.channel_type === "pagerduty") body.config = { routing_key: v };
+        else body.config = { webhook_url: v };
+      }
+
       await api(`/api/v1/channels/${ch.id}`, {
         method: "PUT",
-        body: JSON.stringify({ name: editName, config, priorities: prios, notify_minor_update: editNotifyMinorUpdate }),
+        body: JSON.stringify(body),
       });
       toast.show("Channel updated", "success");
       editingId = null;
@@ -392,11 +401,14 @@
                 <label for="edit-val-{ch.id}">
                   {ch.channel_type === "telegram" ? "Chat ID" : ch.channel_type === "email" ? "Email Address" : ch.channel_type === "pagerduty" ? "Routing Key" : "Webhook URL"}
                 </label>
+                {#if ch.has_secret}
+                  <span class="edit-keep-hint">Current: {ch.destination || "set"}. Leave blank to keep it.</span>
+                {/if}
                 <input
                   id="edit-val-{ch.id}"
                   type={ch.channel_type === "email" ? "email" : "text"}
                   bind:value={editValue}
-                  required
+                  placeholder={ch.has_secret ? "Leave blank to keep current" : ""}
                 />
               </div>
               <div class="field">
@@ -434,12 +446,8 @@
               <span class="ch-icon">{@html channelIcon(ch.channel_type)}</span>
               <div class="ch-info">
                 <span class="ch-name">{ch.name}</span>
-                {#if ch.channel_type === "email" && ch.config?.email}
-                  <span class="ch-detail">{ch.config.email}</span>
-                {:else if ch.channel_type === "telegram" && ch.config?.chat_id}
-                  <span class="ch-detail">Chat ID: {ch.config.chat_id}</span>
-                {:else if ch.channel_type === "slack" && ch.config?.webhook_url}
-                  <span class="ch-detail">{ch.config.webhook_url.replace(/^https:\/\/hooks\.slack\.com\/services\//, "hooks/.../")}</span>
+                {#if ch.destination}
+                  <span class="ch-detail">{ch.destination}</span>
                 {/if}
               </div>
               <span class="tag tag-blue">{ch.channel_type}</span>
@@ -584,6 +592,12 @@
     font-size: 14px;
     font-weight: 600;
     display: block;
+  }
+  .edit-keep-hint {
+    display: block;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin: -2px 0 6px;
   }
   .ch-detail {
     font-size: 12px;
