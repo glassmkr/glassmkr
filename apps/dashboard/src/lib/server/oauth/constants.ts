@@ -1,4 +1,5 @@
 import type { OAuthScope } from "$lib/server/auth/principal.js";
+import { SELF_HOSTED } from "$lib/server/self-hosted";
 
 export const MCP_PROTOCOL_VERSION = "2025-11-25";
 export const MCP_SERVER_NAME = "glassmkr";
@@ -22,8 +23,30 @@ export function isMcpReadEnabled(): boolean {
   return enabled("MCP_READ_ENABLED");
 }
 
+// C-6 (Grok + Codex security review, 2026-09-01): open dynamic client
+// registration accepts any https redirect_uri (the client allowlist defaults to
+// allow-all), which is a consent-phishing primitive on a multi-tenant host. Pure
+// so the policy is unit-tested.
+export function dcrAllowed(
+  baseEnabled: boolean,
+  selfHosted: boolean,
+  hostedOptIn: boolean,
+): boolean {
+  if (!baseEnabled) return false;
+  // A HOSTED (multi-tenant) deployment does not expose open, unauthenticated DCR
+  // by default: an operator must additionally set MCP_DCR_ALLOW_HOSTED=1 after
+  // putting a client policy in place. A self-hosted single-tenant instance keeps
+  // the single flag, since its operator IS the only tenant.
+  if (!selfHosted && !hostedOptIn) return false;
+  return true;
+}
+
 export function isMcpDynamicRegistrationEnabled(): boolean {
-  return enabled("MCP_DYNAMIC_REGISTRATION_ENABLED");
+  return dcrAllowed(
+    enabled("MCP_DYNAMIC_REGISTRATION_ENABLED"),
+    SELF_HOSTED,
+    enabled("MCP_DCR_ALLOW_HOSTED"),
+  );
 }
 
 // Phase 2: mutating (glassmkr:write) tools ship dormant behind their own flag,
