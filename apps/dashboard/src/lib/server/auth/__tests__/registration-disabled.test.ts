@@ -30,48 +30,58 @@ describe("registrationDisabled", () => {
   });
 });
 
-// The flag has to close every account-CREATING path. The OAuth callbacks
-// create an account for any unrecognised provider identity, so an instance
-// with GitHub or Google configured would otherwise still hand an account to
-// anyone who could click "sign in with GitHub". This is a structural check:
-// it asserts the guard exists and runs BEFORE the insert, which is the
-// property that actually matters and the one a careless edit would break.
-function guardPrecedesAccountCreation(source: string): boolean {
-  const guard = source.indexOf("registrationDisabled()");
+// The flag has to close every account-CREATING path. Account creation for an
+// unrecognised OAuth identity is now centralised in resolveOAuthCustomer
+// (oauth-link.ts): the callbacks pass the live registrationDisabled() flag in,
+// and the resolver refuses (returns "registration_disabled") BEFORE the insert.
+// This is a structural check of the property that actually matters and the one a
+// careless edit would break: the guard runs before the insert in the resolver,
+// AND each callback wires the flag in, handles the refusal, and no longer
+// creates accounts inline.
+function guardPrecedesAccountCreation(source: string, guardToken: string): boolean {
+  const guard = source.indexOf(guardToken);
   const insert = source.indexOf("INSERT INTO customers");
   return guard !== -1 && insert !== -1 && guard < insert;
 }
 
 describe("guardPrecedesAccountCreation (the checker itself)", () => {
+  const token = "input.registrationDisabled";
   it("rejects a source where the guard runs after the insert", () => {
     expect(guardPrecedesAccountCreation(`
-      await query("INSERT INTO customers (email) VALUES ($1)", [email]);
-      if (registrationDisabled()) throw new Error("too late");
-    `)).toBe(false);
+      await client.query("INSERT INTO customers (email) VALUES ($1)", [email]);
+      if (input.registrationDisabled) return { status: "registration_disabled" };
+    `, token)).toBe(false);
   });
 
   it("rejects a source with no guard at all", () => {
     expect(guardPrecedesAccountCreation(`
-      await query("INSERT INTO customers (email) VALUES ($1)", [email]);
-    `)).toBe(false);
+      await client.query("INSERT INTO customers (email) VALUES ($1)", [email]);
+    `, token)).toBe(false);
   });
 
   it("accepts a source guarded before the insert", () => {
     expect(guardPrecedesAccountCreation(`
-      if (registrationDisabled()) throw new RegistrationDisabledError();
-      await query("INSERT INTO customers (email) VALUES ($1)", [email]);
-    `)).toBe(true);
+      if (input.registrationDisabled) return { status: "registration_disabled" };
+      await client.query("INSERT INTO customers (email) VALUES ($1)", [email]);
+    `, token)).toBe(true);
   });
 });
 
-describe("OAuth callbacks honour the flag", () => {
+describe("OAuth account creation honours the flag", () => {
+  it("the resolver guards creation before the INSERT", () => {
+    const src = readFileSync(resolve(__dirname, "../oauth-link.ts"), "utf8");
+    expect(guardPrecedesAccountCreation(src, "input.registrationDisabled")).toBe(true);
+  });
+
   for (const provider of ["github", "google"]) {
-    it(`${provider} refuses to create a new account when registration is closed`, () => {
-      const path = resolve(
-        __dirname,
-        `../../../../routes/auth/callback/${provider}/+server.ts`,
+    it(`${provider} callback wires the live flag in, handles refusal, and never creates inline`, () => {
+      const src = readFileSync(
+        resolve(__dirname, `../../../../routes/auth/callback/${provider}/+server.ts`),
+        "utf8",
       );
-      expect(guardPrecedesAccountCreation(readFileSync(path, "utf8"))).toBe(true);
+      expect(src.includes("registrationDisabled: registrationDisabled()")).toBe(true);
+      expect(src.includes('"registration_disabled"')).toBe(true);
+      expect(src.includes("INSERT INTO customers")).toBe(false);
     });
   }
 });

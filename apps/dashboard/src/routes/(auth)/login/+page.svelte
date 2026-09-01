@@ -51,6 +51,10 @@
   <div class="success-msg">Password updated. Log in with your new password.</div>
 {/if}
 
+{#if $page.url.searchParams.get("error") === "account_exists"}
+  <div class="error-msg">An account with this email already exists. Log in with your password (or reset it) to confirm your email, then link Google or GitHub sign-in from your settings.</div>
+{/if}
+
 <OAuthButtons lastMethod={data.lastMethod} hrefSuffix={oauthHrefSuffix} />
 
 {#if error}
