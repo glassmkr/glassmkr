@@ -3,6 +3,7 @@ import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { takeRateLimitHit } from "@glassmkr/auth/rate-limit";
 import { query } from "@glassmkr/db/pg";
+import { sendVerificationEmail } from "$lib/server/account/email";
 
 const RESEND_WINDOW_MS = 60 * 60 * 1000;
 
@@ -35,7 +36,14 @@ export const POST: RequestHandler = async (event) => {
       return json({ error: "Customer not found" }, { status: 404 });
     }
 
-    return json({ ok: true, message: "Verification refreshed." });
+    // Actually send it (M10: this endpoint previously only refreshed the token).
+    const verifyBase = process.env.DASHBOARD_PUBLIC_URL || "https://app.glassmkr.com";
+    const sent = await sendVerificationEmail(
+      event.locals.customer.email,
+      event.locals.customer.displayName ?? null,
+      `${verifyBase}/verify?token=${token}`,
+    );
+    return json({ ok: true, message: sent ? "Verification email sent." : "Verification refreshed (email delivery unavailable)." });
   } catch (err: any) {
     console.error("Resend verification error:", err);
     return json({ error: "Failed to resend verification" }, { status: 500 });

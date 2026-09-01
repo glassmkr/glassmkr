@@ -195,3 +195,43 @@ export async function sendPasswordReset(
     return false;
   }
 }
+
+
+// Email-verification send (Grok red-team M10: register minted a token but never
+// sent it, and resend-verification only refreshed the token without sending).
+// Send-don't-block: the account is usable immediately; this just lets the user
+// confirm their address. Degrades open if RESEND_API_KEY is unset.
+const VERIFY_FROM = "Glassmkr <no-reply@glassmkr.com>";
+export async function sendVerificationEmail(
+  email: string,
+  displayName: string | null,
+  verifyUrl: string,
+): Promise<boolean> {
+  if (!resend) {
+    console.warn("[account] verification email: RESEND_API_KEY unset, skipping");
+    return false;
+  }
+  const firstName = (displayName || "").trim().split(/\s+/)[0] || "there";
+  const subject = "Confirm your Glassmkr email";
+  const body =
+    `<p>Hi ${escapeHtml(firstName)},</p>` +
+    `<p>Thanks for creating a Glassmkr account for <strong>${escapeHtml(email)}</strong>. ` +
+    `Confirm this address with the button below so we can reach you about your ` +
+    `servers. Your account already works; this just verifies your email. The ` +
+    `link expires in 24 hours.</p>` +
+    `<p>If you didn't create this account, you can ignore this email.</p>`;
+  const html = glassmkrEmailShell({
+    category: "Account",
+    title: "Confirm your email",
+    body,
+    ctaText: "Confirm email",
+    ctaUrl: verifyUrl,
+  });
+  try {
+    await resend.emails.send({ from: VERIFY_FROM, to: email, subject, html });
+    return true;
+  } catch (err: any) {
+    console.error("[account] verification send error:", err?.message ?? err);
+    return false;
+  }
+}
