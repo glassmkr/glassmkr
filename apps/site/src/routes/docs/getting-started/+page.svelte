@@ -57,7 +57,7 @@
     <section id="prerequisites">
       <h2><a href="#prerequisites" class="anchor-link">#</a>Prerequisites</h2>
       <ul>
-        <li>A Linux server. Ubuntu and Debian can use the one-line installer; RHEL, Rocky, Alma, Arch, Alpine and everything else use the single-file binary, which needs no Node. See step 3.</li>
+        <li>A Linux server. Debian, Ubuntu, RHEL, Rocky, Alma and Fedora can use the one-line installer; Arch, Alpine and anything without apt or dnf use the single-file binary, which needs no Node. See step 3.</li>
         <li>Root or sudo access.</li>
         <li>Outbound HTTPS (port 443) to <code>app.glassmkr.com</code>. No inbound ports required.</li>
       </ul>
@@ -81,11 +81,11 @@
       <h2><a href="#step-3" class="anchor-link">#</a>Step 3: Install Crucible</h2>
       <p>SSH into your server. There are three ways in, and which one you use depends on your distribution.</p>
 
-      <h3>Bootstrap installer (Ubuntu and Debian only)</h3>
+      <h3>Bootstrap installer (apt and dnf/yum families)</h3>
       <p>The dashboard shows this command with your collector key pre-filled:</p>
       <pre><code>curl -sf https://glassmkr.com/install.sh | sudo bash -s -- --api-key gmk_cru_live_your_key_here</code></pre>
       <div class="callout">
-        <strong>This script supports Ubuntu and Debian only.</strong> On anything else it exits with <code>only Ubuntu and Debian are supported</code> and installs nothing. That is deliberate rather than a bug: it installs distribution packages and a Node runtime, and those steps are only tested on Debian-family hosts. On RHEL, Rocky, Alma, Arch, Alpine or anything else, use the single-file binary below.
+        <strong>This script supports the apt and dnf/yum families</strong> (Debian, Ubuntu, RHEL, Rocky, Alma, Fedora, CentOS). It installs distribution packages and a Node runtime for those. On other distributions (Arch, Alpine, and anything without apt or dnf) use the single-file binary below.
       </div>
       <p>The installer:</p>
       <ul>

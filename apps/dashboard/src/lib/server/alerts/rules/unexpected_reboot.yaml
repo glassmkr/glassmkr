@@ -26,7 +26,7 @@ manual_resolve: true
 # reference. If a real kernel_panic_detected rule lands later, the
 # subordination edge can be re-introduced explicitly.
 title: Unexpected reboot
-summary: "Server rebooted without an operator-acknowledged planned reboot. Possible causes: kernel panic, hardware fault (PSU brownout, thermal shutdown, watchdog), power outage, or remote reboot via BMC."
+summary: "Server rebooted after an unclean shutdown (kernel panic, power loss, PSU brownout, thermal shutdown, hardware watchdog, or hard reset). A clean, operator-initiated reboot does not raise this; acknowledge a planned reboot with `glassmkr-crucible mark-reboot`."
 fix:
   quick_check:
     command: |
