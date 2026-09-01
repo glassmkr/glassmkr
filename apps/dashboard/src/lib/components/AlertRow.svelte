@@ -4,6 +4,7 @@
   import { getToasts } from "$lib/stores/toast.svelte";
   import {
     getPriority,
+    ALERT_PRIORITIES,
     PRIORITY_LABELS,
     PRIORITY_COLORS,
     EVIDENCE_MAP,
@@ -124,9 +125,15 @@
     showResolveModal = false;
   }
 
+  // Card accent tracks the severity-modulated priority so a worse instance
+  // colors redder. The BADGE, however, shows the rule's CATALOG priority (its
+  // page-worthiness) so a P1 rule always reads "P1" and is never downgraded to
+  // "P2" just because this instance is severity=warning (Grok red-team H9: a P1
+  // no_firewall rendering as a yellow "P2 HIGH" trains users to ignore P1s).
   let priority = $derived(getPriority(alert.alert_type, alert.severity));
-  let priorityLabel = $derived(PRIORITY_LABELS[priority] || "P3 MEDIUM");
-  let priorityColor = $derived(PRIORITY_COLORS[priority] || "yellow");
+  let basePriority = $derived(ALERT_PRIORITIES[alert.alert_type] ?? 3);
+  let priorityLabel = $derived(PRIORITY_LABELS[basePriority] || "P3 MEDIUM");
+  let priorityColor = $derived(PRIORITY_COLORS[basePriority] || "yellow");
   let evidence = $derived(EVIDENCE_MAP[alert.alert_type] || []);
   let parsedEvidence = $derived.by(() => {
     if (!alert.evidence) return null;
