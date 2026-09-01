@@ -120,10 +120,10 @@
     <div class="nav-right">
       {#if loggedIn}
         <a href="https://app.glassmkr.com/api/v1/auth/logout" class="nav-link nav-login">Log out</a>
-        <a href="https://app.glassmkr.com" class="btn btn-solid-brand">Dashboard</a>
+        <a href="https://app.glassmkr.com" class="btn btn-primary">Dashboard</a>
       {:else}
         <a href="https://app.glassmkr.com/login" class="nav-link nav-login">Log in</a>
-        <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand">Monitor a server</a>
+        <a href="https://app.glassmkr.com/register" class="btn btn-primary">Monitor a server</a>
       {/if}
       <button
         class="nav-hamburger"
@@ -151,11 +151,11 @@
     <a href="https://github.com/glassmkr/glassmkr" class="mobile-link" onclick={closeMobile}>GitHub</a>
     <div class="mobile-divider"></div>
     {#if loggedIn}
-      <a href="https://app.glassmkr.com" class="btn btn-solid-brand mobile-cta" onclick={closeMobile}>Dashboard</a>
+      <a href="https://app.glassmkr.com" class="btn btn-primary mobile-cta" onclick={closeMobile}>Dashboard</a>
       <a href="https://app.glassmkr.com/api/v1/auth/logout" class="mobile-link" onclick={closeMobile}>Log out</a>
     {:else}
       <a href="https://app.glassmkr.com/login" class="mobile-link" onclick={closeMobile}>Log in</a>
-      <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand mobile-cta" onclick={closeMobile}>Monitor a server</a>
+      <a href="https://app.glassmkr.com/register" class="btn btn-primary mobile-cta" onclick={closeMobile}>Monitor a server</a>
     {/if}
   </div>
 {/if}
@@ -302,21 +302,6 @@
   .nav-login {
     color: var(--text-tertiary);
   }
-  /* The one solid action: brand fill, near-black text (spec 18.1). */
-  :global(.btn.btn-solid-brand) {
-    background: var(--g-brand);
-    color: var(--g-bg);
-    border: 1px solid var(--g-brand);
-    font-weight: 500;
-    font-size: 14px;
-    padding: 7px 16px;
-  }
-  :global(.btn.btn-solid-brand:hover) {
-    background: var(--g-brand-hover);
-    border-color: var(--g-brand-hover);
-    color: var(--g-bg);
-  }
-
   /* Hamburger */
   .nav-hamburger {
     display: none;
