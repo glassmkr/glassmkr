@@ -139,7 +139,7 @@
   "role": "owner",
   "created_at": "2026-04-05T10:00:00Z",
   "servers_count": 6,
-  "plan": "pro"
+  "plan": "free"
 &#125;</code></pre>
       </div>
 
@@ -164,7 +164,7 @@
   "hostname": "web-prod-01.example.com",
   "tags": ["production", "web"]
 &#125;</code></pre>
-        <p><code>name</code> is required (1-100 chars). <code>hostname</code> defaults to <code>name</code> and must be a valid RFC 1035 hostname. <code>tags</code> is optional, max 20 strings of 1-50 chars each. <code>profile</code> is optional: a host-type profile that suppresses the alerts expected by design for that kind of host. The field is named <code>profile</code> (not <code>host_type</code>); accepted values are <code>null</code> (the default "General", no suppression) or <code>"marketplace_gpu"</code> (a rented marketplace GPU box, which silences <code>no_firewall</code>, <code>unattended_upgrades_disabled</code>, and <code>gpu_power_cap_throttling</code>). An unknown value returns <code>400 validation_failed</code> with <code>profile must be null or one of: ...</code>. Other fields are silently dropped (mass-assignment defense).</p>
+        <p><code>name</code> is optional (1-100 chars); when omitted, a placeholder label is assigned and superseded once the agent reports the real hostname on its first snapshot. <code>hostname</code> defaults to <code>name</code> when set and must be a valid RFC 1035 hostname. <code>tags</code> is optional, max 20 strings of 1-50 chars each. <code>profile</code> is optional: a host-type profile that suppresses the alerts expected by design for that kind of host. The field is named <code>profile</code> (not <code>host_type</code>); accepted values are <code>null</code> (the default "General", no suppression) or <code>"marketplace_gpu"</code> (a rented marketplace GPU box, which silences <code>no_firewall</code>, <code>unattended_upgrades_disabled</code>, and <code>gpu_power_cap_throttling</code>). An unknown value returns <code>400 validation_failed</code> with <code>profile must be null or one of: ...</code>. Other fields are silently dropped (mass-assignment defense).</p>
         <p><strong>Response (201):</strong></p>
         <pre><code>&#123;
   "success": true,
