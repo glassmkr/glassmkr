@@ -44,6 +44,17 @@ export const PUT: RequestHandler = async (event) => {
         [event.params.id, principal.customer_id]
       );
       const channelType = typeResult.rows[0]?.channel_type;
+
+      // Accept the documented `url` alias for discord/webhook and normalise it to
+      // webhook_url BEFORE the abuse + SSRF checks (P-6: create does this, so an
+      // update that stored a raw `url` otherwise bypassed both and left an
+      // unmasked value in the config).
+      if ((channelType === "discord" || channelType === "webhook")
+          && !channelConfig.webhook_url && typeof channelConfig.url === "string") {
+        channelConfig.webhook_url = channelConfig.url;
+      }
+      if (typeof channelConfig.url === "string") delete channelConfig.url;
+
       if (channelType) {
         const check = await canUseChannelIdentifier(
           principal.customer_id,

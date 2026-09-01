@@ -7,6 +7,7 @@ import { assertSafeUrl, SsrfBlockedError } from "$lib/server/net/safe-fetch";
 import { canUseChannelIdentifier } from "$lib/server/channels/abuse-check";
 import { requireProGatedAuth, ProGatedAuthFailed } from "$lib/server/auth/gate";
 import { writeAudit } from "$lib/server/auth/audit";
+import { publicChannelView } from "$lib/server/channels/channel-view";
 
 // tier: free
 // GET /api/v1/channels — read-only list of own channels. Accepts session AND
@@ -37,15 +38,9 @@ export const GET: RequestHandler = async (event) => {
       [principal.customer_id]
     );
 
-    // Mask sensitive config fields, expose update notification flags at top level
-    const channels = result.rows.map((c: any) => {
-      const masked = { ...c.config };
-      if (masked.bot_token) masked.bot_token = masked.bot_token.slice(0, 6) + "...";
-      if (masked.webhook_url) masked.webhook_url = masked.webhook_url.slice(0, 40) + "...";
-      const notifyMinor = masked.notify_minor_update ?? false;
-      delete masked.notify_minor_update;
-      return { ...c, config: masked, notify_minor_update: notifyMinor };
-    });
+    // Allowlisted public view (P-3): never return a raw secret. Only non-secret
+    // display fields, a boolean has_secret, and a redacted destination hint.
+    const channels = result.rows.map((c: any) => publicChannelView(c));
 
     void writeAudit({
       event, principal, action: "list",
