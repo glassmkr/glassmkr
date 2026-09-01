@@ -1,6 +1,6 @@
 // scope: public
 import { json } from "@sveltejs/kit";
-import { cookieDomain } from "$lib/server/auth/cookie-domain";
+import { cookieDomain, SIGNED_IN_HINT } from "$lib/server/auth/cookie-domain";
 import { getSourceIp } from "$lib/server/auth/source-ip";
 import type { RequestHandler } from "./$types";
 import { authenticateCustomer, generateToken } from "@glassmkr/auth";
@@ -46,7 +46,12 @@ export const POST: RequestHandler = async (event) => {
     }
 
     const token = generateToken(customer);
-    event.cookies.set("guardian_token", token, COOKIE_OPTIONS);
+    // HOST-ONLY auth cookie (LB-3): drop the shared Domain so the credential is
+    // scoped to app.glassmkr.com and cannot be read by the marketing site.
+    event.cookies.set("guardian_token", token, { ...COOKIE_OPTIONS, domain: undefined });
+    // Non-sensitive logged-in hint the marketing site reads (keeps the shared
+    // Domain from COOKIE_OPTIONS).
+    event.cookies.set(SIGNED_IN_HINT, "1", COOKIE_OPTIONS);
     // Remember the method for the "Last used" hint on the login page. Long-lived
     // (survives logout + session expiry) and non-sensitive (just which method).
     event.cookies.set("gmk_last_login", "password", { ...COOKIE_OPTIONS, maxAge: 60 * 60 * 24 * 400 });

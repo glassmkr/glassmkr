@@ -1,6 +1,6 @@
 // scope: public
 import { json } from "@sveltejs/kit";
-import { cookieDomain } from "$lib/server/auth/cookie-domain";
+import { cookieDomain, SIGNED_IN_HINT } from "$lib/server/auth/cookie-domain";
 import { registrationDisabled } from "$lib/server/auth/registration";
 import type { RequestHandler } from "./$types";
 import { createCustomer, generateToken } from "@glassmkr/auth";
@@ -53,7 +53,8 @@ export const POST: RequestHandler = async (event) => {
       [ip, customer.id]
     ).catch(() => {});
 
-    // Auto-login: set JWT cookie
+    // Auto-login: set the HOST-ONLY auth cookie (LB-3: no Domain, so the
+    // marketing site and sibling subdomains cannot read the credential).
     const token = generateToken(customer);
     event.cookies.set("guardian_token", token, {
       httpOnly: true,
@@ -61,8 +62,9 @@ export const POST: RequestHandler = async (event) => {
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60,
       path: "/",
-      domain: cookieDomain(),
     });
+    // Non-sensitive logged-in hint the marketing site reads (shared domain).
+    event.cookies.set(SIGNED_IN_HINT, "1", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 7 * 24 * 60 * 60 });
     // "Last used" hint for the login page (long-lived, non-sensitive).
     event.cookies.set("gmk_last_login", "password", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 60 * 60 * 24 * 400 });
 

@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/sveltekit";
 import { handleErrorWithSentry, sentryHandle } from "@sentry/sveltekit";
 import { verifyToken, getCustomerById } from "@glassmkr/auth";
 import { isSessionStale } from "$lib/server/auth/session-epoch";
+import { isCsrfViolation } from "$lib/server/auth/csrf";
 import { DEMO_COOKIE } from "$lib/server/auth/demo-cookie";
 import { apiErrorBody, isApiPath } from "$lib/server/api/errors";
 import { startWatchdog } from "$lib/server/watchdog-scheduler";
@@ -134,46 +135,25 @@ const apiErrorShapeHandle: Handle = async ({ event, resolve }) => {
   return new Response(JSON.stringify(body), { status: response.status, headers });
 };
 
-// CSRF origin check. SvelteKit's built-in checkOrigin is disabled in
-// svelte.config.js so the OAuth 2.1 machine endpoints can accept the
-// cross-origin, form-encoded POSTs the spec requires (they authenticate with
-// client_id + PKCE + a one-time code, not the session cookie, so CSRF is not a
-// relevant threat for them). This re-applies the identical check SvelteKit does
-// (reject a form-content-type mutating request whose Origin does not match this
-// site) for every other path, so browser form actions keep the same protection.
-const CSRF_EXEMPT_PATHS = new Set([
-  "/oauth/token",
-  "/oauth/revoke",
-  "/oauth/register",
-]);
-
-function isFormContentType(request: Request): boolean {
-  const type = (request.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase();
-  return (
-    type === "application/x-www-form-urlencoded" ||
-    type === "multipart/form-data" ||
-    type === "text/plain" ||
-    // SvelteKit also treats its own progressive-enhancement content type as a
-    // form submission for checkOrigin; mirror that so the hand-rolled guard is
-    // not laxer than the framework default it replaces.
-    type === "application/x-sveltekit-formdata"
-  );
-}
-
+// CSRF origin check. The decision + full rationale live in the pure, unit-tested
+// $lib/server/auth/csrf module; this handle only wires it to the live request.
+// SvelteKit's built-in checkOrigin is disabled in svelte.config.js so the OAuth
+// 2.1 machine endpoints can accept the cross-origin, form-encoded POSTs the spec
+// requires; those paths are exempt inside csrf.ts. Unlike the old form-only
+// check, this rejects ANY cookie-authenticated mutation from a foreign or
+// missing Origin, closing the application/json-as-Blob bypass (LB-3).
 const csrfHandle: Handle = async ({ event, resolve }) => {
-  const { request, url } = event;
-  const mutating =
-    request.method === "POST" ||
-    request.method === "PUT" ||
-    request.method === "PATCH" ||
-    request.method === "DELETE";
   if (
-    mutating &&
-    isFormContentType(request) &&
-    !CSRF_EXEMPT_PATHS.has(url.pathname) &&
-    request.headers.get("origin") !== url.origin
+    isCsrfViolation({
+      method: event.request.method,
+      pathname: event.url.pathname,
+      hasSessionCookie: !!event.cookies.get("guardian_token"),
+      contentType: event.request.headers.get("content-type"),
+      origin: event.request.headers.get("origin"),
+      siteOrigin: event.url.origin,
+    })
   ) {
-    return new Response("Cross-site POST form submissions are forbidden", {
+    return new Response("Cross-site state-changing request forbidden", {
       status: 403,
       headers: { "content-type": "text/plain" },
     });
@@ -215,14 +195,18 @@ const authHandle: Handle = async ({ event, resolve }) => {
         return resolve(event);
       }
       // Reject a token minted before the customer's session_epoch (set on
-      // password reset), same as an expired token: a stolen guardian_token
-      // stops working the moment the owner resets, instead of living out the
-      // stateless 7-day JWT lifetime. isSessionStale fails safe (null epoch or
-      // missing iat = allow), so existing sessions are unaffected until reset.
+      // password reset) OR before browser_session_epoch (set on logout, P-1), so
+      // a stolen guardian_token stops working the moment the owner resets OR logs
+      // out, instead of living out the stateless 7-day JWT lifetime. The two
+      // epochs are separate on purpose: logout bumps only browser_session_epoch,
+      // so it revokes browser sessions without revoking MCP OAuth grants (which
+      // bind session_epoch). isSessionStale fails safe (null epoch or missing
+      // iat = allow), so existing sessions are unaffected until one is stamped.
       if (
         customer &&
         customer.status !== "suspended" &&
-        !isSessionStale(payload.iat, customer.sessionEpoch)
+        !isSessionStale(payload.iat, customer.sessionEpoch) &&
+        !isSessionStale(payload.iat, customer.browserSessionEpoch)
       ) {
         event.locals.customer = customer;
         event.locals.authKind = "session";

@@ -1,6 +1,6 @@
 import type { RequestHandler } from "./$types";
 import { oauthCallbackBase } from "$lib/server/ingest-url";
-import { cookieDomain, cookieAttrs } from "$lib/server/auth/cookie-domain";
+import { cookieDomain, authCookieAttrs, SIGNED_IN_HINT } from "$lib/server/auth/cookie-domain";
 import { getSourceIp } from "$lib/server/auth/source-ip";
 import { registrationDisabled } from "$lib/server/auth/registration";
 import { generateToken } from "@glassmkr/auth";
@@ -101,13 +101,16 @@ export const GET: RequestHandler = async (event) => {
     const jwt = generateToken(resolved.customer);
     const redirectTo = safeLocalRedirect(event.cookies.get("oauth_redirect"));
     event.cookies.delete("oauth_redirect", { path: "/", domain: cookieDomain() });
+    // Non-sensitive logged-in hint the marketing site reads (shared domain).
+    event.cookies.set(SIGNED_IN_HINT, "1", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: COOKIE_MAX_AGE });
     // "Last used" hint for the login page (long-lived, non-sensitive).
     event.cookies.set("gmk_last_login", "google", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 60 * 60 * 24 * 400 });
     return new Response(null, {
       status: 302,
       headers: {
         location: redirectTo,
-        "set-cookie": `guardian_token=${jwt}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${COOKIE_MAX_AGE}${cookieAttrs(event)}`,
+        // HOST-ONLY auth cookie (LB-3): authCookieAttrs omits the Domain.
+        "set-cookie": `guardian_token=${jwt}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${COOKIE_MAX_AGE}${authCookieAttrs(event)}`,
       },
     });
   } catch (err: any) {
