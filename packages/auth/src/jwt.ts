@@ -26,6 +26,7 @@ function mapCustomer(row: any): CustomerPayload {
     // Only some SELECTs load this column (getCustomerById does); leave it null
     // when absent so callers that never read it are unaffected.
     sessionEpoch: row.session_epoch ?? null,
+    browserSessionEpoch: row.browser_session_epoch ?? null,
   };
 }
 
@@ -116,7 +117,7 @@ export async function authenticateCustomer(email: string, password: string): Pro
 
 export async function getCustomerById(id: string): Promise<CustomerPayload | null> {
   const result = await query(
-    `SELECT id, email, display_name, email_verified, status, plan, is_demo, session_epoch
+    `SELECT id, email, display_name, email_verified, status, plan, is_demo, session_epoch, browser_session_epoch
      FROM customers WHERE id = $1`,
     [id]
   );
