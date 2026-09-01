@@ -16,6 +16,20 @@
 
   let { children } = $props();
   let customer = $derived($page.data.customer);
+
+  // Email-verification banner (M10). Shown until the address is confirmed; the
+  // account is fully usable regardless (send-don't-block).
+  let verifyMsg = $state("");
+  let verifyBusy = $state(false);
+  async function resendVerification() {
+    verifyBusy = true; verifyMsg = "Sending...";
+    try {
+      const r = await fetch("/api/v1/auth/resend-verification", { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      verifyMsg = r.ok ? (d.message || "Sent. Check your inbox.") : (d.error || "Could not send right now.");
+    } catch { verifyMsg = "Could not send right now."; }
+    verifyBusy = false;
+  }
   let pathname = $derived($page.url.pathname);
 
   // Sidebar open/close state (mobile only — on desktop the sidebar
@@ -137,6 +151,12 @@
 </div>
 
 {#if customer}
+  {#if customer.emailVerified === false}
+    <div class="verify-banner" role="status">
+      <span>Confirm your email <strong>{customer.email}</strong> so we can reach you about your servers. Your account already works.{verifyMsg ? " " + verifyMsg : ""}</span>
+      <button class="verify-resend" onclick={resendVerification} disabled={verifyBusy}>Resend email</button>
+    </div>
+  {/if}
   <!-- Mobile top bar: visible only below 900px -->
   <div class="mobile-topbar">
     <button
@@ -667,4 +687,16 @@
     color: var(--text-tertiary);
     margin: 16px 0 0;
   }
+
+  .verify-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.6rem 1rem; background: color-mix(in srgb, var(--brand, #ff6b35) 14%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--brand, #ff6b35) 40%, transparent);
+    font-size: 0.9rem; color: var(--text, #ECEEF1); flex-wrap: wrap;
+  }
+  .verify-resend {
+    flex: none; padding: 0.35rem 0.8rem; border-radius: 6px; border: 1px solid var(--brand, #ff6b35);
+    background: transparent; color: var(--brand, #ff6b35); font-weight: 600; cursor: pointer;
+  }
+  .verify-resend:disabled { opacity: 0.6; cursor: default; }
 </style>

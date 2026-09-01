@@ -9,6 +9,7 @@ import { takeRateLimitHit } from "@glassmkr/auth/rate-limit";
 import { getSourceIp } from "$lib/server/auth/source-ip";
 import { enforceIpRateLimit, rateLimitedResponse } from "$lib/server/auth/rate-limit-middleware";
 import { sendAlert } from "$lib/server/alerts/telegram";
+import { sendVerificationEmail } from "$lib/server/account/email";
 
 const REGISTER_WINDOW_MS = 60 * 60 * 1000;
 
@@ -43,7 +44,7 @@ export const POST: RequestHandler = async (event) => {
       return json({ error: "Password must be at least 8 characters" }, { status: 400 });
     }
 
-    const { customer } = await createCustomer(email, password, display_name);
+    const { customer, verificationToken } = await createCustomer(email, password, display_name);
 
     // Record ToS acceptance
     const ip = getSourceIp(event);
@@ -67,6 +68,10 @@ export const POST: RequestHandler = async (event) => {
 
     const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
     sendAlert(`*New signup*: \`${email}\` at ${timestamp}`).catch(() => {});
+    // Send the verification email (M10: previously the token was minted but never
+    // sent). Send-don't-block: the account already works; verification is optional.
+    const verifyBase = process.env.DASHBOARD_PUBLIC_URL || "https://app.glassmkr.com";
+    sendVerificationEmail(email, display_name ?? null, `${verifyBase}/verify?token=${verificationToken}`).catch(() => {});
 
     return json({
       ok: true,
