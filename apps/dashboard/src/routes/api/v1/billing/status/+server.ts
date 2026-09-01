@@ -2,7 +2,8 @@
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { query } from "@glassmkr/db/pg";
-import { stripe, isStripeConfigured, computeMonthlyCost, billableNodes, PRICE_PER_NODE_USD, FREE_NODES_PRO } from "$lib/server/billing/stripe";
+import { stripe } from "$lib/server/billing/stripe";
+import { HOSTED_FREE_NODE_CAP } from "$lib/server/self-hosted";
 import { requireAuth } from "$lib/server/auth/require";
 import { requireScopeLevel } from "$lib/server/auth/plan";
 
@@ -38,7 +39,6 @@ export const GET: RequestHandler = async (event) => {
     );
     const suspendedNoCardCount = parseInt(suspendedRes.rows[0].count, 10);
     const plan = c.plan || "free";
-    const monthlyCost = computeMonthlyCost(plan, serversUsed);
 
     // Fetch live subscription state from Stripe so the UI can surface
     // payment problems (no card on file, past_due, unpaid) immediately
@@ -82,22 +82,30 @@ export const GET: RequestHandler = async (event) => {
       }
     }
 
+    // Glassmkr has no paid tier: the hosted service is free (server_limit /
+    // retention below); beyond the cap the answer is self-hosting (no limits),
+    // not payment. The old `|| 3` / `|| 7` fallbacks and the per-node price made
+    // a brand-new free account's billing status read like a paid 3-node/7-day
+    // SaaS (Grok red-team L3). Report the real free-plan shape; keep the
+    // pricing/subscription keys present but zeroed so existing consumers of this
+    // response do not break.
+    const serverLimit = c.plan_server_limit || HOSTED_FREE_NODE_CAP;
     return json({
       plan,
-      server_limit: c.plan_server_limit || 3,
-      retention_days: c.plan_retention_days || 7,
-      managed_alerts: c.plan_managed_alerts || false,
+      server_limit: serverLimit,
+      retention_days: c.plan_retention_days || 90,
+      managed_alerts: c.plan_managed_alerts ?? true,
       servers_used: serversUsed,
-      stripe_configured: isStripeConfigured(),
-      has_subscription: !!c.stripe_subscription_id,
+      stripe_configured: false,
+      has_subscription: false,
       subscription_status: subscriptionStatus,
       cancel_at_period_end: cancelAtPeriodEnd,
       current_period_end: currentPeriodEnd,
       has_default_payment_method: hasDefaultPaymentMethod,
-      monthly_cost_usd: monthlyCost,
-      price_per_node_usd: PRICE_PER_NODE_USD,
-      billable_nodes: plan === "pro" ? billableNodes(serversUsed) : 0,
-      free_nodes_quota: FREE_NODES_PRO,
+      monthly_cost_usd: 0,
+      price_per_node_usd: 0,
+      billable_nodes: 0,
+      free_nodes_quota: serverLimit,
       suspended_no_card_count: suspendedNoCardCount,
     });
   } catch (err: any) {
