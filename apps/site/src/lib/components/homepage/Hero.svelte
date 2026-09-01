@@ -26,7 +26,7 @@
       </p>
 
       <div class="cta-row">
-        <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand btn-hero">Monitor a server for free</a>
+        <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-hero">Monitor a server for free</a>
         <a href="https://app.glassmkr.com/demo" class="btn btn-hero btn-quiet">Explore the live demo</a>
       </div>
       <p class="cta-caption">

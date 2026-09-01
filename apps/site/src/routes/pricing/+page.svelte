@@ -141,7 +141,7 @@
         free up to <span class="mono">{HOSTED_NODE_CAP}</span> nodes per
         account. Updates, storage, and backups operated by Glassmkr.
       </p>
-      <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand">Create a free account</a>
+      <a href="https://app.glassmkr.com/register" class="btn btn-primary">Create a free account</a>
     </div>
     <div class="col-8-12 path">
       <p class="path-label">SELF-HOSTED GLASSMKR</p>

@@ -13,7 +13,7 @@
         later.
       </p>
       <div class="actions">
-        <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand btn-hero">Monitor a server for free</a>
+        <a href="https://app.glassmkr.com/register" class="btn btn-primary btn-hero">Monitor a server for free</a>
         <a href="https://app.glassmkr.com/demo" class="btn btn-hero btn-quiet">Browse the live demo</a>
       </div>
       <p class="source">

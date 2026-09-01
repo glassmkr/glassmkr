@@ -46,7 +46,7 @@
       <div class="path recommended">
         <p class="path-label">HOSTED GLASSMKR <span class="rec-tag">RECOMMENDED START</span></p>
         <p class="path-body">Best when you want monitoring without another service to maintain.</p>
-        <a href="https://app.glassmkr.com/register" class="btn btn-solid-brand">Create a free account</a>
+        <a href="https://app.glassmkr.com/register" class="btn btn-primary">Create a free account</a>
       </div>
       <div class="path">
         <p class="path-label">SELF-HOSTED GLASSMKR</p>

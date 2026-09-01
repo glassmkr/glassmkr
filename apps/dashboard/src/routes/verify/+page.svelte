@@ -17,7 +17,7 @@
   <div class="verify-card">
     <h1>{c.title}</h1>
     <p>{c.msg}</p>
-    <a class="btn" href="/">Go to dashboard</a>
+    <a class="btn btn-primary" href="/">Go to dashboard</a>
   </div>
 </main>
 
@@ -26,5 +26,7 @@
   .verify-card { max-width: 30rem; text-align: center; }
   .verify-card h1 { margin: 0 0 0.75rem; font-size: 1.5rem; }
   .verify-card p { color: var(--text-muted, #A2A9B4); line-height: 1.6; margin: 0 0 1.5rem; }
-  .btn { display: inline-block; padding: 0.6rem 1.1rem; border-radius: 8px; background: var(--brand, #ff6b35); color: #fff; text-decoration: none; font-weight: 600; }
+  /* Button styling comes from the shared .btn/.btn-primary in @glassmkr/ui
+     (imported globally by the dashboard root layout), so it matches every
+     other primary action across the site and dashboard. */
 </style>
