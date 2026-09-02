@@ -39,6 +39,17 @@ describe("publicChannelView - never leaks a secret", () => {
     expect(JSON.stringify(v)).not.toContain("sekrettoken");
   });
 
+  it("masks IPv6 and IPv4 literal hosts entirely (round-3 #5)", () => {
+    expect(publicChannelView(row({ channel_type: "webhook", config: { webhook_url: "https://[2001:db8::1234]/x" } })).destination).toBe("https://•••/…");
+    expect(publicChannelView(row({ channel_type: "webhook", config: { webhook_url: "https://10.0.0.5/hook" } })).destination).toBe("https://•••/…");
+  });
+
+  it("keeps the registrable identity of a multi-label host, not just the last two labels (round-3 #5)", () => {
+    const v = publicChannelView(row({ channel_type: "webhook", config: { webhook_url: "https://hooks.example.co.uk/x/notreal" } }));
+    expect(v.destination).toBe("https://•••.example.co.uk/…");
+    expect(JSON.stringify(v)).not.toContain("notreal");
+  });
+
   it("treats the url alias as a secret and redacts it (P-6 leak path)", () => {
     const v = publicChannelView(row({ channel_type: "webhook", config: { url: "https://example.com/hook/notreal" } }));
     expect(v.has_secret).toBe(true);

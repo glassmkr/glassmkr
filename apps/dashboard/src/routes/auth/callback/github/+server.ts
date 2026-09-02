@@ -1,6 +1,6 @@
 import type { RequestHandler } from "./$types";
 import { oauthCallbackBase } from "$lib/server/ingest-url";
-import { cookieDomain, authCookieAttrs, SIGNED_IN_HINT } from "$lib/server/auth/cookie-domain";
+import { cookieDomain, authCookieAttrs, clearOAuthCookie, SIGNED_IN_HINT } from "$lib/server/auth/cookie-domain";
 import { getSourceIp } from "$lib/server/auth/source-ip";
 import { registrationDisabled } from "$lib/server/auth/registration";
 import { generateToken } from "@glassmkr/auth";
@@ -37,7 +37,7 @@ export const GET: RequestHandler = async (event) => {
   if (!state || state !== savedState) {
     return new Response("Invalid state parameter", { status: 403 });
   }
-  event.cookies.delete("oauth_state", { path: "/", domain: cookieDomain() });
+  clearOAuthCookie(event.cookies, "oauth_state");
 
   try {
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
@@ -60,7 +60,7 @@ export const GET: RequestHandler = async (event) => {
     if (isReauthIntent(event)) {
       if (!profile.id) return new Response("GitHub profile missing id", { status: 400 });
       const redirectTo = event.cookies.get("oauth_redirect") || "/settings/keys";
-      event.cookies.delete("oauth_redirect", { path: "/", domain: cookieDomain() });
+      clearOAuthCookie(event.cookies, "oauth_redirect");
       return completeOAuthReauth(event, "github", String(profile.id), redirectTo);
     }
 
@@ -102,7 +102,7 @@ export const GET: RequestHandler = async (event) => {
     }
     const jwt = generateToken(resolved.customer);
     const redirectTo = safeLocalRedirect(event.cookies.get("oauth_redirect"));
-    event.cookies.delete("oauth_redirect", { path: "/", domain: cookieDomain() });
+    clearOAuthCookie(event.cookies, "oauth_redirect");
     // Clear any sibling-planted domain-scoped guardian_token so the host-only
     // cookie below cannot be shadowed by an equal-name cookie (round-2 #2).
     event.cookies.delete("guardian_token", { path: "/", domain: cookieDomain() });

@@ -1,6 +1,6 @@
 // scope: public
 import { json } from "@sveltejs/kit";
-import { cookieDomain, SIGNED_IN_HINT } from "$lib/server/auth/cookie-domain";
+import { cookieDomain, cookieSecure, SIGNED_IN_HINT } from "$lib/server/auth/cookie-domain";
 import { registrationDisabled } from "$lib/server/auth/registration";
 import type { RequestHandler } from "./$types";
 import { createCustomer, generateToken } from "@glassmkr/auth";
@@ -58,20 +58,24 @@ export const POST: RequestHandler = async (event) => {
     // Auto-login: set the HOST-ONLY auth cookie (LB-3: no Domain, so the
     // marketing site and sibling subdomains cannot read the credential).
     const token = generateToken(customer);
+    // secure follows the deployment (round-3 #1): self-hosted over plain HTTP
+    // must not set Secure or the browser drops the cookie and the auto-login
+    // silently stays anonymous.
+    const secure = cookieSecure(event);
     // Clear any sibling-planted domain-scoped guardian_token first so the
     // host-only cookie cannot be shadowed by an equal-name cookie (round-2 #2).
     event.cookies.delete("guardian_token", { path: "/", domain: cookieDomain() });
     event.cookies.set("guardian_token", token, {
       httpOnly: true,
-      secure: true,
+      secure,
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60,
       path: "/",
     });
     // Non-sensitive logged-in hint the marketing site reads (shared domain).
-    event.cookies.set(SIGNED_IN_HINT, "1", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 7 * 24 * 60 * 60 });
+    event.cookies.set(SIGNED_IN_HINT, "1", { httpOnly: true, secure, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 7 * 24 * 60 * 60 });
     // "Last used" hint for the login page (long-lived, non-sensitive).
-    event.cookies.set("gmk_last_login", "password", { httpOnly: true, secure: true, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 60 * 60 * 24 * 400 });
+    event.cookies.set("gmk_last_login", "password", { httpOnly: true, secure, sameSite: "lax", path: "/", domain: cookieDomain(), maxAge: 60 * 60 * 24 * 400 });
 
     const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
     sendAlert(`*New signup*: \`${email}\` at ${timestamp}`).catch(() => {});

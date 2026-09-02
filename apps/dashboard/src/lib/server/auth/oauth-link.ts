@@ -50,8 +50,15 @@ export interface OAuthResolveInput {
   registrationDisabled: boolean;
 }
 
+// Thrown inside the create transaction when the provider identity turns out to
+// belong to a DIFFERENT customer (a concurrent flow won the race). Throwing
+// rolls back the customer we just created so it is not left as an orphan; the
+// caller then retries and step 1 resolves to the identity's real owner.
+class OAuthIdentityRace extends Error {}
+
 export async function resolveOAuthCustomer(
   input: OAuthResolveInput,
+  attempt = 0,
 ): Promise<OAuthResolution> {
   const provider = input.provider;
   const providerUserId = (input.providerUserId ?? "").trim();
@@ -135,15 +142,30 @@ export async function resolveOAuthCustomer(
         return { recovery: true };
       }
     }
-    await client.query(
+    const linkIns = await client.query(
       `INSERT INTO oauth_identities (customer_id, provider, provider_user_id, provider_email)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (provider, provider_user_id) DO NOTHING`,
+       ON CONFLICT (provider, provider_user_id) DO NOTHING
+       RETURNING customer_id`,
       [row.id, provider, providerUserId, email],
     );
+    if (linkIns.rowCount === 0) {
+      // The provider identity is already owned by a DIFFERENT customer (a
+      // concurrent flow won). Roll back so a freshly created customer is not left
+      // orphaned (verified, no password, no identity, unreachable) - round-3 #3.
+      throw new OAuthIdentityRace();
+    }
     return { row };
+  }).catch((e) => {
+    if (e instanceof OAuthIdentityRace) return { raced: true as const };
+    throw e;
   });
 
+  if ("raced" in outcome) {
+    // Retry once: step 1 now finds the identity and resolves to its real owner.
+    if (attempt >= 1) return { status: "needs_recovery" };
+    return resolveOAuthCustomer(input, attempt + 1);
+  }
   if ("recovery" in outcome) return { status: "needs_recovery" };
   return { status: "ok", customer: mapCustomer(outcome.row) };
 }
