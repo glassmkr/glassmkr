@@ -137,6 +137,21 @@ describe("resolveOAuthCustomer - create-conflict race (round-2 #1)", () => {
     expect(clientQuery).toHaveBeenCalledTimes(2);
   });
 
+  it("does NOT orphan an account when the provider identity was claimed by a concurrent flow (round-3 #3)", async () => {
+    // Attempt 1: no link, no email match, INSERT customers succeeds (fresh row),
+    // but the identity INSERT conflicts (rowCount 0) because a concurrent flow
+    // already linked it -> the tx rolls back (no orphan) and the helper retries.
+    (query as any).mockResolvedValueOnce({ rows: [] }); // attempt1 link lookup
+    (query as any).mockResolvedValueOnce({ rows: [] }); // attempt1 email match
+    clientQuery.mockResolvedValueOnce({ rows: [{ id: "fresh-b", email: "victim@example.com", email_verified: true }] }); // INSERT customers
+    clientQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // INSERT identity -> conflict
+    // Attempt 2 (retry): the link lookup now finds the identity's real owner.
+    (query as any).mockResolvedValueOnce({ rows: [{ id: "real-owner", email: "victim@example.com", email_verified: true }] });
+    const r = await resolveOAuthCustomer(base);
+    expect(r.status).toBe("ok");
+    expect((r as any).customer.id).toBe("real-owner"); // resolved to the owner, NOT the orphan
+  });
+
   it("links when the race created an ALREADY-VERIFIED account (safe)", async () => {
     (query as any).mockResolvedValueOnce({ rows: [] });
     (query as any).mockResolvedValueOnce({ rows: [] });

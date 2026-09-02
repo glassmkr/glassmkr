@@ -14,12 +14,10 @@
 // an account and never mints a session token: login stays a separate flow.
 
 import type { RequestEvent } from "@sveltejs/kit";
-import { cookieDomain } from "$lib/server/auth/cookie-domain";
+import { clearOAuthCookie } from "$lib/server/auth/cookie-domain";
 import { query } from "@glassmkr/db/pg";
 import { stampReAuth } from "./reauth";
 import { safeLocalRedirect } from "$lib/auth/local-redirect.js";
-
-const COOKIE_CLEAR = { path: "/", domain: cookieDomain() } as const;
 
 // The initiator sets oauth_intent=reauth when called with ?reauth=1, marking
 // this callback as a step-up rather than a login.
@@ -46,7 +44,9 @@ export async function completeOAuthReauth(
   providerUserId: string,
   redirectTo: string,
 ): Promise<Response> {
-  event.cookies.delete("oauth_intent", COOKIE_CLEAR);
+  // Clear BOTH scopes: oauth_intent is host-only now, so a domain-only delete
+  // would leave a stale reauth marker that breaks the next normal login (#4).
+  clearOAuthCookie(event.cookies, "oauth_intent");
 
   const sessionCustomer = event.locals.customer;
   if (!sessionCustomer) {

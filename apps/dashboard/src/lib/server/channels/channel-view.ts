@@ -50,12 +50,23 @@ function redactEmail(e: string): string {
 function redactUrl(u: string): string {
   try {
     const url = new URL(u);
-    // A credential can live in the hostname (e.g. a token as the leftmost
-    // subdomain of a generic webhook), so mask everything but the last two host
-    // labels (round-2 #8). hooks.slack.com -> •••.slack.com; example.com stays.
-    const labels = url.hostname.split(".");
-    const host = labels.length > 2 ? `•••.${labels.slice(-2).join(".")}` : url.hostname;
-    return `${url.protocol}//${host}/…`;
+    const host = url.hostname;
+    // IP literals (IPv6 -> hostname contains ':'; dotted IPv4) can point at
+    // internal infra and carry no useful destination identity, so mask them
+    // entirely (round-3 #5). The path, the other common secret location, is
+    // dropped by the "/…" suffix below regardless.
+    if (host.includes(":") || /^\d+(\.\d+){3}$/.test(host)) {
+      return `${url.protocol}//•••/…`;
+    }
+    // A token is conventionally the LEADING subdomain, so mask only the leftmost
+    // label when there are 3+, keeping the rest so the destination stays
+    // recognisable: sekret.hooks.example -> •••.hooks.example, and
+    // hooks.example.co.uk -> •••.example.co.uk (no over-redaction). A bare
+    // two-label host is shown as-is: a whole domain used as a secret is
+    // unsupported, and masking it would destroy the identity of ordinary hosts.
+    const labels = host.split(".");
+    const shown = labels.length > 2 ? ["•••", ...labels.slice(1)].join(".") : host;
+    return `${url.protocol}//${shown}/…`;
   } catch {
     return "•••";
   }

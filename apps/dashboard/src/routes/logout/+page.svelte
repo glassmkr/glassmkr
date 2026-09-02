@@ -1,26 +1,27 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  // round-2 #4: the marketing site (a different origin) cannot POST to the
-  // logout API directly - the CSRF guard requires a same-origin request, and a
-  // cross-site GET deliberately does not revoke. So its "Log out" link makes a
-  // top-level navigation HERE, and this page auto-submits a SAME-ORIGIN POST that
-  // does revoke (browser_session_epoch) before redirecting to /login. No-JS users
-  // get the button.
-  let form: HTMLFormElement | undefined;
-  onMount(() => form?.requestSubmit());
+  // Deliberately NO auto-submit (round-3 #2). This page is reachable by a
+  // top-level navigation, including one an external site can trigger. If it
+  // auto-POSTed, a cross-site link to /logout would silently revoke every
+  // session - the exact forced-logout CSRF that POST-only + Origin protection on
+  // the logout endpoint exists to prevent. The user confirms with a real click,
+  // which is same-origin and does revoke.
 </script>
 
-<svelte:head><title>Logging out - Glassmkr</title></svelte:head>
+<svelte:head><title>Log out - Glassmkr</title></svelte:head>
 
 <main class="logout-wrap">
-  <form bind:this={form} method="POST" action="/api/v1/auth/logout" class="logout-card">
-    <p>Signing you out...</p>
+  <form method="POST" action="/api/v1/auth/logout" class="logout-card">
+    <h1>Log out of Glassmkr?</h1>
+    <p>This signs you out on this browser.</p>
     <button type="submit" class="btn btn-primary">Log out</button>
+    <a href="/" class="cancel-link">Stay signed in</a>
   </form>
 </main>
 
 <style>
   .logout-wrap { min-height: 60vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
   .logout-card { text-align: center; display: flex; flex-direction: column; gap: 1rem; align-items: center; }
-  .logout-card p { color: var(--text-secondary); }
+  .logout-card h1 { font-size: 1.4rem; margin: 0; }
+  .logout-card p { color: var(--text-secondary); margin: 0; }
+  .cancel-link { font-size: 0.9rem; color: var(--text-secondary); }
 </style>

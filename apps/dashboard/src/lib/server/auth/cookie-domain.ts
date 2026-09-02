@@ -53,6 +53,19 @@ export function authCookieAttrs(event: { url: URL }): string {
   return cookieSecure(event) ? "; Secure" : "";
 }
 
+// Clear an ephemeral OAuth cookie (oauth_state / oauth_redirect / oauth_intent).
+// These are now host-only (round-2 #3), so a delete scoped only to the shared
+// Domain no longer clears them and a stale value could mislead a later flow
+// (e.g. a lingering oauth_intent=reauth breaking a normal login) - round-3 #4.
+// Delete BOTH the host-only form and any legacy domain-scoped form.
+export function clearOAuthCookie(
+  cookies: { delete: (name: string, opts: { path: string; domain?: string }) => void },
+  name: string,
+): void {
+  cookies.delete(name, { path: "/" });
+  cookies.delete(name, { path: "/", domain: cookieDomain() });
+}
+
 // A non-sensitive presence flag ("1") shared across .glassmkr.com so the
 // marketing site can show logged-in state WITHOUT holding the session JWT. It
 // carries no credential: leaking it reveals only that some browser has a live
