@@ -1670,6 +1670,13 @@ const rules: AlertRule[] = [
           const firstMember = array.failed_disks?.[0];
           const memberName = firstMember ?? "<member>";
           const memberDev = firstMember ? `/dev/${firstMember}` : "/dev/<member>";
+          // Parent disk for the SMART check: strip the partition suffix. NVMe
+          // partitions are `nvme0n1p2` (disk `nvme0n1`); SATA/SAS are `sdb2`
+          // (disk `sdb`). Stripping a bare trailing digit-run turned nvme0n1p2
+          // into the nonexistent nvme0n1p (Codex round-1 #6).
+          const memberDisk = firstMember
+            ? (/nvme\d/.test(firstMember) ? firstMember.replace(/p\d+$/, "") : firstMember.replace(/\d+$/, ""))
+            : "<member>";
           results.push({
             type: "raid_degraded",
             severity: "critical",
@@ -1683,7 +1690,7 @@ const rules: AlertRule[] = [
               failed_members: failedMembers,
               parser_quality: "fleet-tested",
             },
-            recommendation: `Triage the failed member first: \`smartctl -H /dev/${memberName.replace(/[0-9]+$/, "")}\` on that disk and \`dmesg -T | grep ${memberName}\` for I/O errors. A transient drop (link reset, controller hiccup) with a healthy drive re-joins in seconds via \`mdadm --manage /dev/${array.device} --re-add ${memberDev}\` (write-intent bitmap). Replace the drive instead if it shows real errors, re-fails after re-add, or is already wear/SMART-flagged. Status: \`cat /proc/mdstat\`, \`mdadm --detail /dev/${array.device}\`. ${OWNERSHIP_REMEDIATION_NOTE}`,
+            recommendation: `Triage the failed member first: \`smartctl -H /dev/${memberDisk}\` on that disk and \`dmesg -T | grep ${memberName}\` for I/O errors. A transient drop (link reset, controller hiccup) with a healthy drive re-joins in seconds via \`mdadm --manage /dev/${array.device} --re-add ${memberDev}\` (write-intent bitmap). Replace the drive instead if it shows real errors, re-fails after re-add, or is already wear/SMART-flagged. Status: \`cat /proc/mdstat\`, \`mdadm --detail /dev/${array.device}\`. ${OWNERSHIP_REMEDIATION_NOTE}`,
           });
         }
       }
@@ -1709,11 +1716,14 @@ const rules: AlertRule[] = [
             ctrl.vendor === "dell" ? "perccli"
               : ctrl.vendor === "lsi" ? "storcli"
                 : ctrl.vendor === "hpe" ? "ssacli" : "arcconf";
+          // Inspect the SAME controller the alert is about (Codex round-1 #7:
+          // the cli previously hardcoded /c0 while the set-online command used
+          // the real controller id).
           const cli =
             ctrl.vendor === "dell"
-              ? "perccli /c0 show all"
+              ? `perccli /c${ctrl.controller_id} show all`
               : ctrl.vendor === "lsi"
-                ? "storcli /c0 show all"
+                ? `storcli /c${ctrl.controller_id} show all`
                 : ctrl.vendor === "hpe"
                   ? "ssacli ctrl all show config detail"
                   : "arcconf getconfig 1";
@@ -1723,9 +1733,12 @@ const rules: AlertRule[] = [
               : "";
 
           // Member-level detail (Crucible 1.2.2+ MegaRAID). Older agents send
-          // only the controller state, so fall back gracefully.
-          const degradedDrives = ctrl.degraded_drives ?? [];
-          const degradedVds = (ctrl.virtual_drives ?? []).filter((v) => v.degraded);
+          // only the controller state, so fall back gracefully. Array.isArray
+          // guards a malformed field (Codex round-1 #3: a passthrough'd
+          // `degraded_drives: {}` would otherwise throw in .map() and the
+          // per-rule catch would suppress the whole RAID alert).
+          const degradedDrives = Array.isArray(ctrl.degraded_drives) ? ctrl.degraded_drives : [];
+          const degradedVds = (Array.isArray(ctrl.virtual_drives) ? ctrl.virtual_drives : []).filter((v) => v.degraded);
           const driveList = degradedDrives
             .map((d) => `${d.enclosure_slot}${d.model ? ` (${d.model})` : ""} [${d.state}]`)
             .join(", ");
@@ -1741,9 +1754,14 @@ const rules: AlertRule[] = [
           // administrative offline that `set online` clears with no rebuild).
           // Recommending "replace" unconditionally would make an operator swap a
           // healthy disk. Only a genuinely failed/missing member is a replace.
+          // States that are active RECOVERY (rebuild / copyback), not a failed
+          // member needing replacement (Codex round-1 #4: a Cpybck member was
+          // classified as "replace the failed drive", but copyback is a normal
+          // recovery operation that can run on an optimal array).
+          const RECOVERING_PD_STATES = new Set(["Rbld", "Cpybck", "Cbshld"]);
           const offlineDrives = degradedDrives.filter((d) => d.state === "Offln");
-          const rebuilding = degradedDrives.some((d) => d.state === "Rbld");
-          const hardFailed = degradedDrives.filter((d) => d.state !== "Offln" && d.state !== "Rbld");
+          const rebuilding = degradedDrives.some((d) => RECOVERING_PD_STATES.has(d.state));
+          const hardFailed = degradedDrives.filter((d) => d.state !== "Offln" && !RECOVERING_PD_STATES.has(d.state));
           let recommendation: string;
           if (isMegaraid && degradedDrives.length > 0) {
             const parts: string[] = [];
@@ -1760,7 +1778,7 @@ const rules: AlertRule[] = [
               parts.push(`Replace the failed drive(s) at ${hardFailed.map((d) => d.enclosure_slot).join(", ")}; the controller auto-rebuilds onto the replacement.`);
             }
             if (rebuilding) {
-              parts.push(`A rebuild is already in progress; let it finish before acting.`);
+              parts.push(`A rebuild or copyback is already in progress; let it finish before acting (no replacement needed).`);
             }
             parts.push(`Inspect with \`${cli}\`. ZFS-on-hardware-RAID configurations should also check \`zpool status\`. ${OWNERSHIP_REMEDIATION_NOTE}`);
             recommendation = parts.join(" ");
@@ -4308,15 +4326,18 @@ const rules: AlertRule[] = [
 
       const inExtendedWindow = extendedEnd !== null && now.getTime() < extendedEnd.getTime();
 
-      // Debian LTS (Grok H-D4d, policy decision): unlike Ubuntu Pro / RHEL EUS,
-      // Debian LTS needs NO enrollment - it automatically continues security
-      // support for the release (community-run, via the LTS team) until the LTS
-      // end date. So a Debian host past standard support but within the LTS
-      // window IS covered by default: report it as info, not a warning, and
-      // reference Debian LTS rather than an enrollment mechanism Debian does not
-      // have (the generic branch below would wrongly tell a Debian user to run
-      // "pro security-status"). An explicit extActive===false (a future signal
-      // that LTS is somehow disabled) still falls through to the warning path.
+      // Debian LTS (Grok H-D4d, policy decision, refined per Codex round-1 #5):
+      // unlike Ubuntu Pro / RHEL EUS, Debian LTS needs no paid subscription or
+      // attach step - it continues security support for the release (community-
+      // run, via the LTS team) until the LTS end date. So the generic branch's
+      // "confirm Ubuntu Pro / RHEL EUS enrollment" wording is wrong for Debian.
+      // BUT the agent does not report whether the security repository is
+      // configured, nor whether the host's architecture / packages are in LTS
+      // scope (Debian LTS covers a subset), so we must NOT assert the host is
+      // covered. Report info (not a warning: the default Debian install DOES
+      // carry the -security source, so most hosts are covered) that names Debian
+      // LTS and tells the operator to VERIFY, rather than claiming coverage.
+      // An explicit extActive===false still falls through to the warning path.
       const isDebian =
         (snap.system?.os_id ?? "").toLowerCase() === "debian" ||
         (life.product ?? "").toLowerCase() === "debian";
@@ -4325,9 +4346,9 @@ const rules: AlertRule[] = [
           type: "os_end_of_life",
           severity: "info",
           title: `${osLabel} is on Debian LTS`,
-          message: `Standard security support for ${osLabel} ended on ${fmt(standardEnd)}. Debian LTS continues security support for this release until ${fmt(extendedEnd!)} with no enrollment required. Plan the OS upgrade before then.`,
-          evidence: { ...baseEvidence, in_extended_window: true, debian_lts: true },
-          recommendation: `No immediate action: Debian LTS covers this release until ${fmt(extendedEnd!)} (community-run, automatic, no enrollment). Keep applying updates normally (\`sudo apt update && sudo apt upgrade\`), and plan the upgrade to a newer Debian before that date.`,
+          message: `Standard security support for ${osLabel} ended on ${fmt(standardEnd)}. Debian LTS continues security updates for this release until ${fmt(extendedEnd!)} with no subscription required, IF the security repository is enabled and your architecture and packages are within LTS scope (LTS covers a subset). Verify coverage, then plan the OS upgrade before ${fmt(extendedEnd!)}.`,
+          evidence: { ...baseEvidence, in_extended_window: true, debian_lts: true, coverage_verified: false },
+          recommendation: `Verify Debian LTS is actually delivering updates for this host: confirm a \`<codename>-security\` entry (e.g. \`bookworm-security\`) is in your apt sources and that \`apt-get -s upgrade\` offers security fixes. Debian LTS is community-run and covers a subset of packages/architectures, so it is not guaranteed for every host. If LTS is active, no immediate action beyond normal \`apt upgrade\`; either way, plan the upgrade to a newer Debian before ${fmt(extendedEnd!)}.`,
         }];
       }
 
@@ -5422,7 +5443,7 @@ const rules: AlertRule[] = [
           const driverInstall = brokenNow
             ? (isRhel
                 ? "First make sure the NVIDIA driver is actually installed (blacklisting nouveau without an installed driver leaves the GPU with no driver at all): `sudo dnf module install nvidia-driver:latest-dkms` (or your fleet-baseline version), then confirm `nvidia-smi` works. Then "
-                : "First make sure the NVIDIA driver is actually installed (blacklisting nouveau without an installed driver leaves the GPU with no driver at all): `sudo apt install -y nvidia-driver-<version>` (match your fleet baseline), then confirm `nvidia-smi` works. Then ")
+                : "First make sure the NVIDIA driver is actually installed (blacklisting nouveau without an installed driver leaves the GPU with no driver at all): `sudo apt install -y nvidia-driver` on Debian (that is the metapackage), or the versioned package on Ubuntu such as `nvidia-driver-535` (match your fleet baseline), then confirm `nvidia-smi` works. Then ")
             : "";
           const blacklist = driverInstall ? "blacklist" : "Blacklist";
           return `${driverInstall}${blacklist} nouveau and rebuild the initramfs during a PLANNED maintenance window (not an unplanned reboot): \`echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf && ${initramfsCmd}\` ${initramfsNote}. Then reboot in that window and confirm with \`nvidia-smi\` and \`lsmod | grep -e nvidia -e nouveau\`.`;

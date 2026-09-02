@@ -174,6 +174,53 @@ describe("raid_degraded hardware RAID activation", () => {
     // No member detail, but must not tell the operator to just "replace".
     expect(a.recommendation.toLowerCase()).toContain("offline");
   });
+
+  it("classifies a copyback member as recovery, not replace (Codex round-1 #4)", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        {
+          vendor: "lsi", controller_id: "0", state: "Needs Attention", degraded_disks: 1, raw_summary: null,
+          virtual_drives: [{ id: "0/0", raid_level: "RAID1", state: "Dgrd", degraded: true }],
+          degraded_drives: [{ enclosure_slot: "252:4", device_id: 1, state: "Cpybck", drive_group: 0, model: "INTEL SSDPF2KX", size: "3.5 TB", media: "SSD", interface: "NVMe" }],
+        },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.recommendation).not.toContain("Replace the failed drive");
+    expect(a.recommendation.toLowerCase()).toContain("copyback");
+  });
+
+  it("inspection command targets the alert's controller, not /c0 (Codex round-1 #7)", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        {
+          vendor: "lsi", controller_id: "1", state: "Needs Attention", degraded_disks: 1, raw_summary: null,
+          virtual_drives: [{ id: "1/0", raid_level: "RAID10", state: "Dgrd", degraded: true }],
+          degraded_drives: [{ enclosure_slot: "8:3", device_id: 3, state: "Offln", drive_group: 0, model: "WD", size: "16 TB", media: "HDD", interface: "SATA" }],
+        },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.recommendation).toContain("storcli /c1");
+    expect(a.recommendation).toContain("/c1/e8/s3 set online");
+    expect(a.recommendation).not.toContain("storcli /c0 show all");
+  });
+
+  it("does not throw or suppress the alert on a malformed degraded_drives field (Codex round-1 #3)", () => {
+    const s = healthySnapshot();
+    // A malformed passthrough'd field (object, not array) must not crash .map()
+    // and thereby suppress the whole RAID alert.
+    s.hardware_raid = {
+      controllers: [
+        { vendor: "lsi", controller_id: "0", state: "Needs Attention", degraded_disks: 1, raw_summary: null, degraded_drives: {} as any },
+      ],
+    };
+    const fired = alertsByType(s, "raid_degraded");
+    expect(fired.length).toBe(1);
+    expect(fired[0].severity).toBe("critical");
+  });
 });
 
 // ============================================================================

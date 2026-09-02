@@ -458,6 +458,17 @@ describe("raid_degraded", () => {
     expect(a.recommendation).not.toContain("/dev/<member>");
     expect(a.recommendation).toContain("grep sdb2");
   });
+
+  it("derives the SMART parent disk correctly for an NVMe member (Codex round-1 #6)", () => {
+    const s = healthySnapshot();
+    s.raid = [{ device: "md0", level: "raid1", status: "degraded", degraded: true, disks: ["nvme0n1p2", "nvme1n1p2"], failed_disks: ["nvme1n1p2"] }];
+    const [a] = alertsOf("raid_degraded", s);
+    expect(a.recommendation).toContain("smartctl -H /dev/nvme1n1");
+    // NOT the nonexistent nvme1n1p.
+    expect(a.recommendation).not.toContain("smartctl -H /dev/nvme1n1p");
+    // The re-add still uses the full partition.
+    expect(a.recommendation).toContain("--re-add /dev/nvme1n1p2");
+  });
 });
 
 describe("disk_latency_high", () => {
@@ -1649,6 +1660,10 @@ describe("os_end_of_life (currency milestone, two-field advisory)", () => {
     expect(a.message.toLowerCase()).not.toContain("could not be verified");
     expect(a.message.toLowerCase()).not.toContain("ubuntu pro");
     expect((a.evidence as any).debian_lts).toBe(true);
+    // Codex round-1 #5: must not ASSERT coverage (arch/packages/security-source
+    // are unverified) - it tells the operator to verify instead.
+    expect(a.recommendation.toLowerCase()).toContain("verify");
+    expect((a.evidence as any).coverage_verified).toBe(false);
   });
 });
 

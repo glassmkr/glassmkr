@@ -177,6 +177,9 @@ describe("gpu_driver_unsafe_reboot", () => {
     );
     expect(a.recommendation.toLowerCase()).toContain("driver is actually installed");
     expect(a.recommendation).toMatch(/nvidia-driver|nvidia-driver:latest-dkms/);
+    // Codex round-1 #8: no `<version>` angle brackets (shell redirection when pasted).
+    expect(a.recommendation).not.toContain("nvidia-driver-<version>");
+    expect(a.recommendation).not.toMatch(/[<>]/);
   });
   it("does NOT prepend the install step when the driver is already loaded (only nouveau not blacklisted)", () => {
     const [a] = alertsByType(
