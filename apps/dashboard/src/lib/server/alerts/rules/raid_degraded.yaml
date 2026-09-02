@@ -62,19 +62,27 @@ fix:
       command: |
         sudo perccli /c0 show all
         sudo perccli /c0/eall/sall show
-        # Identify the failed slot and replace; then hot-spare assigns automatically:
-        # sudo perccli /c0/e<enclosure>/s<slot> set offline
-        # sudo perccli /c0/e<enclosure>/s<slot> set missing
-      description: "Dell PERC controller via perccli. Fleet-tested parser in Crucible v0.10.4."
+        # A member shown "Offln" is offline but may NOT have failed (a transient
+        # error, or an administrative offline). Try bringing it back online first:
+        #   sudo perccli /c0/e<enclosure>/s<slot> set online
+        # If the array returns to Optimal with no rebuild, it was transient.
+        # Only if that fails, or smartctl shows the drive failing, replace it:
+        #   sudo perccli /c0/e<enclosure>/s<slot> set offline
+        #   sudo perccli /c0/e<enclosure>/s<slot> set missing
+      description: "Dell PERC controller via perccli (fleet-tested parser). For an Offln member, try `set online` before replacing: a transient/administrative offline recovers with no rebuild. Replace only a genuinely failed drive (Grok H-D5)."
     - distro_match: ["*"]
       vendor_match: ["supermicro-*", "asrock-*", "gigabyte-*", "asus-*"]
       command: |
         sudo storcli /c0 show all
         sudo storcli /c0/eall/sall show
-        # Same procedure as PERC (Broadcom OEM family):
-        # sudo storcli /c0/e<enclosure>/s<slot> set offline
-        # sudo storcli /c0/e<enclosure>/s<slot> set missing
-      description: "LSI/Broadcom MegaRAID via storcli. Fleet-tested parser. Common on Supermicro / generic OEM boards."
+        # A member shown "Offln" is offline but may NOT have failed (a transient
+        # error, or an administrative offline). Try bringing it back online first:
+        #   sudo storcli /c0/e<enclosure>/s<slot> set online
+        # If the array returns to Optimal with no rebuild, it was transient.
+        # Only if that fails, or smartctl shows the drive failing, replace it:
+        #   sudo storcli /c0/e<enclosure>/s<slot> set offline
+        #   sudo storcli /c0/e<enclosure>/s<slot> set missing
+      description: "LSI/Broadcom MegaRAID via storcli (fleet-tested parser; verified on 9364-8i and 9560-16i). For an Offln member, try `set online` before replacing: a transient/administrative offline recovers with no rebuild. Replace only a genuinely failed drive (Grok H-D5)."
     - distro_match: ["*"]
       vendor_match: ["hpe-*", "hp-*"]
       command: |
@@ -94,9 +102,12 @@ fix:
         sudo arcconf getconfig 1 2>/dev/null                                  # Adaptec
         # Software RAID (mdadm): hot-add the replacement once identified.
         #   sudo mdadm --manage /dev/{{device}} --add /dev/sdN
-        # Hardware RAID: identify the failed slot from the controller output
-        # above, replace the physical drive, and the controller auto-rebuilds.
-      description: "Generic fallback when distro and controller vendor are both unrecognized; probes software mdadm plus the four common hardware controllers, then hot-add for mdadm or physical swap with auto-rebuild for hardware RAID. Covers any Linux mdadm 4.x software array as well as Adaptec or unrecognized controllers."
+        # Hardware RAID: identify the affected member from the controller output
+        # above. If it is merely "Offln" (offline, not failed), try bringing it
+        # back online first (storcli/perccli /cX/e<enc>/s<slot> set online) - a
+        # transient/administrative offline recovers with no rebuild. Only replace
+        # a genuinely failed drive; the controller then auto-rebuilds.
+      description: "Generic fallback when distro and controller vendor are both unrecognized; probes software mdadm plus the four common hardware controllers. For hardware RAID, an offline member is brought back online before any replacement (a transient/administrative offline recovers with no rebuild); only a genuinely failed drive is swapped. Covers any Linux mdadm 4.x software array as well as Adaptec or unrecognized controllers."
 
   # ====== Rebuild monitoring + performance impact ======
   #
