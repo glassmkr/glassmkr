@@ -121,6 +121,106 @@ describe("raid_degraded hardware RAID activation", () => {
     // healthySnapshot has no hardware_raid; default empty raid array.
     expect(alertsByType(s, "raid_degraded").length).toBe(0);
   });
+
+  // Grok H-D5: name the offlined member + re-online-vs-replace triage.
+  it("names the offlined member and recommends set-online-first for an Offln drive", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        {
+          vendor: "lsi", controller_id: "0", state: "Needs Attention",
+          degraded_disks: 1, raw_summary: "controller Needs Attention; drive 4:3 (WDC WUH721818ALE6L4) Offln",
+          virtual_drives: [{ id: "0/0", raid_level: "RAID10", state: "Dgrd", degraded: true }],
+          degraded_drives: [{ enclosure_slot: "4:3", device_id: 3, state: "Offln", drive_group: 0, model: "WDC WUH721818ALE6L4", size: "16.370 TB", media: "HDD", interface: "SATA" }],
+        },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.severity).toBe("critical");
+    expect(a.message).toContain("4:3");
+    expect(a.message).toContain("WDC WUH721818ALE6L4");
+    // An Offln drive leads with `set online`, not `replace`.
+    expect(a.recommendation).toContain("set online");
+    expect(a.recommendation.toLowerCase()).toContain("may not have failed");
+    expect((a.evidence.degraded_drives as any)?.[0]?.enclosure_slot).toBe("4:3");
+  });
+
+  it("recommends replacement for a genuinely failed member", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        {
+          vendor: "lsi", controller_id: "0", state: "Needs Attention",
+          degraded_disks: 1, raw_summary: null,
+          virtual_drives: [{ id: "0/0", raid_level: "RAID5", state: "Dgrd", degraded: true }],
+          degraded_drives: [{ enclosure_slot: "8:2", device_id: 5, state: "Failed", drive_group: 0, model: "SAMSUNG MZ", size: "1.0 TB", media: "SSD", interface: "SATA" }],
+        },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.recommendation).toContain("Replace the failed drive");
+    expect(a.recommendation).toContain("8:2");
+  });
+
+  it("falls back gracefully for an older agent with no member detail", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        { vendor: "lsi", controller_id: "0", state: "Needs Attention", degraded_disks: 1, raw_summary: null },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.severity).toBe("critical");
+    // No member detail, but must not tell the operator to just "replace".
+    expect(a.recommendation.toLowerCase()).toContain("offline");
+  });
+
+  it("classifies a copyback member as recovery, not replace (Codex round-1 #4)", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        {
+          vendor: "lsi", controller_id: "0", state: "Needs Attention", degraded_disks: 1, raw_summary: null,
+          virtual_drives: [{ id: "0/0", raid_level: "RAID1", state: "Dgrd", degraded: true }],
+          degraded_drives: [{ enclosure_slot: "252:4", device_id: 1, state: "Cpybck", drive_group: 0, model: "INTEL SSDPF2KX", size: "3.5 TB", media: "SSD", interface: "NVMe" }],
+        },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.recommendation).not.toContain("Replace the failed drive");
+    expect(a.recommendation.toLowerCase()).toContain("copyback");
+  });
+
+  it("inspection command targets the alert's controller, not /c0 (Codex round-1 #7)", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        {
+          vendor: "lsi", controller_id: "1", state: "Needs Attention", degraded_disks: 1, raw_summary: null,
+          virtual_drives: [{ id: "1/0", raid_level: "RAID10", state: "Dgrd", degraded: true }],
+          degraded_drives: [{ enclosure_slot: "8:3", device_id: 3, state: "Offln", drive_group: 0, model: "WD", size: "16 TB", media: "HDD", interface: "SATA" }],
+        },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.recommendation).toContain("storcli /c1");
+    expect(a.recommendation).toContain("/c1/e8/s3 set online");
+    expect(a.recommendation).not.toContain("storcli /c0 show all");
+  });
+
+  it("does not throw or suppress the alert on a malformed degraded_drives field (Codex round-1 #3)", () => {
+    const s = healthySnapshot();
+    // A malformed passthrough'd field (object, not array) must not crash .map()
+    // and thereby suppress the whole RAID alert.
+    s.hardware_raid = {
+      controllers: [
+        { vendor: "lsi", controller_id: "0", state: "Needs Attention", degraded_disks: 1, raw_summary: null, degraded_drives: {} as any },
+      ],
+    };
+    const fired = alertsByType(s, "raid_degraded");
+    expect(fired.length).toBe(1);
+    expect(fired[0].severity).toBe("critical");
+  });
 });
 
 // ============================================================================
@@ -215,6 +315,39 @@ describe("zfs_pool_unhealthy severity matrix", () => {
       ],
     };
     expect(alertsByType(s, "zfs_pool_unhealthy")[0]?.severity).toBe("critical");
+  });
+
+  // Grok H-D4g: a bare "mirror" (older agent / uncounted width) must be treated
+  // as 2-way (critical), NOT dumped into the misleading "unknown redundancy
+  // class" branch.
+  it("DEGRADED on bare 'mirror' -> critical, reason references mirror not 'unknown'", () => {
+    const s = healthySnapshot();
+    s.zfs = {
+      pools: [
+        poolBase({
+          state: "DEGRADED",
+          vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror" }],
+        }),
+      ],
+    };
+    const [a] = alertsByType(s, "zfs_pool_unhealthy");
+    expect(a.severity).toBe("critical");
+    expect((a.evidence.severity_reason as string)).not.toContain("unknown redundancy class");
+    expect((a.evidence.severity_reason as string)).toContain("mirror");
+  });
+
+  it("FIX recommends `zpool online` for an offline device, not replace-first (H-D4g)", () => {
+    const s = healthySnapshot();
+    s.zfs = {
+      pools: [
+        poolBase({
+          state: "DEGRADED",
+          vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way" }],
+        }),
+      ],
+    };
+    const [a] = alertsByType(s, "zfs_pool_unhealthy");
+    expect(a.recommendation).toContain("zpool online");
   });
 
   it("DEGRADED on raidz2 without spare -> critical", () => {

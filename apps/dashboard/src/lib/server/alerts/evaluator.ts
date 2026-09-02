@@ -231,6 +231,25 @@ export interface Snapshot {
       state: string;
       degraded_disks: number | null;
       raw_summary: string | null;
+      // Crucible 1.2.2+ (MegaRAID storcli/perccli): the arrays and the
+      // non-healthy physical members, so the alert can name the offlined
+      // slot instead of only the controller. Absent on older agents.
+      virtual_drives?: Array<{
+        id: string;
+        raid_level: string;
+        state: string;
+        degraded: boolean;
+      }>;
+      degraded_drives?: Array<{
+        enclosure_slot: string;
+        device_id: number | null;
+        state: string;
+        drive_group: number | null;
+        model: string | null;
+        size: string | null;
+        media: string | null;
+        interface: string | null;
+      }>;
     }>;
   };
 
@@ -887,8 +906,15 @@ function classifyZfsVdev(
     if (cls === "single" || cls === "stripe") {
       return { severity: "critical", reason: `${vdev.state.toLowerCase()} on zero-redundancy vdev` };
     }
-    if (cls === "raidz1" || cls === "mirror_2way") {
-      return { severity: "critical", reason: `${vdev.state.toLowerCase()} on ${cls}; zero remaining failure tolerance` };
+    if (cls === "raidz1" || cls === "mirror_2way" || cls === "mirror") {
+      // Bare "mirror" (an older agent, or a mirror whose width the collector
+      // could not count) is assumed 2-way: the common case, and the safe one
+      // (a degraded 2-way has zero tolerance left). Crucible 1.2.2+ emits the
+      // exact mirror_Nway width so a 3-way+ correctly demotes to warning
+      // below. Grok H-D4g: this replaces the misleading "unknown redundancy
+      // class" that a live mirror used to hit.
+      const clsLabel = cls === "mirror" ? "a mirror (assumed 2-way; upgrade the agent for the exact width)" : cls;
+      return { severity: "critical", reason: `${vdev.state.toLowerCase()} on ${clsLabel}; zero remaining failure tolerance` };
     }
     if (cls === "raidz2") {
       return vdev.spare_in_progress
@@ -948,7 +974,11 @@ function buildZfsPoolEmission(
     recommendation:
       opts.scope === "l2arc"
         ? `L2ARC failure surfaces as a performance ticket; data is not at risk. Detach the failed cache device with \`zpool remove ${pool.name} <vdev>\` and replace at convenience.`
-        : `Run \`zpool status -v ${pool.name}\` to identify the affected disk. Replace failed devices with \`zpool replace ${pool.name} <old> <new>\`. SUSPENDED pools require investigation of the underlying I/O path before reimport.`,
+        // Grok H-D4g: a device shown OFFLINE in `zpool status` was taken offline
+        // administratively (or by a transient error), not failed - `zpool online`
+        // clears it with no disk swap. Leading with "replace" made an operator
+        // swap a healthy disk. Replace is only for FAULTED/UNAVAIL/REMOVED.
+        : `Run \`zpool status -v ${pool.name}\` to identify the affected device and its state. A device shown as OFFLINE was taken offline administratively or by a transient error; bring it back with \`zpool online ${pool.name} <device>\` (no disk swap, no full resilver). Only a FAULTED / UNAVAIL / REMOVED device needs replacement: \`zpool replace ${pool.name} <old> <new>\`. SUSPENDED pools require investigating the underlying I/O path before reimport.`,
   };
 }
 
@@ -1632,6 +1662,21 @@ const rules: AlertRule[] = [
           // the exact drive to pull. Best-effort: a disk gone from the SMART scan
           // resolves to null identity and we keep just the member name.
           const failedMembers = resolveFailedMembers(array.failed_disks, snap.smart);
+          // Substitute the actual failed member into the FIX command instead of
+          // a `/dev/<member>` placeholder (Grok L0 residual): the collector now
+          // names the faulty member, so the re-add command should be runnable
+          // as-is rather than making the operator guess (and risk targeting the
+          // healthy disk).
+          const firstMember = array.failed_disks?.[0];
+          const memberName = firstMember ?? "<member>";
+          const memberDev = firstMember ? `/dev/${firstMember}` : "/dev/<member>";
+          // Parent disk for the SMART check: strip the partition suffix. NVMe
+          // partitions are `nvme0n1p2` (disk `nvme0n1`); SATA/SAS are `sdb2`
+          // (disk `sdb`). Stripping a bare trailing digit-run turned nvme0n1p2
+          // into the nonexistent nvme0n1p (Codex round-1 #6).
+          const memberDisk = firstMember
+            ? (/nvme\d/.test(firstMember) ? firstMember.replace(/p\d+$/, "") : firstMember.replace(/\d+$/, ""))
+            : "<member>";
           results.push({
             type: "raid_degraded",
             severity: "critical",
@@ -1645,7 +1690,7 @@ const rules: AlertRule[] = [
               failed_members: failedMembers,
               parser_quality: "fleet-tested",
             },
-            recommendation: `Triage the failed member first: \`smartctl -H\` on that disk and \`dmesg -T | grep <member>\` for I/O errors. A transient drop (link reset, controller hiccup) with a healthy drive re-joins in seconds via \`mdadm --manage /dev/${array.device} --re-add /dev/<member>\` (write-intent bitmap). Replace the drive instead if it shows real errors, re-fails after re-add, or is already wear/SMART-flagged. Status: \`cat /proc/mdstat\`, \`mdadm --detail /dev/${array.device}\`. ${OWNERSHIP_REMEDIATION_NOTE}`,
+            recommendation: `Triage the failed member first: \`smartctl -H /dev/${memberDisk}\` on that disk and \`dmesg -T | grep ${memberName}\` for I/O errors. A transient drop (link reset, controller hiccup) with a healthy drive re-joins in seconds via \`mdadm --manage /dev/${array.device} --re-add ${memberDev}\` (write-intent bitmap). Replace the drive instead if it shows real errors, re-fails after re-add, or is already wear/SMART-flagged. Status: \`cat /proc/mdstat\`, \`mdadm --detail /dev/${array.device}\`. ${OWNERSHIP_REMEDIATION_NOTE}`,
           });
         }
       }
@@ -1654,10 +1699,11 @@ const rules: AlertRule[] = [
       if (snap.hardware_raid?.controllers) {
         for (const ctrl of snap.hardware_raid.controllers) {
           if (ctrl.state === "Optimal") continue;
-          const parserQuality =
-            ctrl.vendor === "dell" || ctrl.vendor === "lsi"
-              ? "fleet-tested"
-              : "stub";
+          const isMegaraid = ctrl.vendor === "dell" || ctrl.vendor === "lsi";
+          // parser_quality is fleet-tested for the MegaRAID CLIs, which are now
+          // parsed at member granularity (verified on a 9364-8i and a 9560-16i,
+          // Grok H-D5); hpe/adaptec remain state-only stubs.
+          const parserQuality = isMegaraid ? "fleet-tested" : "stub";
           const vendorLabel =
             ctrl.vendor === "dell"
               ? "Dell PERC"
@@ -1666,35 +1712,99 @@ const rules: AlertRule[] = [
                 : ctrl.vendor === "hpe"
                   ? "HPE Smart Array"
                   : "Adaptec";
+          const tool =
+            ctrl.vendor === "dell" ? "perccli"
+              : ctrl.vendor === "lsi" ? "storcli"
+                : ctrl.vendor === "hpe" ? "ssacli" : "arcconf";
+          // Inspect the SAME controller the alert is about (Codex round-1 #7:
+          // the cli previously hardcoded /c0 while the set-online command used
+          // the real controller id).
           const cli =
             ctrl.vendor === "dell"
-              ? "perccli /c0 show all"
+              ? `perccli /c${ctrl.controller_id} show all`
               : ctrl.vendor === "lsi"
-                ? "storcli /c0 show all"
+                ? `storcli /c${ctrl.controller_id} show all`
                 : ctrl.vendor === "hpe"
                   ? "ssacli ctrl all show config detail"
                   : "arcconf getconfig 1";
           const stubNote =
             parserQuality === "stub"
-              ? " Parser for this vendor is a stub in Crucible v0.10.4; verify evidence against the controller CLI directly before acting."
+              ? " Parser for this vendor is a stub; verify evidence against the controller CLI directly before acting."
               : "";
+
+          // Member-level detail (Crucible 1.2.2+ MegaRAID). Older agents send
+          // only the controller state, so fall back gracefully. Array.isArray
+          // guards a malformed field (Codex round-1 #3: a passthrough'd
+          // `degraded_drives: {}` would otherwise throw in .map() and the
+          // per-rule catch would suppress the whole RAID alert).
+          const degradedDrives = Array.isArray(ctrl.degraded_drives) ? ctrl.degraded_drives : [];
+          const degradedVds = (Array.isArray(ctrl.virtual_drives) ? ctrl.virtual_drives : []).filter((v) => v.degraded);
+          const driveList = degradedDrives
+            .map((d) => `${d.enclosure_slot}${d.model ? ` (${d.model})` : ""} [${d.state}]`)
+            .join(", ");
+          const vdList = degradedVds.map((v) => `${v.id} ${v.raid_level} ${v.state}`).join(", ");
+          const detail = driveList
+            ? ` Degraded drive(s): ${driveList}.${vdList ? ` Array(s): ${vdList}.` : ""}`
+            : ctrl.degraded_disks != null
+              ? ` ${ctrl.degraded_disks} disk(s) degraded.`
+              : "";
+
+          // Re-online-vs-replace triage (Grok H-D5): a member reporting "Offln"
+          // is offline but often has NOT failed (a transient error, or an
+          // administrative offline that `set online` clears with no rebuild).
+          // Recommending "replace" unconditionally would make an operator swap a
+          // healthy disk. Only a genuinely failed/missing member is a replace.
+          // States that are active RECOVERY (rebuild / copyback), not a failed
+          // member needing replacement (Codex round-1 #4: a Cpybck member was
+          // classified as "replace the failed drive", but copyback is a normal
+          // recovery operation that can run on an optimal array).
+          const RECOVERING_PD_STATES = new Set(["Rbld", "Cpybck", "Cbshld"]);
+          const offlineDrives = degradedDrives.filter((d) => d.state === "Offln");
+          const rebuilding = degradedDrives.some((d) => RECOVERING_PD_STATES.has(d.state));
+          const hardFailed = degradedDrives.filter((d) => d.state !== "Offln" && !RECOVERING_PD_STATES.has(d.state));
+          let recommendation: string;
+          if (isMegaraid && degradedDrives.length > 0) {
+            const parts: string[] = [];
+            if (offlineDrives.length > 0) {
+              const d = offlineDrives[0];
+              const [eid, slt] = d.enclosure_slot.split(":");
+              const setOnline =
+                eid && slt
+                  ? `${tool} /c${ctrl.controller_id}/e${eid}/s${slt} set online`
+                  : `${tool} /c${ctrl.controller_id} show all`;
+              parts.push(`A drive reporting "Offln" is offline but may not have failed. First try bringing it back online: \`${setOnline}\`. If the array returns to Optimal with no rebuild, it was a transient/administrative offline. Only replace the drive if that fails or \`smartctl -a\` shows it failing.`);
+            }
+            if (hardFailed.length > 0) {
+              parts.push(`Replace the failed drive(s) at ${hardFailed.map((d) => d.enclosure_slot).join(", ")}; the controller auto-rebuilds onto the replacement.`);
+            }
+            if (rebuilding) {
+              parts.push(`A rebuild or copyback is already in progress; let it finish before acting (no replacement needed).`);
+            }
+            parts.push(`Inspect with \`${cli}\`. ZFS-on-hardware-RAID configurations should also check \`zpool status\`. ${OWNERSHIP_REMEDIATION_NOTE}`);
+            recommendation = parts.join(" ");
+          } else {
+            // Older agent (no member detail) or a stub vendor: keep generic
+            // guidance, but do NOT assert "replace" as the only option.
+            recommendation = `Inspect the controller via vendor CLI: \`${cli}\`. Identify the degraded member; if a drive is merely offline, try bringing it back online before replacing it (an offline member often recovers with no rebuild). If you do replace a drive, confirm the rebuild started; ZFS-on-hardware-RAID configurations should also check \`zpool status\`.${stubNote} ${OWNERSHIP_REMEDIATION_NOTE}`;
+          }
+
           results.push({
             type: "raid_degraded",
             severity: "critical",
             title: `Hardware RAID degraded: ${vendorLabel} ${ctrl.controller_id}`,
-            message: `${vendorLabel} controller ${ctrl.controller_id} reports state "${ctrl.state}"${
-              ctrl.degraded_disks != null ? `; ${ctrl.degraded_disks} disk(s) degraded` : ""
-            }. One more failure may cause data loss.${stubNote}`,
+            message: `${vendorLabel} controller ${ctrl.controller_id} reports state "${ctrl.state}".${detail} One more failure may cause data loss.${stubNote}`,
             evidence: {
               raid_kind: "hardware",
               controller_vendor: ctrl.vendor,
               controller_id: ctrl.controller_id,
               controller_state: ctrl.state,
               degraded_disks: ctrl.degraded_disks,
+              degraded_drives: degradedDrives.length > 0 ? degradedDrives : undefined,
+              degraded_vds: degradedVds.length > 0 ? degradedVds : undefined,
               raw_summary: ctrl.raw_summary,
               parser_quality: parserQuality,
             },
-            recommendation: `Inspect the controller via vendor CLI: \`${cli}\`. Identify the failed drive's slot/serial and replace it. Confirm with the controller that the rebuild started; ZFS-on-hardware-RAID configurations should also check \`zpool status\`. ${OWNERSHIP_REMEDIATION_NOTE}`,
+            recommendation,
           });
         }
       }
@@ -4215,6 +4325,33 @@ const rules: AlertRule[] = [
       }
 
       const inExtendedWindow = extendedEnd !== null && now.getTime() < extendedEnd.getTime();
+
+      // Debian LTS (Grok H-D4d, policy decision, refined per Codex round-1 #5):
+      // unlike Ubuntu Pro / RHEL EUS, Debian LTS needs no paid subscription or
+      // attach step - it continues security support for the release (community-
+      // run, via the LTS team) until the LTS end date. So the generic branch's
+      // "confirm Ubuntu Pro / RHEL EUS enrollment" wording is wrong for Debian.
+      // BUT the agent does not report whether the security repository is
+      // configured, nor whether the host's architecture / packages are in LTS
+      // scope (Debian LTS covers a subset), so we must NOT assert the host is
+      // covered. Report info (not a warning: the default Debian install DOES
+      // carry the -security source, so most hosts are covered) that names Debian
+      // LTS and tells the operator to VERIFY, rather than claiming coverage.
+      // An explicit extActive===false still falls through to the warning path.
+      const isDebian =
+        (snap.system?.os_id ?? "").toLowerCase() === "debian" ||
+        (life.product ?? "").toLowerCase() === "debian";
+      if (isDebian && inExtendedWindow && extActive !== false) {
+        return [{
+          type: "os_end_of_life",
+          severity: "info",
+          title: `${osLabel} is on Debian LTS`,
+          message: `Standard security support for ${osLabel} ended on ${fmt(standardEnd)}. Debian LTS continues security updates for this release until ${fmt(extendedEnd!)} with no subscription required, IF the security repository is enabled and your architecture and packages are within LTS scope (LTS covers a subset). Verify coverage, then plan the OS upgrade before ${fmt(extendedEnd!)}.`,
+          evidence: { ...baseEvidence, in_extended_window: true, debian_lts: true, coverage_verified: false },
+          recommendation: `Verify Debian LTS is actually delivering updates for this host: confirm a \`<codename>-security\` entry (e.g. \`bookworm-security\`) is in your apt sources and that \`apt-get -s upgrade\` offers security fixes. Debian LTS is community-run and covers a subset of packages/architectures, so it is not guaranteed for every host. If LTS is active, no immediate action beyond normal \`apt upgrade\`; either way, plan the upgrade to a newer Debian before ${fmt(extendedEnd!)}.`,
+        }];
+      }
+
       let title: string;
       let message: string;
       let recommendation: string;
@@ -4637,19 +4774,42 @@ const rules: AlertRule[] = [
       const unitList = units.join(", ");
       const fixCmds: string[] = [];
       for (const unit of units) {
-        fixCmds.push(
-          `# Check status of ${unit}`,
-          `sudo systemctl status ${unit}`,
-          `sudo journalctl -u ${unit} --no-pager -n 50`,
-          "",
-          `# Restart ${unit}`,
-          `sudo systemctl restart ${unit}`,
-          "",
-          `# If ${unit} is a one-shot/transient unit (nothing to restart),`,
-          `# clear the failed state instead:`,
-          `# sudo systemctl reset-failed ${unit}`,
-          "",
-        );
+        if (unit.endsWith(".mount")) {
+          // A failed .mount is not fixed by "restart" (Grok H-D4k): the
+          // filesystem is not mounted, so the fix is `mount` after correcting
+          // the cause (fstab/UUID/device). `systemctl show -p Where` gives the
+          // authoritative mount point without guessing at unit-name escaping.
+          fixCmds.push(
+            `# ${unit} is a MOUNT unit: a failed mount is not fixed by "restart".`,
+            `# Inspect why it failed:`,
+            `sudo systemctl status ${unit}`,
+            `sudo journalctl -u ${unit} --no-pager -n 50`,
+            "",
+            `# Fix the underlying cause (wrong device/UUID in /etc/fstab, missing`,
+            `# filesystem, or an unplugged disk), then mount it:`,
+            `WHERE=$(systemctl show ${unit} -p Where --value)`,
+            `grep -- " $WHERE " /etc/fstab   # confirm the fstab entry`,
+            `sudo mount "$WHERE"`,
+            "",
+            `# Once it mounts cleanly, clear the failed state:`,
+            `sudo systemctl reset-failed ${unit}`,
+            "",
+          );
+        } else {
+          fixCmds.push(
+            `# Check status of ${unit}`,
+            `sudo systemctl status ${unit}`,
+            `sudo journalctl -u ${unit} --no-pager -n 50`,
+            "",
+            `# Restart ${unit}`,
+            `sudo systemctl restart ${unit}`,
+            "",
+            `# If ${unit} is a one-shot/transient unit (nothing to restart),`,
+            `# clear the failed state instead:`,
+            `# sudo systemctl reset-failed ${unit}`,
+            "",
+          );
+        }
       }
       // Compose a per-unit evidence map: { unit_name: [last 5 journal
       // lines] }. Empty array when Crucible didn't send anything for
@@ -5272,9 +5432,22 @@ const rules: AlertRule[] = [
           nouveau_module_loaded: dr.nouveau_module_loaded,
           nouveau_blacklisted: dr.nouveau_blacklisted,
         },
-        recommendation: isRhelFamily(snap)
-          ? 'Blacklist nouveau and rebuild the initramfs during a PLANNED maintenance window (not an unplanned reboot): `echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf && sudo dracut --force` (this host is RHEL-family; dracut, not update-initramfs). Then reboot in that window and confirm with `nvidia-smi` and `lsmod | grep -e nvidia -e nouveau`.'
-          : 'Blacklist nouveau and rebuild the initramfs during a PLANNED maintenance window (not an unplanned reboot): `echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf && sudo update-initramfs -u` (Debian/Ubuntu). Then reboot in that window and confirm with `nvidia-smi` and `lsmod | grep -e nvidia -e nouveau`.',
+        recommendation: (() => {
+          // Grok H-D3a/e: when the NVIDIA driver is not loaded, it may not be
+          // installed at all (the observed case was nvidia-smi missing, nouveau
+          // squatting). Blacklisting nouveau WITHOUT a driver installed leaves
+          // the GPU with no driver at all, so lead with the install step.
+          const isRhel = isRhelFamily(snap);
+          const initramfsCmd = isRhel ? "sudo dracut --force" : "sudo update-initramfs -u";
+          const initramfsNote = isRhel ? "(this host is RHEL-family; dracut, not update-initramfs)" : "(Debian/Ubuntu)";
+          const driverInstall = brokenNow
+            ? (isRhel
+                ? "First make sure the NVIDIA driver is actually installed (blacklisting nouveau without an installed driver leaves the GPU with no driver at all): `sudo dnf module install nvidia-driver:latest-dkms` (or your fleet-baseline version), then confirm `nvidia-smi` works. Then "
+                : "First make sure the NVIDIA driver is actually installed (blacklisting nouveau without an installed driver leaves the GPU with no driver at all): `sudo apt install -y nvidia-driver` on Debian (that is the metapackage), or the versioned package on Ubuntu such as `nvidia-driver-535` (match your fleet baseline), then confirm `nvidia-smi` works. Then ")
+            : "";
+          const blacklist = driverInstall ? "blacklist" : "Blacklist";
+          return `${driverInstall}${blacklist} nouveau and rebuild the initramfs during a PLANNED maintenance window (not an unplanned reboot): \`echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf && ${initramfsCmd}\` ${initramfsNote}. Then reboot in that window and confirm with \`nvidia-smi\` and \`lsmod | grep -e nvidia -e nouveau\`.`;
+        })(),
       }];
     },
   },

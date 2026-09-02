@@ -95,34 +95,35 @@ fix:
         op: eq
         value: DEGRADED
       command: |
-        # DEGRADED pool; still serving I/O, one or more vdevs lost.
-        # Replace the failed vdev to restore redundancy.
+        # DEGRADED pool; still serving I/O, one or more devices lost.
 
-        # 1. Identify the failed vdev
+        # 1. Identify the affected device AND its state
         sudo zpool status -v <POOL>
 
-        # 2. Confirm SMART status of the underlying drive
-        # (replace <DEVICE> with what step 1 reports as failed)
+        # 2a. If the device shows OFFLINE (taken offline administratively or by a
+        #     transient error - NOT failed), just bring it back. No disk swap, no
+        #     full resilver, redundancy restored immediately:
+        sudo zpool online <POOL> /dev/<DEVICE>
+
+        # 2b. Only if the device shows FAULTED / UNAVAIL / REMOVED does it need a
+        #     replacement. First confirm the drive is actually failing:
         sudo smartctl -a /dev/<DEVICE>
-
-        # 3. Offline the failed vdev (defensive; ZFS may already have)
-        # sudo zpool offline <POOL> /dev/<DEVICE>
-
-        # 4. Physically replace the drive (hot-swap if chassis supports;
-        #    otherwise power down). Same chassis procedure as smart_failing.
-
-        # 5. Tell ZFS about the replacement
-        sudo zpool replace <POOL> /dev/<OLD_DEVICE> /dev/<NEW_DEVICE>
-        # If replacement uses the same device path:
+        # Then physically replace it (hot-swap if the chassis supports it;
+        # otherwise power down - same chassis procedure as smart_failing) and
+        # tell ZFS about the replacement:
+        # sudo zpool replace <POOL> /dev/<OLD_DEVICE> /dev/<NEW_DEVICE>
+        # If the replacement reuses the same device path:
         # sudo zpool replace <POOL> /dev/<DEVICE>
 
-        # 6. Watch resilver progress
+        # 3. Watch resilver progress (only after a replace)
         zpool status -v <POOL>   # one-shot; re-run to monitor
       description: |
         DEGRADED path; pool is still serving I/O but redundancy is
-        reduced. Replace the failed vdev and let ZFS resilver. This
-        is the most common pool-unhealthy path. Resilver can take
-        hours-to-days depending on pool size + load.
+        reduced. Check the device STATE first: an OFFLINE device was taken
+        offline administratively or by a transient error and is restored with
+        `zpool online` (no disk swap, no full resilver) - do NOT replace it.
+        Only a FAULTED / UNAVAIL / REMOVED device needs a physical replacement
+        and resilver (Grok H-D4g). This is the most common pool-unhealthy path.
     - distro_match: ["*"]
       vendor_match: ["*"]
       command: |

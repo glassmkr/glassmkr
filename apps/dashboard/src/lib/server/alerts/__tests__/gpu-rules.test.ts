@@ -167,6 +167,28 @@ describe("gpu_driver_unsafe_reboot", () => {
     expect(fired.length).toBe(1);
     expect(fired[0].severity).toBe("warning");
   });
+  // Grok H-D3a/e: when the nvidia module is not loaded it may not be installed
+  // at all; blacklisting nouveau without a driver leaves the GPU with no driver.
+  // The FIX must lead with installing the driver.
+  it("recommends installing the driver first when the nvidia module is not loaded", () => {
+    const [a] = alertsByType(
+      withDriverResilience({ nvidia_pci_present: true, nvidia_module_loaded: false, nouveau_module_loaded: true, nouveau_blacklisted: false }),
+      "gpu_driver_unsafe_reboot",
+    );
+    expect(a.recommendation.toLowerCase()).toContain("driver is actually installed");
+    expect(a.recommendation).toMatch(/nvidia-driver|nvidia-driver:latest-dkms/);
+    // Codex round-1 #8: no `<version>` angle brackets (shell redirection when pasted).
+    expect(a.recommendation).not.toContain("nvidia-driver-<version>");
+    expect(a.recommendation).not.toMatch(/[<>]/);
+  });
+  it("does NOT prepend the install step when the driver is already loaded (only nouveau not blacklisted)", () => {
+    const [a] = alertsByType(
+      withDriverResilience({ nvidia_pci_present: true, nvidia_module_loaded: true, nouveau_module_loaded: false, nouveau_blacklisted: false }),
+      "gpu_driver_unsafe_reboot",
+    );
+    expect(a.recommendation).toContain("Blacklist nouveau");
+    expect(a.recommendation.toLowerCase()).not.toContain("driver is actually installed");
+  });
   it("does not fire when nvidia is loaded and nouveau is blacklisted (reboot-safe)", () => {
     expect(alertsByType(
       withDriverResilience({ nvidia_pci_present: true, nvidia_module_loaded: true, nouveau_module_loaded: false, nouveau_blacklisted: true }),

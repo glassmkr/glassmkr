@@ -447,6 +447,28 @@ describe("raid_degraded", () => {
   it("no fire on clean array", () => {
     expect(alertsOf("raid_degraded")).toHaveLength(0);
   });
+  // Grok L0 residual: the re-add command must name the actual failed member,
+  // not a `/dev/<member>` placeholder the operator has to fill in (and could
+  // fill wrong, targeting the healthy disk).
+  it("substitutes the real failed member into the mdadm re-add command", () => {
+    const s = healthySnapshot();
+    s.raid = [{ device: "md127", level: "raid1", status: "degraded", degraded: true, disks: ["sda2", "sdb2"], failed_disks: ["sdb2"] }];
+    const [a] = alertsOf("raid_degraded", s);
+    expect(a.recommendation).toContain("--re-add /dev/sdb2");
+    expect(a.recommendation).not.toContain("/dev/<member>");
+    expect(a.recommendation).toContain("grep sdb2");
+  });
+
+  it("derives the SMART parent disk correctly for an NVMe member (Codex round-1 #6)", () => {
+    const s = healthySnapshot();
+    s.raid = [{ device: "md0", level: "raid1", status: "degraded", degraded: true, disks: ["nvme0n1p2", "nvme1n1p2"], failed_disks: ["nvme1n1p2"] }];
+    const [a] = alertsOf("raid_degraded", s);
+    expect(a.recommendation).toContain("smartctl -H /dev/nvme1n1");
+    // NOT the nonexistent nvme1n1p.
+    expect(a.recommendation).not.toContain("smartctl -H /dev/nvme1n1p");
+    // The re-add still uses the full partition.
+    expect(a.recommendation).toContain("--re-add /dev/nvme1n1p2");
+  });
 });
 
 describe("disk_latency_high", () => {
@@ -1622,6 +1644,27 @@ describe("os_end_of_life (currency milestone, two-field advisory)", () => {
     expect(a.severity).toBe("warning");
     expect(a.message.toLowerCase()).toContain("end of life");
   });
+
+  it("Debian past standard support but within LTS -> INFO 'Debian LTS', not an enrollment warning (Grok H-D4d)", () => {
+    // Debian LTS needs no enrollment (unlike Ubuntu Pro / RHEL EUS), so a
+    // Debian host in the LTS window is covered by default: info, not warning,
+    // and no "confirm Ubuntu Pro enrollment" copy.
+    seed([{ product: "debian", cycle: "12", label: "12 (Bookworm)", eol_from: iso(-30), eoes_from: iso(600), is_lts: true }]);
+    const s = healthySnapshot();
+    s.system.os_id = "debian";
+    s.system.os_version_id = "12";
+    s.system.os = "Debian GNU/Linux 12 (bookworm)";
+    const [a] = alertsOf("os_end_of_life", s);
+    expect(a.severity).toBe("info");
+    expect(a.title).toContain("Debian LTS");
+    expect(a.message.toLowerCase()).not.toContain("could not be verified");
+    expect(a.message.toLowerCase()).not.toContain("ubuntu pro");
+    expect((a.evidence as any).debian_lts).toBe(true);
+    // Codex round-1 #5: must not ASSERT coverage (arch/packages/security-source
+    // are unverified) - it tells the operator to verify instead.
+    expect(a.recommendation.toLowerCase()).toContain("verify");
+    expect((a.evidence as any).coverage_verified).toBe(false);
+  });
 });
 
 describe("bios_firmware_age (currency milestone, info-only advisory)", () => {
@@ -2265,6 +2308,18 @@ describe("systemd_service_failed", () => {
     const [a] = alertsOf("systemd_service_failed", s);
     const cmds = (a.evidence as any).fix_commands as string[];
     expect(cmds.join("\n")).toContain("reset-failed iperf3-test.service");
+  });
+  // Grok H-D4k: a failed .mount unit is not fixed by "restart"; the fix is
+  // `mount` after correcting the cause.
+  it("fix_commands for a .mount unit use mount, not restart", () => {
+    const s = healthySnapshot();
+    s.systemd = { failed_units: ["boot-efi.mount"], failed_count: 1 };
+    const [a] = alertsOf("systemd_service_failed", s);
+    const cmds = (a.evidence as any).fix_commands as string[];
+    const joined = cmds.join("\n");
+    expect(joined).toContain("sudo mount");
+    expect(joined).toContain("systemctl show boot-efi.mount -p Where");
+    expect(joined).not.toContain("systemctl restart boot-efi.mount");
   });
 });
 
