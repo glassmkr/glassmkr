@@ -75,11 +75,22 @@
       <p class="docs-subtitle">Behavior changes, operational improvements, and notable fixes for Glassmkr and the Crucible agent. Most recent at top.</p>
     </header>
 
+    <section class="release" id="2026-09-01">
+      <h2><a href="#2026-09-01" class="anchor-link">#</a>2026-09-01</h2>
+
+      <h3>Crucible v1.2.1</h3>
+      <p><strong>Current.</strong> The agent is at v1.2.1 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Three collector fixes. A degraded software-mirror alert now identifies the failed member by its RAID role, so the alert, the drive serial, and the replace-this-drive guidance all name the drive that actually failed; previously, when the kernel listed array members out of role order, the alert could point an operator at the healthy disk. Failed <code>mount</code> and <code>automount</code> units are now reported, not only <code>service</code> units, so a failed boot-critical mount (for example the EFI system partition, after which the bootloader can no longer be updated) no longer leaves a host looking healthy. And the agent now reports IPMI System Event Log fullness (percent used and overflow), so a full or overflowed SEL that is silently dropping new hardware events is surfaced instead of going unnoticed. These are collector fixes; upgrade the agent to receive them. On hosts that use the sudo wrapper, refresh the wrapper after upgrading as usual. No config, CLI, or dashboard-contract changes.</p>
+
+      <h3>Upgrade</h3>
+      <pre><code>sudo npm install -g @glassmkr/crucible@1.2.1
+sudo systemctl restart glassmkr-crucible</code></pre>
+    </section>
+
     <section class="release" id="2026-08-30">
       <h2><a href="#2026-08-30" class="anchor-link">#</a>2026-08-30</h2>
 
       <h3>Crucible v1.2.0</h3>
-      <p><strong>Current.</strong> The agent is at v1.2.0 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. New boot-config integrity check: the agent inspects the boot configuration and cross-checks every boot entry's root filesystem reference against the filesystems that actually exist, so the dashboard can warn when a host's next reboot would fail (or is drifting toward that) while the host is still running and reachable. Covers the RHEL and Debian families. This release adds a privileged wrapper action, so hosts using the sudo wrapper need a wrapper refresh after upgrading; hosts running as root do not. No config, CLI, or dashboard-contract changes otherwise.</p>
+      <p><strong>Superseded by v1.2.1.</strong> The agent was at v1.2.0 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. New boot-config integrity check: the agent inspects the boot configuration and cross-checks every boot entry's root filesystem reference against the filesystems that actually exist, so the dashboard can warn when a host's next reboot would fail (or is drifting toward that) while the host is still running and reachable. Covers the RHEL and Debian families. This release adds a privileged wrapper action, so hosts using the sudo wrapper need a wrapper refresh after upgrading; hosts running as root do not. No config, CLI, or dashboard-contract changes otherwise.</p>
 
       <h3>Crucible v1.1.1</h3>
       <p><strong>Superseded by v1.2.0.</strong> The agent was at v1.1.1 as of this entry, on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Docs-only patch: the npm README now states the license plainly and describes the Dashboard as what it is, open source at github.com/glassmkr/glassmkr and self-hostable. No code changes; agents on v1.1.0 have nothing to gain from upgrading.</p>
