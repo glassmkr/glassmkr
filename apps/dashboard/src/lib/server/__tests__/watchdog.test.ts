@@ -39,9 +39,23 @@ describe("findStaleServers", () => {
     expect(findStaleServers([server], NOW)).toHaveLength(0);
   });
 
-  it("ignores servers that have never reported (last_seen_at null)", () => {
-    const server = mkServer({ last_seen_at: null });
+  it("does NOT flag a never-reported server still within the install grace", () => {
+    const server = mkServer({ last_seen_at: null, created_at: new Date(NOW - 5 * 60_000) }); // 5m old
     expect(findStaleServers([server], NOW)).toHaveLength(0);
+  });
+
+  it("flags a never-reported server past the install grace (Grok H-D4a ghost tile)", () => {
+    const server = mkServer({ last_seen_at: null, created_at: new Date(NOW - 30 * 60_000) }); // 30m old
+    const [s] = findStaleServers([server], NOW);
+    expect(s).toBeDefined();
+    expect(s.neverReported).toBe(true);
+    expect(s.lastSeenMs).toBeNull();
+    expect(s.minutesSinceLastSeen).toBe(30);
+  });
+
+  it("marks a reported-then-quiet server as neverReported=false", () => {
+    const [s] = findStaleServers([mkServer()], NOW);
+    expect(s.neverReported).toBe(false);
   });
 
   it("ignores servers younger than the onboarding grace window", () => {

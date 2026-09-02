@@ -36,22 +36,49 @@ export function effectiveIntervalSeconds(server: WatchedServer): number {
 
 export interface StaleServer {
   server: WatchedServer;
-  lastSeenMs: number;
+  /** Epoch ms of the last snapshot, or null when the server has NEVER reported. */
+  lastSeenMs: number | null;
+  /** Minutes since the last snapshot, or (for a never-reported server) minutes
+   *  since it was enrolled. */
   minutesSinceLastSeen: number;
+  /** True when the server was enrolled but has never sent a single snapshot
+   *  (the agent probably failed to install/start) rather than having reported
+   *  and then gone quiet. Grok H-D4a: these used to stay 'active' with zero
+   *  alerts forever ("ghost tiles"). */
+  neverReported: boolean;
 }
 
 // Constants mirror the Crucible default collection interval (5 minutes).
 export const DEFAULT_INTERVAL_SECONDS = 300;
 // Servers younger than this never fire the alert, to absorb install/onboarding.
 export const MIN_SERVER_AGE_MS = 10 * 60 * 1000;
+// A server that has NEVER reported gets a longer grace than a reported-then-quiet
+// one: a first install (Node bootstrap, package fetch, first snapshot) can take a
+// few minutes, and we only want to flag a genuine install failure, not a slow
+// bootstrap. Grok H-D4a.
+export const NEVER_REPORTED_GRACE_MS = 20 * 60 * 1000;
 
 export function findStaleServers(servers: WatchedServer[], nowMs: number): StaleServer[] {
   const stale: StaleServer[] = [];
   for (const server of servers) {
-    // Never-reported servers: do not fire. Customer may still be installing.
-    if (!server.last_seen_at) continue;
-    // Onboarding grace period.
-    if (nowMs - server.created_at.getTime() < MIN_SERVER_AGE_MS) continue;
+    const ageMs = nowMs - server.created_at.getTime();
+
+    // Never-reported servers: previously skipped entirely, which left a failed
+    // install as a permanently green "active" tile with no alert. Fire a
+    // distinct never-reported signal once past a generous install grace.
+    if (!server.last_seen_at) {
+      if (ageMs < NEVER_REPORTED_GRACE_MS) continue;
+      stale.push({
+        server,
+        lastSeenMs: null,
+        minutesSinceLastSeen: Math.floor(ageMs / 60_000),
+        neverReported: true,
+      });
+      continue;
+    }
+
+    // Onboarding grace period for reported-then-quiet servers.
+    if (ageMs < MIN_SERVER_AGE_MS) continue;
 
     const lastSeenMs = server.last_seen_at.getTime();
     const thresholdMs = 2 * effectiveIntervalSeconds(server) * 1000;
@@ -62,6 +89,7 @@ export function findStaleServers(servers: WatchedServer[], nowMs: number): Stale
       server,
       lastSeenMs,
       minutesSinceLastSeen: Math.floor(sinceLast / 60_000),
+      neverReported: false,
     });
   }
   return stale;
@@ -88,6 +116,33 @@ export function buildUnreachableAlertTitle(minutes: number): string {
 export function buildUnreachableAlertMessage(server: WatchedServer, lastSeenMs: number): string {
   const lastSeenIso = new Date(lastSeenMs).toISOString();
   return `Last snapshot received at ${lastSeenIso}. The server may be down, rebooting, or Crucible may have stopped.`;
+}
+
+// Never-reported ("ghost tile") variant. Grok H-D4a: an enrolled server whose
+// agent never installed/started used to show as a permanently green tile with no
+// alert. These builders drive a server_unreachable alert with install-focused
+// copy so the failure is visible and actionable.
+export function buildNeverReportedAlertTitle(minutes: number): string {
+  return `Server has never reported (enrolled ${minutes} minutes ago)`;
+}
+
+export function buildNeverReportedAlertMessage(_server: WatchedServer): string {
+  return "This server was enrolled but has never sent a snapshot. The Crucible agent most likely failed to install or start (an install.sh error, Node/glibc too old for the agent, a restrictive umask, or a rejected collector key). It will not appear healthy until the agent runs.";
+}
+
+export function buildNeverReportedFixCommands(server: WatchedServer): string[] {
+  const target = server.ip || server.hostname || "<server>";
+  return [
+    "# Enrolled but never checked in: the agent most likely failed to install",
+    "# or start. On the host, inspect the collector:",
+    `ssh ${target} sudo systemctl status glassmkr-crucible`,
+    `ssh ${target} sudo journalctl -u glassmkr-crucible -n 50 --no-pager`,
+    "",
+    "# Common causes: install.sh failed (Node/glibc too old, or no supported",
+    "# package manager), a restrictive umask left the package unreadable, or the",
+    "# collector key was rejected. Re-run the installer with the collector key:",
+    "# curl -sf https://glassmkr.com/install.sh | sudo bash -s -- --api-key <key>",
+  ];
 }
 
 // DB wiring. Called every two minutes by the scheduler. Silent on no-op cycles.
@@ -121,17 +176,24 @@ export async function runWatchdogCycle(nowMs: number = Date.now()): Promise<void
   const stale = findStaleServers(watched, nowMs);
   if (stale.length === 0) return;
 
-  for (const { server, lastSeenMs, minutesSinceLastSeen } of stale) {
-    const title = buildUnreachableAlertTitle(minutesSinceLastSeen);
-    const message = buildUnreachableAlertMessage(server, lastSeenMs);
+  for (const { server, lastSeenMs, minutesSinceLastSeen, neverReported } of stale) {
+    const title = neverReported
+      ? buildNeverReportedAlertTitle(minutesSinceLastSeen)
+      : buildUnreachableAlertTitle(minutesSinceLastSeen);
+    const message = neverReported
+      ? buildNeverReportedAlertMessage(server)
+      : buildUnreachableAlertMessage(server, lastSeenMs!);
     const evidence = {
       server_id: server.id,
-      last_seen_iso: new Date(lastSeenMs).toISOString(),
+      never_reported: neverReported,
+      last_seen_iso: lastSeenMs != null ? new Date(lastSeenMs).toISOString() : null,
       minutes_since_last_seen: minutesSinceLastSeen,
       interval_seconds: effectiveIntervalSeconds(server),
-      fix_commands: buildFixCommands(server),
+      fix_commands: neverReported ? buildNeverReportedFixCommands(server) : buildFixCommands(server),
     };
-    const recommendation = "Reachable servers with the collector stopped can be restarted with `sudo systemctl restart glassmkr-crucible`. Unreachable servers require hosting-panel intervention (IPMI, KVM, or remote reboot). This alert auto-resolves when the server sends its next snapshot.";
+    const recommendation = neverReported
+      ? "This node was enrolled but the agent has never checked in, so the install most likely failed. Inspect the collector on the host (`systemctl status glassmkr-crucible`, `journalctl -u glassmkr-crucible`) and re-run the installer if needed. This alert auto-resolves once the agent sends its first snapshot."
+      : "Reachable servers with the collector stopped can be restarted with `sudo systemctl restart glassmkr-crucible`. Unreachable servers require hosting-panel intervention (IPMI, KVM, or remote reboot). This alert auto-resolves when the server sends its next snapshot.";
 
     const upsert = await query(
       `INSERT INTO active_alerts (server_id, alert_type, severity, title, message, evidence, recommendation, first_seen, last_seen)
@@ -146,7 +208,11 @@ export async function runWatchdogCycle(nowMs: number = Date.now()): Promise<void
 
     // Only log once per new fire; updated rows on every 2-minute cycle would be noise.
     if (isNew) {
-      console.log(`[watchdog] Server unreachable: ${server.name} (${server.id}), last seen ${minutesSinceLastSeen}m ago`);
+      console.log(
+        neverReported
+          ? `[watchdog] Server never reported: ${server.name} (${server.id}), enrolled ${minutesSinceLastSeen}m ago`
+          : `[watchdog] Server unreachable: ${server.name} (${server.id}), last seen ${minutesSinceLastSeen}m ago`,
+      );
     }
 
     // Append to alert_history on every cycle where the alert is first fired.
