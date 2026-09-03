@@ -469,6 +469,15 @@ describe("raid_degraded", () => {
     // The re-add still uses the full partition.
     expect(a.recommendation).toContain("--re-add /dev/nvme1n1p2");
   });
+
+  it("derives the SMART parent disk for an mmcblk member (Codex round-2 #6)", () => {
+    const s = healthySnapshot();
+    s.raid = [{ device: "md0", level: "raid1", status: "degraded", degraded: true, disks: ["mmcblk0p1", "mmcblk1p1"], failed_disks: ["mmcblk1p1"] }];
+    const [a] = alertsOf("raid_degraded", s);
+    expect(a.recommendation).toContain("smartctl -H /dev/mmcblk1");
+    expect(a.recommendation).not.toContain("smartctl -H /dev/mmcblk1p");
+    expect(a.recommendation).toContain("--re-add /dev/mmcblk1p1");
+  });
 });
 
 describe("disk_latency_high", () => {

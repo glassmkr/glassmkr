@@ -221,6 +221,34 @@ describe("raid_degraded hardware RAID activation", () => {
     expect(fired.length).toBe(1);
     expect(fired[0].severity).toBe("critical");
   });
+
+  it("survives a null ELEMENT in degraded_drives and still fires (Codex round-2 #2)", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        { vendor: "lsi", controller_id: "0", state: "Needs Attention", degraded_disks: 1, raw_summary: null, degraded_drives: [null] as any },
+      ],
+    };
+    const fired = alertsByType(s, "raid_degraded");
+    expect(fired.length).toBe(1);
+    expect(fired[0].severity).toBe("critical");
+  });
+
+  it("does not build a /c? command for a non-numeric controller_id (Codex round-2 #7)", () => {
+    const s = healthySnapshot();
+    s.hardware_raid = {
+      controllers: [
+        {
+          vendor: "lsi", controller_id: "?", state: "Needs Attention", degraded_disks: 1, raw_summary: null,
+          virtual_drives: [{ id: "?/0", raid_level: "RAID1", state: "Dgrd", degraded: true }],
+          degraded_drives: [{ enclosure_slot: "8:3", device_id: 3, state: "Offln", drive_group: 0, model: "WD", size: "1 TB", media: "HDD", interface: "SATA" }],
+        },
+      ],
+    };
+    const [a] = alertsByType(s, "raid_degraded");
+    expect(a.recommendation).not.toContain("/c?");
+    expect(a.recommendation).toContain("/call show all");
+  });
 });
 
 // ============================================================================
@@ -334,6 +362,23 @@ describe("zfs_pool_unhealthy severity matrix", () => {
     expect(a.severity).toBe("critical");
     expect((a.evidence.severity_reason as string)).not.toContain("unknown redundancy class");
     expect((a.evidence.severity_reason as string)).toContain("mirror");
+  });
+
+  it("skips a null vdev element and still fires for the valid one (Codex round-2 #3)", () => {
+    const s = healthySnapshot();
+    // A malformed `vdevs: [null, ...]` must not throw in classifyZfsVdev and let
+    // the per-rule catch suppress the whole zfs_pool_unhealthy alert.
+    s.zfs = {
+      pools: [
+        poolBase({
+          state: "DEGRADED",
+          vdevs: [null as any, { name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way" }],
+        }),
+      ],
+    };
+    const fired = alertsByType(s, "zfs_pool_unhealthy");
+    expect(fired.length).toBeGreaterThanOrEqual(1);
+    expect(fired[0].severity).toBe("critical");
   });
 
   it("FIX recommends `zpool online` for an offline device, not replace-first (H-D4g)", () => {

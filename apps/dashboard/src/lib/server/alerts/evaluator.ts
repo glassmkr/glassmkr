@@ -1674,8 +1674,12 @@ const rules: AlertRule[] = [
           // partitions are `nvme0n1p2` (disk `nvme0n1`); SATA/SAS are `sdb2`
           // (disk `sdb`). Stripping a bare trailing digit-run turned nvme0n1p2
           // into the nonexistent nvme0n1p (Codex round-1 #6).
+          // A `p<N>` partition suffix (nvme0n1p2, mmcblk0p1, loop0p1: any base
+          // that ends in a digit uses `p` as the separator) strips the `p<N>`;
+          // a conventional sdX2 strips the trailing digits (Codex round-2 #6:
+          // mmcblk0p1 was becoming the nonexistent /dev/mmcblk0p).
           const memberDisk = firstMember
-            ? (/nvme\d/.test(firstMember) ? firstMember.replace(/p\d+$/, "") : firstMember.replace(/\d+$/, ""))
+            ? (/\d+p\d+$/.test(firstMember) ? firstMember.replace(/p\d+$/, "") : firstMember.replace(/\d+$/, ""))
             : "<member>";
           results.push({
             type: "raid_degraded",
@@ -1718,12 +1722,18 @@ const rules: AlertRule[] = [
                 : ctrl.vendor === "hpe" ? "ssacli" : "arcconf";
           // Inspect the SAME controller the alert is about (Codex round-1 #7:
           // the cli previously hardcoded /c0 while the set-online command used
-          // the real controller id).
+          // the real controller id). controller_id is usually a bare integer,
+          // but an older/degenerate payload can send "?" (an old collector
+          // default), which would build an unusable `/c?` command (Codex
+          // round-2 #7). Use it only when numeric; else fall back to `/call`
+          // (all controllers) and drop the per-slot set-online command.
+          const ctrlNumeric = /^\d+$/.test(ctrl.controller_id);
+          const ctrlRef = ctrlNumeric ? `/c${ctrl.controller_id}` : "/call";
           const cli =
             ctrl.vendor === "dell"
-              ? `perccli /c${ctrl.controller_id} show all`
+              ? `perccli ${ctrlRef} show all`
               : ctrl.vendor === "lsi"
-                ? `storcli /c${ctrl.controller_id} show all`
+                ? `storcli ${ctrlRef} show all`
                 : ctrl.vendor === "hpe"
                   ? "ssacli ctrl all show config detail"
                   : "arcconf getconfig 1";
@@ -1737,8 +1747,14 @@ const rules: AlertRule[] = [
           // guards a malformed field (Codex round-1 #3: a passthrough'd
           // `degraded_drives: {}` would otherwise throw in .map() and the
           // per-rule catch would suppress the whole RAID alert).
-          const degradedDrives = Array.isArray(ctrl.degraded_drives) ? ctrl.degraded_drives : [];
-          const degradedVds = (Array.isArray(ctrl.virtual_drives) ? ctrl.virtual_drives : []).filter((v) => v.degraded);
+          // Guard the ELEMENTS too, not just the array (Codex round-2 #2): a
+          // passthrough'd `degraded_drives: [null]` is an array, so Array.isArray
+          // passed, but `.map(d => d.enclosure_slot)` then threw on the null and
+          // the per-rule catch swallowed the whole CRITICAL alert.
+          const degradedDrives = (Array.isArray(ctrl.degraded_drives) ? ctrl.degraded_drives : [])
+            .filter((d) => d != null && typeof d === "object");
+          const degradedVds = (Array.isArray(ctrl.virtual_drives) ? ctrl.virtual_drives : [])
+            .filter((v) => v != null && typeof v === "object" && v.degraded);
           const driveList = degradedDrives
             .map((d) => `${d.enclosure_slot}${d.model ? ` (${d.model})` : ""} [${d.state}]`)
             .join(", ");
@@ -1769,9 +1785,9 @@ const rules: AlertRule[] = [
               const d = offlineDrives[0];
               const [eid, slt] = d.enclosure_slot.split(":");
               const setOnline =
-                eid && slt
+                ctrlNumeric && eid && slt
                   ? `${tool} /c${ctrl.controller_id}/e${eid}/s${slt} set online`
-                  : `${tool} /c${ctrl.controller_id} show all`;
+                  : `${tool} ${ctrlRef} show all`;
               parts.push(`A drive reporting "Offln" is offline but may not have failed. First try bringing it back online: \`${setOnline}\`. If the array returns to Optimal with no rebuild, it was a transient/administrative offline. Only replace the drive if that fails or \`smartctl -a\` shows it failing.`);
             }
             if (hardFailed.length > 0) {
@@ -4602,9 +4618,14 @@ const rules: AlertRule[] = [
           continue;
         }
 
-        // Per-vdev classification (Crucible v0.10.4+ shape).
-        if (pool.vdevs && pool.vdevs.length > 0) {
+        // Per-vdev classification (Crucible v0.10.4+ shape). vdevs is a
+        // passthrough'd optional field, so a malformed `vdevs: [null]` element
+        // would throw in classifyZfsVdev and the per-rule catch would suppress
+        // the entire zfs_pool_unhealthy alert (Codex round-2 #3). Skip non-object
+        // elements.
+        if (Array.isArray(pool.vdevs) && pool.vdevs.length > 0) {
           for (const vdev of pool.vdevs) {
+            if (vdev == null || typeof vdev !== "object") continue;
             const verdict = classifyZfsVdev(vdev);
             if (!verdict) continue;
             results.push(buildZfsPoolEmission(pool, {
