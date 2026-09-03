@@ -8,4 +8,4 @@
 // always be a real, installable release. gen-rules.mjs keeps its own mirror of
 // this value for the build-time prebuild (it runs outside the module graph);
 // bump both in lockstep.
-export const FALLBACK_CRUCIBLE_VERSION = "1.2.1";
+export const FALLBACK_CRUCIBLE_VERSION = "1.2.2";

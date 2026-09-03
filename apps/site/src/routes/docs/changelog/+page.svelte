@@ -75,11 +75,22 @@
       <p class="docs-subtitle">Behavior changes, operational improvements, and notable fixes for Glassmkr and the Crucible agent. Most recent at top.</p>
     </header>
 
+    <section class="release" id="2026-09-03">
+      <h2><a href="#2026-09-03" class="anchor-link">#</a>2026-09-03</h2>
+
+      <h3>Crucible v1.2.2</h3>
+      <p><strong>Current.</strong> The agent is at v1.2.2 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Collector and setup fixes. A degraded hardware RAID array (LSI/Broadcom MegaRAID) now names the specific drive at fault by enclosure:slot and model, and the affected virtual drive, instead of only reporting that the controller needs attention; the guidance distinguishes a drive that is merely offline (which usually returns with no rebuild) from one that has genuinely failed, so an operator is no longer sent to replace a healthy disk. ZFS now reports a mirror's width (2-way, 3-way, or wider) so a degraded 2-way mirror is rated more urgently than a wider one, and no longer mistakes a resilver for a scrub (an offline/online recovery no longer clears the never-scrubbed warning). And re-pointing an installed agent to a different collector key with <code>init --api-key</code> now refuses without <code>--force</code> instead of silently keeping the old key, while a push rejected with HTTP 401/403 explains that the key is not accepted and how to re-point. Upgrade the agent to receive them; no new privileged wrapper action, so no wrapper refresh is required.</p>
+
+      <h3>Upgrade</h3>
+      <pre><code>sudo npm install -g @glassmkr/crucible@1.2.2
+sudo systemctl restart glassmkr-crucible</code></pre>
+    </section>
+
     <section class="release" id="2026-09-01">
       <h2><a href="#2026-09-01" class="anchor-link">#</a>2026-09-01</h2>
 
       <h3>Crucible v1.2.1</h3>
-      <p><strong>Current.</strong> The agent is at v1.2.1 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Three collector fixes. A degraded software-mirror alert now identifies the failed member by its RAID role, so the alert, the drive serial, and the replace-this-drive guidance all name the drive that actually failed; previously, when the kernel listed array members out of role order, the alert could point an operator at the healthy disk. Failed <code>mount</code> and <code>automount</code> units are now reported, not only <code>service</code> units, so a failed boot-critical mount (for example the EFI system partition, after which the bootloader can no longer be updated) no longer leaves a host looking healthy. And the agent now reports IPMI System Event Log fullness (percent used and overflow), so a full or overflowed SEL that is silently dropping new hardware events is surfaced instead of going unnoticed. These are collector fixes; upgrade the agent to receive them. On hosts that use the sudo wrapper, refresh the wrapper after upgrading as usual. No config, CLI, or dashboard-contract changes.</p>
+      <p><strong>Superseded by v1.2.2.</strong> The agent was at v1.2.1 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Three collector fixes. A degraded software-mirror alert now identifies the failed member by its RAID role, so the alert, the drive serial, and the replace-this-drive guidance all name the drive that actually failed; previously, when the kernel listed array members out of role order, the alert could point an operator at the healthy disk. Failed <code>mount</code> and <code>automount</code> units are now reported, not only <code>service</code> units, so a failed boot-critical mount (for example the EFI system partition, after which the bootloader can no longer be updated) no longer leaves a host looking healthy. And the agent now reports IPMI System Event Log fullness (percent used and overflow), so a full or overflowed SEL that is silently dropping new hardware events is surfaced instead of going unnoticed. These are collector fixes; upgrade the agent to receive them. On hosts that use the sudo wrapper, refresh the wrapper after upgrading as usual. No config, CLI, or dashboard-contract changes.</p>
 
       <h3>Upgrade</h3>
       <pre><code>sudo npm install -g @glassmkr/crucible@1.2.1
