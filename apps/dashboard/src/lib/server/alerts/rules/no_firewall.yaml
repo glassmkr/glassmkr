@@ -337,11 +337,17 @@ fix:
     research_basis: operator-pattern
     source_note: |
       Desk-researched from ufw(8), firewalld.conf(5), nft(8),
-      iptables(8). The four backends + their evidence.source
-      values mirror Crucible's firewall detection in
-      apps/dashboard/src/lib/server/snapshot/security.ts (the
-      evaluator reports whichever backend was installed but
-      inactive). Vendor-specific variants are desk-research; the
+      iptables(8), pve-firewall(8). The evidence.source values
+      mirror Crucible's firewall detection, which lives in the
+      crucible repo at src/collect/security.ts (checkFirewall) and
+      walks five backends: ufw, firewalld, pve-firewall, nftables,
+      iptables. An ACTIVE managed backend is authoritative; an
+      installed-but-inactive one falls through to the raw nftables
+      and iptables probes (crucible #144, 2026-09-04), and when
+      nothing protects, source is the FIRST inactive backend (so the
+      ufw / firewalld variants above still match the manager the
+      operator should enable) and details lists every backend that
+      answered. Vendor-specific variants are desk-research; the
       validation fleet has not had its firewalls deliberately
       disabled for re-testing per validation-fleet.md (disabling
       a firewall on a live box is the alert trigger but also a

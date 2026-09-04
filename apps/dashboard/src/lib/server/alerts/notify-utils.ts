@@ -77,3 +77,19 @@ export function sortByPriority<T extends { alert_type: string; severity?: string
     (a, b) => getPriority(a.alert_type, a.severity) - getPriority(b.alert_type, b.severity),
   );
 }
+
+/**
+ * Clamp host-derived text to what a notification sink accepts (Slack header
+ * 150 / section 3000, Telegram message 4096; Discord clamps inline). The JSON
+ * boundary only rejects strings over 64 KiB, so a long `firewall.details` or
+ * unit name reached the sink intact, Slack refused the block, and the
+ * dispatcher still marked the alert notification_sent (Codex 2026-09-04 #2).
+ * The cut also drops a trailing partial HTML entity so an escaped `&amp;` split
+ * mid-way cannot break Telegram's HTML parse mode.
+ */
+export function clampForSink(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const marker = "...";
+  const cut = text.slice(0, Math.max(0, max - marker.length)).replace(/&[^&;\s]*$/, "");
+  return cut + marker;
+}
