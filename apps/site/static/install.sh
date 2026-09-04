@@ -87,22 +87,42 @@ warn_if_shadowed() {
   # EVERY install (2026-09-04, Ubuntu 24.04 + NodeSource, both sides 1.2.2).
   # `npm bin -g` is gone since npm 9 and `dirname "$(npm root -g)"` is
   # {prefix}/lib, not the bin dir; `npm prefix -g` is what both agree on.
-  # scripts/test-install-shadow-check.sh holds the fixtures.
-  local resolved npm_prefix installed_ver path_ver shadowed=""
+  #
+  # The two tests get different remediation. Only a PROVEN path mismatch may
+  # say "remove that file": on a version-only mismatch PATH already resolves to
+  # npm's own bin link, and telling the operator to delete it recreates the
+  # incident above (review of #50, finding #2). When readlink -f itself is
+  # unavailable each side falls back to its raw path rather than to "": two
+  # empty strings compared equal and hid a real same-version shadow (finding
+  # #3). scripts/test-install-shadow-check.sh holds the fixtures.
+  local resolved npm_prefix npm_bin resolved_real npm_bin_real installed_ver path_ver
+  local path_differs="" version_differs=""
   resolved="$(command -v glassmkr-crucible 2>/dev/null || true)"
   [ -n "$resolved" ] || return 0
   npm_prefix="$(npm prefix -g 2>/dev/null || true)"
-  if [ -n "$npm_prefix" ] && [ "$(readlink -f "$resolved" 2>/dev/null || true)" != "$(readlink -f "$npm_prefix/bin/glassmkr-crucible" 2>/dev/null || true)" ]; then
-    shadowed=1
+  if [ -n "$npm_prefix" ]; then
+    npm_bin="$npm_prefix/bin/glassmkr-crucible"
+    resolved_real="$(readlink -f "$resolved" 2>/dev/null || true)"
+    npm_bin_real="$(readlink -f "$npm_bin" 2>/dev/null || true)"
+    [ -n "$resolved_real" ] || resolved_real="$resolved"
+    [ -n "$npm_bin_real" ] || npm_bin_real="$npm_bin"
+    [ "$resolved_real" = "$npm_bin_real" ] || path_differs=1
   fi
   installed_ver="$(node -e "console.log(require(\"$1/@glassmkr/crucible/package.json\").version)" 2>/dev/null || true)"
   path_ver="$(glassmkr-crucible --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' | head -n1 || true)"
   if [ -n "$installed_ver" ] && [ -n "$path_ver" ] && [ "$installed_ver" != "$path_ver" ]; then
-    shadowed=1
+    version_differs=1
   fi
-  if [ -n "$shadowed" ]; then
-    echo "WARNING: 'glassmkr-crucible' on PATH is ${path_ver:-an unknown version} ($resolved) but npm just installed ${installed_ver:-@glassmkr/crucible} at $npm_prefix/bin/glassmkr-crucible."
+  if [ -n "$path_differs" ]; then
+    echo "WARNING: 'glassmkr-crucible' on PATH is $resolved (${path_ver:-unknown version}), not npm's own $npm_bin (${installed_ver:-unknown version})."
     echo "         An older standalone binary is shadowing the npm install. Remove $resolved so the new agent version is used, then re-run this installer."
+  elif [ -n "$version_differs" ]; then
+    echo "WARNING: 'glassmkr-crucible' on PATH ($resolved) reports $path_ver but npm just installed $installed_ver."
+    if [ -n "$npm_prefix" ]; then
+      echo "         That path is npm's own bin link, so do not delete it. Check 'npm ls -g @glassmkr/crucible' and re-run 'npm install -g @glassmkr/crucible', then re-run this installer."
+    else
+      echo "         'npm prefix -g' failed, so this installer cannot tell whether that file is npm's; do not delete it. Check 'npm ls -g @glassmkr/crucible' and re-run 'npm install -g @glassmkr/crucible', then re-run this installer."
+    fi
   fi
 }
 

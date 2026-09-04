@@ -13,35 +13,110 @@
 # same-version standalone binary is only caught by the path compare, and it is
 # still a shadow because init writes the unit against whatever PATH resolves.
 #
+# The review of #50 (2026-09-04) added cases 6 to 8 and the loader self-tests,
+# each written first and watched to fail. Case 6 is the only case that
+# exercises the version compare on its own: with that compare deleted outright,
+# the first six cases still passed. It also pins that a version-only mismatch
+# never tells the operator to remove npm's own bin link, which is the incident
+# class this file exists for. Cases 7 and 8 pin the behaviour when readlink -f
+# is unavailable: both sides came back empty, compared equal, and a real
+# same-version shadow went quiet.
+#
 # Each case builds a real prefix tree in a temp dir with npm's relative bin
 # symlink, a fake `npm` that answers root/prefix the way npm >= 9 does (no `npm
 # bin`), and a fake agent that prints exactly what src/cli.ts prints. Real
 # `node` reads the fixture's package.json, as the installer does.
 #
 # Usage: ./scripts/test-install-shadow-check.sh [path-to-install.sh]
+# Exit 0: every case passed. 1: a case failed. 2: the fixture could not run (a
+# tool it depends on is missing, or the installer could not be loaded), which
+# is INCOMPLETE and never a pass.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_SH="${1:-$HERE/../apps/site/static/install.sh}"
 
+# Preconditions. The check reads package.json with node and canonicalises with
+# readlink -f; if node were missing, the version compare would be skipped and
+# every case would pass on the path compare alone, for the wrong reason.
+for tool in node readlink sed grep awk; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "[test:install-shadow] INCOMPLETE: '$tool' is not on PATH" >&2
+    exit 2
+  fi
+done
+if ! readlink -f / >/dev/null 2>&1; then
+  echo "[test:install-shadow] INCOMPLETE: readlink -f is unsupported here (macOS before 12.3?)" >&2
+  exit 2
+fi
+
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# The installer's last line is `main "$@"`, the curl|bash truncation guard.
-# Source everything but that line; refuse to run if the line is not exactly
-# where and what we expect, because then main() could run inside the test.
-# Via a temp file, not `source <(...)`: bash 3.2 (macOS) sources an empty
-# body from a process substitution and the test then fails on every case.
-if [ "$(grep -c '^main "\$@"$' "$INSTALL_SH")" != 1 ]; then
-  echo "expected exactly one 'main \"\$@\"' line in $INSTALL_SH" >&2
-  exit 1
-fi
-sed '/^main "\$@"$/d' "$INSTALL_SH" > "$TMP/install-no-main.sh"
-# shellcheck disable=SC1090
-source "$TMP/install-no-main.sh"
+# load_installer <path>: define the installer's functions in the current shell
+# with main() never existing. Everything from the `main() {` definition to the
+# end of the file is dropped before sourcing, so no spelling of an invocation,
+# in any position, can reach a main(): one placed above the definition is a
+# command not found, one below it is gone with the tail. The first version of
+# this loader stripped only the exact final `main "$@"` line, and review showed
+# a `main "${@}"` placed elsewhere ran the installer while the fixture stayed
+# green (Codex 2026-09-04 #1). Refuses unless the definition appears exactly
+# once, sourcing prints nothing (the installer's top level is set, assignments
+# and definitions only), warn_if_shadowed is defined, and main is not.
+# Sourced from a temp file, not `source <(...)`: bash 3.2 (macOS) sources an
+# empty body from a process substitution and every case then fails.
+load_installer() {
+  local src="$1"
+  if [ "$(grep -c '^main() {$' "$src")" != 1 ]; then
+    echo "refusing to load $src: expected exactly one 'main() {' line" >&2
+    return 1
+  fi
+  sed '/^main() {$/,$d' "$src" > "$TMP/install-functions.sh"
+  # shellcheck disable=SC1090,SC1091
+  source "$TMP/install-functions.sh" > "$TMP/source.out" 2>&1 || true
+  if [ -s "$TMP/source.out" ]; then
+    echo "refusing to load $src: sourcing its definitions produced output (did something execute?)" >&2
+    sed 's/^/  | /' "$TMP/source.out" >&2
+    return 1
+  fi
+  if ! declare -F warn_if_shadowed >/dev/null; then
+    echo "refusing to load $src: warn_if_shadowed is not defined" >&2
+    return 1
+  fi
+  if declare -F main >/dev/null; then
+    echo "refusing to load $src: main() got defined" >&2
+    return 1
+  fi
+}
 
 pass=0
 fail=0
+
+# --- loader self-tests: the shapes that could run main() must be refused -----
+# Each runs in a subshell so a refused load cannot leave functions behind.
+awk '/^main\(\) \{$/{print "main \"${@}\""} {print}' "$INSTALL_SH" > "$TMP/stray-above.sh"
+sed 's/^main() {$/run() {/' "$INSTALL_SH" > "$TMP/renamed.sh"
+{ cat "$INSTALL_SH"; echo 'main "${@}"'; } > "$TMP/stray-below.sh"
+if (load_installer "$TMP/stray-above.sh" >/dev/null 2>&1); then
+  fail=$((fail + 1)); echo "FAIL: G1. loader accepted a main invocation placed above the definition"
+else
+  pass=$((pass + 1))
+fi
+if (load_installer "$TMP/renamed.sh" >/dev/null 2>&1); then
+  fail=$((fail + 1)); echo "FAIL: G2. loader accepted an installer whose main() definition moved or was renamed"
+else
+  pass=$((pass + 1))
+fi
+if (load_installer "$TMP/stray-below.sh" >/dev/null 2>&1 && ! declare -F main >/dev/null); then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1)); echo "FAIL: G3. a second invocation after the definition must be dropped with the tail, leaving no main()"
+fi
+
+if ! load_installer "$INSTALL_SH"; then
+  echo "[test:install-shadow] INCOMPLETE: could not load $INSTALL_SH" >&2
+  exit 2
+fi
 
 # mk_agent <path> <version>: a stand-in for dist/preflight.js or a compiled
 # standalone binary. Same --version output as src/cli.ts in the agent repo.
@@ -106,6 +181,21 @@ check() {
   fi
 }
 
+# assert_out <yes|no> <needle> <desc>: the last check's output must (yes) or
+# must not (no) contain needle, matched as a fixed string.
+assert_out() {
+  local want="$1" needle="$2" desc="$3" has="no"
+  if printf '%s' "$LAST_OUT" | grep -qF -- "$needle"; then has="yes"; fi
+  if [ "$has" = "$want" ]; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    echo "FAIL: $desc"
+    if [ "$want" = yes ]; then echo "      missing: $needle"; else echo "      unexpected: $needle"; fi
+    printf '%s\n' "$LAST_OUT" | sed 's/^/      | /'
+  fi
+}
+
 # --- 1. KNOWN-BAD (2026-09-04): NodeSource layout, npm prefix /usr -----------
 # PATH resolves to /usr/bin/glassmkr-crucible, which IS npm's bin symlink, and
 # both sides are 1.2.2. Nothing is shadowed; the installer warned anyway.
@@ -120,17 +210,16 @@ check quiet "2. default layout (prefix /usr/local), same version, npm bin on PAT
   "$T/usr/local/bin" "$T/usr/local/lib/node_modules"
 
 # --- 3. the real shadow: an OLDER standalone binary earlier on PATH ----------
+# Both compares fail. The remediation is to remove the standalone file, and the
+# message must name it, never npm's own bin.
 T="$TMP/c3"; mk_prefix "$T/usr" 1.2.2
 mkdir -p "$T/usr/local/bin"; mk_agent "$T/usr/local/bin/glassmkr-crucible" 1.1.1
 check warn "3. older standalone binary ahead of the npm bin on PATH" \
   "$T/usr/local/bin:$T/usr/bin" "$T/usr/lib/node_modules"
-if printf '%s' "$LAST_OUT" | grep -q "$T/usr/local/bin/glassmkr-crucible"; then
-  pass=$((pass + 1))
-else
-  fail=$((fail + 1))
-  echo "FAIL: 3b. the warning must name the shadowing path"
-  printf '%s\n' "$LAST_OUT" | sed 's/^/      | /'
-fi
+assert_out yes "Remove $T/usr/local/bin/glassmkr-crucible" "3b. the warning tells the operator to remove the shadowing file"
+assert_out yes "1.1.1" "3c. the warning names the version on PATH"
+assert_out yes "1.2.2" "3d. the warning names the installed version"
+assert_out no "Remove $T/usr/bin/glassmkr-crucible" "3e. the warning never tells the operator to remove npm's own bin"
 
 # --- 4. a SAME-version standalone binary earlier on PATH ---------------------
 # Still a shadow: init will point the unit at it and the next npm upgrade is
@@ -139,6 +228,7 @@ T="$TMP/c4"; mk_prefix "$T/usr" 1.2.2
 mkdir -p "$T/usr/local/bin"; mk_agent "$T/usr/local/bin/glassmkr-crucible" 1.2.2
 check warn "4. same-version standalone binary ahead of the npm bin on PATH" \
   "$T/usr/local/bin:$T/usr/bin" "$T/usr/lib/node_modules"
+assert_out yes "Remove $T/usr/local/bin/glassmkr-crucible" "4b. the warning tells the operator to remove the shadowing file"
 
 # --- 5. merged-/usr: PATH reaches the npm bin as /bin/glassmkr-crucible ------
 # Debian and Ubuntu ship /bin -> usr/bin. When /bin precedes /usr/bin on PATH,
@@ -148,6 +238,37 @@ T="$TMP/c5"; mk_prefix "$T/usr" 1.2.2
 ln -s usr/bin "$T/bin"
 check quiet "5. merged-/usr alias of the npm bin (/bin -> usr/bin), same version" \
   "$T/bin:$T/usr/bin" "$T/usr/lib/node_modules"
+
+# --- 6. path EQUAL, version different: the version compare on its own --------
+# PATH resolves to npm's own bin link (the path compare passes), but what that
+# link runs reports 1.1.1 while the package.json npm just wrote says 1.2.2.
+# Real shapes: a bin link left pointing at an older tree after a prefix change,
+# or a hand-copied file at the bin path that npm did not replace. The version
+# compare must catch it, and because the path is proven to be npm's own, the
+# remediation must not be "remove it" (Codex 2026-09-04 #2, #4).
+T="$TMP/c6"; mk_prefix "$T/usr" 1.2.2
+mk_agent "$T/usr/lib/node_modules/@glassmkr/crucible/dist/preflight.js" 1.1.1
+check warn "6. npm's own bin reports 1.1.1 while the installed package.json says 1.2.2" \
+  "$T/usr/bin" "$T/usr/lib/node_modules"
+assert_out yes "1.1.1" "6b. the warning names the version on PATH"
+assert_out yes "1.2.2" "6c. the warning names the installed version"
+assert_out no "Remove " "6d. a version-only mismatch must not tell the operator to remove anything"
+
+# --- 7/8. readlink -f unavailable --------------------------------------------
+# The first fix ran `readlink -f ... || true` on both sides, so when readlink
+# itself failed both came back empty, compared equal, and case 4 went quiet: a
+# real same-version shadow pinned into the unit. Unknown must not read as safe;
+# the fallback is the raw path, which still separates 7 from 8 (Codex #3).
+mkdir -p "$TMP/noreadlink"
+printf '#!/bin/bash\nexit 1\n' > "$TMP/noreadlink/readlink"; chmod +x "$TMP/noreadlink/readlink"
+T="$TMP/c7"; mk_prefix "$T/usr" 1.2.2
+mkdir -p "$T/usr/local/bin"; mk_agent "$T/usr/local/bin/glassmkr-crucible" 1.2.2
+check warn "7. readlink -f unavailable: same-version standalone ahead of the npm bin still warns" \
+  "$TMP/noreadlink:$T/usr/local/bin:$T/usr/bin" "$T/usr/lib/node_modules"
+assert_out yes "Remove $T/usr/local/bin/glassmkr-crucible" "7b. the warning tells the operator to remove the shadowing file"
+T="$TMP/c8"; mk_prefix "$T/usr" 1.2.2
+check quiet "8. readlink -f unavailable: NodeSource layout, same version, still quiet" \
+  "$TMP/noreadlink:$T/usr/bin" "$T/usr/lib/node_modules"
 
 echo "[test:install-shadow] $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
