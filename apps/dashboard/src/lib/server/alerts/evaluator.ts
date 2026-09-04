@@ -3505,7 +3505,11 @@ const rules: AlertRule[] = [
         type: "no_firewall",
         severity: "warning",
         title: "No firewall active",
-        message: "No active firewall rules detected (checked UFW, firewalld, nftables, iptables). All ports are exposed unless protected by network-level ACLs.",
+        // The parenthetical is Crucible's own account of which backends it
+        // consulted on this host (1.2.3+: "checked ufw: inactive; iptables:
+        // ..."), not a fixed list: claiming "checked firewalld" on a host
+        // that never had it misled the remote-codex triage (2026-09-04).
+        message: `No active firewall rules detected (${snap.security.firewall.details}). All ports are exposed unless protected by network-level ACLs.`,
         evidence: { source: snap.security.firewall.source },
         // Allow SSH BEFORE enabling (lockout safety), and use non-interactive
         // forms: bare `ufw enable` prompts "Proceed (y|n)?" and hangs any
