@@ -72,6 +72,40 @@ node_repo_setup() {
   esac
 }
 
+warn_if_shadowed() {
+  # L4: if a standalone binary shadows the npm install on PATH, `glassmkr-crucible`
+  # would run the OLD code (old init -> old wrapper -> unit points at the old
+  # binary). Warn loudly so the operator removes it. $1 is `npm root -g`.
+  #
+  # Two tests, either one warns. Path: what PATH resolves must be npm's own
+  # global bin, {prefix}/bin/glassmkr-crucible, compared after readlink -f on
+  # both sides because npm's bin is a relative symlink into node_modules and a
+  # merged-/usr host can reach it as /bin/... Version: the semver the PATH
+  # binary reports must equal what npm just installed. The first version of
+  # this check (#29) compared the bare package.json version against the whole
+  # `--version` line, "glassmkr-crucible v1.2.2" minus its v, so it warned on
+  # EVERY install (2026-09-04, Ubuntu 24.04 + NodeSource, both sides 1.2.2).
+  # `npm bin -g` is gone since npm 9 and `dirname "$(npm root -g)"` is
+  # {prefix}/lib, not the bin dir; `npm prefix -g` is what both agree on.
+  # scripts/test-install-shadow-check.sh holds the fixtures.
+  local resolved npm_prefix installed_ver path_ver shadowed=""
+  resolved="$(command -v glassmkr-crucible 2>/dev/null || true)"
+  [ -n "$resolved" ] || return 0
+  npm_prefix="$(npm prefix -g 2>/dev/null || true)"
+  if [ -n "$npm_prefix" ] && [ "$(readlink -f "$resolved" 2>/dev/null || true)" != "$(readlink -f "$npm_prefix/bin/glassmkr-crucible" 2>/dev/null || true)" ]; then
+    shadowed=1
+  fi
+  installed_ver="$(node -e "console.log(require(\"$1/@glassmkr/crucible/package.json\").version)" 2>/dev/null || true)"
+  path_ver="$(glassmkr-crucible --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' | head -n1 || true)"
+  if [ -n "$installed_ver" ] && [ -n "$path_ver" ] && [ "$installed_ver" != "$path_ver" ]; then
+    shadowed=1
+  fi
+  if [ -n "$shadowed" ]; then
+    echo "WARNING: 'glassmkr-crucible' on PATH is ${path_ver:-an unknown version} ($resolved) but npm just installed ${installed_ver:-@glassmkr/crucible} at $npm_prefix/bin/glassmkr-crucible."
+    echo "         An older standalone binary is shadowing the npm install. Remove $resolved so the new agent version is used, then re-run this installer."
+  fi
+}
+
 main() {
   # L5: a restrictive inherited umask (077, common on CIS-hardened hosts) makes
   # `npm install -g` write the package 0700 root:root, after which the unprivileged
@@ -178,16 +212,7 @@ main() {
   hash -r 2>/dev/null || true
   GM_NODE_ROOT="$(npm root -g 2>/dev/null || true)"
   [ -n "$GM_NODE_ROOT" ] && chmod -R a+rX "$GM_NODE_ROOT/@glassmkr" 2>/dev/null || true
-  # L4: if a standalone binary shadows the npm install on PATH, `glassmkr-crucible`
-  # would run the OLD code (old init -> old wrapper -> unit points at the old
-  # binary). Warn loudly so the operator removes it.
-  GM_RESOLVED="$(command -v glassmkr-crucible 2>/dev/null || true)"
-  GM_INSTALLED_VER="$(node -e "console.log(require(\"$GM_NODE_ROOT/@glassmkr/crucible/package.json\").version)" 2>/dev/null || true)"
-  GM_PATH_VER="$(glassmkr-crucible --version 2>/dev/null | tr -d "v" || true)"
-  if [ -n "$GM_INSTALLED_VER" ] && [ -n "$GM_PATH_VER" ] && [ "$GM_INSTALLED_VER" != "$GM_PATH_VER" ]; then
-    echo "WARNING: 'glassmkr-crucible' on PATH is $GM_PATH_VER ($GM_RESOLVED) but npm just installed $GM_INSTALLED_VER."
-    echo "         An older standalone binary is shadowing the npm install. Remove $GM_RESOLVED so the new agent version is used, then re-run this installer."
-  fi
+  warn_if_shadowed "$GM_NODE_ROOT"
 
   # Hand off to init: validates the key, writes /etc/glassmkr/crucible.yaml
   # (and migrates a legacy /etc/glassmkr/collector.yaml in place when present

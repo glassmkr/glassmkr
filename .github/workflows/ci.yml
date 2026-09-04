@@ -62,6 +62,11 @@ jobs:
       # Pins the deploy-time nginx symlink prune. Not a lint, but it is the only
       # automated check on logic that runs `sudo rm` against prod nginx.
       - run: pnpm test:nginx-prune
+      # Fixtures for install.sh's post-install shadowing check. Its first
+      # version warned on every install because it compared a bare version
+      # against the whole `--version` line (2026-09-04, #29); nothing ran the
+      # installer's shell logic in CI, so nothing could have caught it.
+      - run: pnpm test:install-shadow
       - run: pnpm lint:bola
       - run: pnpm lint:bola:test
       - run: pnpm lint:tier-gating

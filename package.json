@@ -25,6 +25,7 @@
     "lint:rule-count:test": "node scripts/lint-rule-count.test.mjs",
     "validate:rules:test": "node scripts/validate-rule-ids.test.mjs",
     "test:nginx-prune": "bash scripts/test-nginx-prune.sh",
+    "test:install-shadow": "bash scripts/test-install-shadow-check.sh",
     "check:exhibits": "node scripts/check-exhibits.mjs",
     "check:rendered": "node scripts/check-rendered.mjs",
     "lint:comment-leak": "node scripts/lint-orphaned-comment-text.mjs",
