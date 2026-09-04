@@ -75,11 +75,22 @@
       <p class="docs-subtitle">Behavior changes, operational improvements, and notable fixes for Glassmkr and the Crucible agent. Most recent at top.</p>
     </header>
 
+    <section class="release" id="2026-09-04">
+      <h2><a href="#2026-09-04" class="anchor-link">#</a>2026-09-04</h2>
+
+      <h3>Crucible v1.2.3</h3>
+      <p><strong>Current.</strong> The agent is at v1.2.3 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Firewall detection fixes. A host whose ufw or firewalld package is installed but never enabled is no longer declared unprotected on that basis alone: the agent now also inspects the live nftables ruleset and then iptables, and a default-deny ruleset found there counts as an active firewall (reported as <code>source: nftables</code> or <code>source: iptables</code>). Previously a hand-written nftables firewall behind a never-enabled ufw package raised <code>no_firewall</code> on a locked-down host. Only a real default deny counts: an input chain is rated protective when its policy is drop or reject, or when it contains an unconditional drop or reject rule, so a rule that matches only some traffic (for example fail2ban's ban table, which rejects banned addresses and accepts everything else) is no longer mistaken for a firewall, and an otherwise open host with fail2ban installed is correctly reported as unprotected. The <code>no_firewall</code> alert now states which firewall backends were actually consulted on the host instead of a fixed list. Upgrade the agent to receive these; no new privileged wrapper action, so no wrapper refresh is required. A host that was previously rated protected only because of a conditional drop rule under an accept policy will now raise <code>no_firewall</code>; that alert is correct.</p>
+
+      <h3>Upgrade</h3>
+      <pre><code>sudo npm install -g @glassmkr/crucible@1.2.3
+sudo systemctl restart glassmkr-crucible</code></pre>
+    </section>
+
     <section class="release" id="2026-09-03">
       <h2><a href="#2026-09-03" class="anchor-link">#</a>2026-09-03</h2>
 
       <h3>Crucible v1.2.2</h3>
-      <p><strong>Current.</strong> The agent is at v1.2.2 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Collector and setup fixes. A degraded hardware RAID array (LSI/Broadcom MegaRAID) now names the specific drive at fault by enclosure:slot and model, and the affected virtual drive, instead of only reporting that the controller needs attention; the guidance distinguishes a drive that is merely offline (which usually returns with no rebuild) from one that has genuinely failed, so an operator is no longer sent to replace a healthy disk. ZFS now reports a mirror's width (2-way, 3-way, or wider) so a degraded 2-way mirror is rated more urgently than a wider one, and no longer mistakes a resilver for a scrub (an offline/online recovery no longer clears the never-scrubbed warning). And re-pointing an installed agent to a different collector key with <code>init --api-key</code> now refuses without <code>--force</code> instead of silently keeping the old key, while a push rejected with HTTP 401/403 explains that the key is not accepted and how to re-point. Upgrade the agent to receive them; no new privileged wrapper action, so no wrapper refresh is required.</p>
+      <p><strong>Superseded by v1.2.3.</strong> The agent was at v1.2.2 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Collector and setup fixes. A degraded hardware RAID array (LSI/Broadcom MegaRAID) now names the specific drive at fault by enclosure:slot and model, and the affected virtual drive, instead of only reporting that the controller needs attention; the guidance distinguishes a drive that is merely offline (which usually returns with no rebuild) from one that has genuinely failed, so an operator is no longer sent to replace a healthy disk. ZFS now reports a mirror's width (2-way, 3-way, or wider) so a degraded 2-way mirror is rated more urgently than a wider one, and no longer mistakes a resilver for a scrub (an offline/online recovery no longer clears the never-scrubbed warning). And re-pointing an installed agent to a different collector key with <code>init --api-key</code> now refuses without <code>--force</code> instead of silently keeping the old key, while a push rejected with HTTP 401/403 explains that the key is not accepted and how to re-point. Upgrade the agent to receive them; no new privileged wrapper action, so no wrapper refresh is required.</p>
 
       <h3>Upgrade</h3>
       <pre><code>sudo npm install -g @glassmkr/crucible@1.2.2

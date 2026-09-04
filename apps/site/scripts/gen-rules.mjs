@@ -66,7 +66,7 @@ const SITEMAP_END = "<!-- END: per-rule entries -->";
 // outside the module graph, so it can't import that value. Bump in
 // lockstep. (Note src/lib/server/version.ts only re-exports this as
 // FALLBACK_LATEST; editing there changes nothing.)
-const FALLBACK_CRUCIBLE_VERSION = "1.2.2";
+const FALLBACK_CRUCIBLE_VERSION = "1.2.3";
 const NPM_DIST_TAGS_URL =
   "https://registry.npmjs.org/-/package/@glassmkr/crucible/dist-tags";
 
