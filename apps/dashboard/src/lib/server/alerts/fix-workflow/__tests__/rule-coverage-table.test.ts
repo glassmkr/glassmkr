@@ -153,7 +153,8 @@ const COVERAGE_ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // false-positive fix added positive + negative alertsOf() cases, so the rule
   // now has full coverage.
   ["link_speed_mismatch", "TODO(b-f8): negative-only; backfill positive with snap.network[].speed_mbps below ethtool advertised"],
-  ["no_firewall", "TODO(b-f8): negative-only; backfill positive with snap.security.firewall.active = false"],
+  // no_firewall: removed 2026-09-04; the consulted-backends message test added
+  // a second positive alertsOf() case, so the rule now has full coverage.
   // oom_kills: positive + negative alertsOf coverage exists in
   // evaluator.test.ts (the R-P2-4 mem_pressure_high fixture's
   // oom-corroborator case made the existing positive explicit to the

@@ -1928,6 +1928,16 @@ describe("no_firewall", () => {
     s.security!.firewall = { active: false, source: "none", details: "no firewall" };
     expect(alertsOf("no_firewall", s)).toHaveLength(1);
   });
+  it("names the backends the collector actually consulted instead of a fixed list", () => {
+    // remote-codex (2026-09-04): the fixed "(checked UFW, firewalld, nftables,
+    // iptables)" wording claimed a firewalld check on a host that never had it.
+    // Crucible 1.2.3+ puts its own account of the consulted backends in details.
+    const s = healthySnapshot();
+    s.security!.firewall = { active: false, source: "ufw", details: "checked ufw: inactive; iptables: INPUT chain has no protective verdict" };
+    const [alert] = alertsOf("no_firewall", s);
+    expect(alert.message).toContain("checked ufw: inactive; iptables: INPUT chain has no protective verdict");
+    expect(alert.message).not.toContain("firewalld");
+  });
   it("no fire when firewall active", () => {
     expect(alertsOf("no_firewall")).toHaveLength(0);
   });
