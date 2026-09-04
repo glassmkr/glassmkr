@@ -10,7 +10,7 @@ import {
   formatDuration,
   expandChannelPriorities,
 } from "$lib/alerts/presentation";
-import { getFixCommands, topFixLines, sortByPriority } from "./notify-utils";
+import { getFixCommands, topFixLines, sortByPriority, clampForSink } from "./notify-utils";
 import { escapeHtml, escapeSlackMrkdwn, escapeDiscord } from "$lib/server/notify/escape";
 import { serverDetailUrl } from "$lib/utils/server-slug";
 import { sendEmail } from "./email";
@@ -186,6 +186,12 @@ export async function dispatchNotifications(
 
 // --- Telegram (HTML parse mode) ---
 
+// Bot API caps sendMessage text at 4096 characters. The message body gets a
+// 3000 budget and the title 256, leaving room for the fixed framing, the
+// recommendation and the top fix lines (Codex 2026-09-04 #2).
+const TELEGRAM_TITLE_MAX = 256;
+const TELEGRAM_BODY_MAX = 3000;
+
 function buildTelegramAlert(alert: Alert, server: Server, contextBlock?: string): string {
   const p = getPriority(alert.alert_type, alert.severity);
   const emoji = PRIORITY_EMOJI[p] || "\u{1F7E1}";
@@ -196,10 +202,10 @@ function buildTelegramAlert(alert: Alert, server: Server, contextBlock?: string)
   const commands = getFixCommands(alert.alert_type, alert.evidence, server);
   const dashboardUrl = serverDetailUrl(server);
 
-  let text = `${emoji} <b>${label}: ${escapeHtml(alert.title)}</b>\n`;
+  let text = `${emoji} <b>${label}: ${clampForSink(escapeHtml(alert.title), TELEGRAM_TITLE_MAX)}</b>\n`;
   text += `Server: ${serverLabel}\n`;
   text += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n`;
-  text += `${escapeHtml(alert.message)}\n`;
+  text += `${clampForSink(escapeHtml(alert.message), TELEGRAM_BODY_MAX)}\n`;
 
   // Phase 1 context enrichment: a text block between message and
   // recommendation for rules that have a CONTEXT_METRICS entry. See
@@ -291,6 +297,11 @@ async function sendTelegram(
 
 // --- Slack (Block Kit) ---
 
+// Block Kit limits: header plain_text 150, section mrkdwn text 3000. A block
+// over its limit fails the whole webhook post (Codex 2026-09-04 #2).
+const SLACK_HEADER_MAX = 150;
+const SLACK_SECTION_MAX = 3000;
+
 function buildSlackAlert(alert: Alert, server: Server): any {
   const p = getPriority(alert.alert_type, alert.severity);
   const emoji = PRIORITY_EMOJI[p] || ":yellow_circle:";
@@ -301,11 +312,11 @@ function buildSlackAlert(alert: Alert, server: Server): any {
   const blocks: any[] = [
     {
       type: "header",
-      text: { type: "plain_text", text: `${emoji} ${label}: ${alert.title}` },
+      text: { type: "plain_text", text: clampForSink(`${emoji} ${label}: ${alert.title}`, SLACK_HEADER_MAX) },
     },
     {
       type: "section",
-      text: { type: "mrkdwn", text: escapeSlackMrkdwn(alert.message) },
+      text: { type: "mrkdwn", text: clampForSink(escapeSlackMrkdwn(alert.message), SLACK_SECTION_MAX) },
     },
     {
       type: "section",
