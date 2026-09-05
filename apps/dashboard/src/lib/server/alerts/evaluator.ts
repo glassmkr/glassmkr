@@ -4686,11 +4686,16 @@ const rules: AlertRule[] = [
             recommendation: `Run "zpool status -v" to identify affected files. Consider replacing the failing disk. Run another scrub after replacement to verify data integrity.`,
           });
         } else if (pool.scrub_never_run) {
+          // Advisory, not a fault (Grok H-D4i): a never-scrubbed pool has no
+          // KNOWN corruption, and this fires the moment a pool is created (the
+          // collector cannot tell a brand-new pool from a long-neglected one),
+          // so it must be info (ack-able, non-paging), not a warning. The copy
+          // covers the just-created case rather than implying a problem.
           results.push({
             type: "zfs_scrub_errors",
-            severity: "warning",
+            severity: "info",
             title: `ZFS pool "${pool.name}" has never been scrubbed`,
-            message: `ZFS pool "${pool.name}" has never been scrubbed. Regular scrubs detect silent data corruption before it causes data loss.`,
+            message: `ZFS pool "${pool.name}" has never been scrubbed. If it was just created, run an initial scrub; otherwise a scrub is overdue. Regular scrubs detect silent data corruption before it causes data loss.`,
             evidence: { pool: pool.name, scrub_never_run: true },
             recommendation: `Start a scrub with "sudo zpool scrub ${pool.name}". Schedule monthly scrubs via cron.`,
           });
