@@ -42,18 +42,22 @@ fix:
     - distro_match: ["debian-*", "ubuntu-*"]
       vendor_match: ["*"]
       command: |
-        # Blacklist nouveau and rebuild the initramfs. Idempotent and
-        # non-disruptive: it changes nothing about the running system and
-        # only affects the NEXT boot, which is the point.
-        # Namespaced filename on purpose: a GPU host often already has a
-        # blacklist-nouveau.conf, and writing to that name would overwrite the
-        # operator's file, with the rollback then deleting it outright.
+        # If the nvidia kernel module is NOT loaded, the driver may not be
+        # installed at all; blacklisting nouveau without an installed driver
+        # would leave the GPU with no driver. In that case install the driver
+        # FIRST, then confirm it works:
+        #   sudo apt-get install -y nvidia-driver   # Debian metapackage
+        #   # on Ubuntu use the versioned package, for example nvidia-driver-535
+        #   nvidia-smi
+        # Then blacklist nouveau and rebuild the initramfs. Idempotent and
+        # non-disruptive: it changes nothing about the running system and only
+        # affects the NEXT boot, which is the point. Namespaced filename on
+        # purpose: a GPU host often already has a blacklist-nouveau.conf, and
+        # writing to that name would overwrite the operator's file, with the
+        # rollback then deleting it outright.
         echo "blacklist nouveau" | sudo tee /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
         echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
         sudo update-initramfs -u
-        # If the nvidia module is not currently loaded, install/repair the
-        # driver before the maintenance reboot (package name varies by setup):
-        #   sudo apt-get install --reinstall nvidia-driver-<version>
         # Then, in your maintenance window:
         #   sudo reboot
         # After reboot, confirm the GPU came back:
@@ -67,12 +71,16 @@ fix:
     - distro_match: ["rhel-*", "rocky-*", "almalinux-*", "centos-*", "fedora-*"]
       vendor_match: ["*"]
       command: |
-        # RHEL family: blacklist nouveau and rebuild the initramfs with dracut.
+        # RHEL family. If the nvidia module is NOT loaded, install the driver
+        # FIRST (blacklisting nouveau without an installed driver leaves the GPU
+        # with no driver), then confirm it works:
+        #   sudo dnf module install -y nvidia-driver:latest-dkms
+        #   nvidia-smi
+        # Then blacklist nouveau and rebuild the initramfs with dracut:
         echo "blacklist nouveau" | sudo tee /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
         echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/99-glassmkr-blacklist-nouveau.conf
         sudo dracut --force
-        # Repair the driver first if the nvidia module is not loaded, then
-        # reboot in a planned window:
+        # Then reboot in a planned window:
         #   sudo reboot
         nvidia-smi
         lsmod | grep -e nvidia -e nouveau

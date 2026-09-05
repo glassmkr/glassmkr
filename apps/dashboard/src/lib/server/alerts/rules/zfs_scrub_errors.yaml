@@ -16,7 +16,7 @@
 id: zfs_scrub_errors
 priority: P1
 title: ZFS scrub found errors
-summary: ZFS pool's most recent scrub detected checksum or repair errors, or the pool has not been scrubbed in over 30 days. Errors suggest failing disks or silent corruption; missing scrub is preventive-maintenance gap.
+summary: "ZFS pool's most recent scrub detected checksum or repair errors, or the pool has never been scrubbed, or has not been scrubbed in over 30 days. Errors suggest failing disks or silent corruption (warning); a never-run scrub is a preventive-maintenance gap reported at info (a just-created pool simply needs its first scrub), and an overdue scrub is a maintenance nudge."
 
 fix:
   quick_check:

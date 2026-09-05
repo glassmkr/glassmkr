@@ -2248,11 +2248,13 @@ describe("zfs_scrub_errors", () => {
     s.zfs!.pools[0].scrub_errors = 5;
     expect(alertsOf("zfs_scrub_errors", s)).toHaveLength(1);
   });
-  it("fires when never scrubbed", () => {
+  it("fires INFO (advisory, not a fault) when never scrubbed (Codex/H-D4i)", () => {
     const s = healthySnapshot();
     s.zfs!.pools[0].scrub_never_run = true;
     s.zfs!.pools[0].last_scrub_date = undefined;
-    expect(alertsOf("zfs_scrub_errors", s)).toHaveLength(1);
+    const [a] = alertsOf("zfs_scrub_errors", s);
+    expect(a.severity).toBe("info");
+    expect(a.message.toLowerCase()).toContain("just created");
   });
   it("fires when last scrub > 30 days ago", () => {
     const s = healthySnapshot();

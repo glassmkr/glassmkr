@@ -73,6 +73,15 @@ fix:
         # the problem and the unit re-fails. Fix the prerequisite first. The
         # alert correctly re-fires while the unit stays in the failed state.
 
+        # 4b. If <UNIT> is a MOUNT unit (name ends in .mount): a failed mount is
+        # NOT fixed by "restart". Fix the underlying cause (wrong device/UUID in
+        # /etc/fstab, a missing filesystem, an unplugged disk), then mount it.
+        # `systemctl show -p Where` gives the exact mount point:
+        WHERE=$(systemctl show <UNIT> -p Where --value)
+        grep -- " $WHERE " /etc/fstab   # confirm the fstab entry
+        sudo mount "$WHERE"
+        sudo systemctl reset-failed <UNIT>   # once it mounts cleanly
+
         # 5. If repeated failures: add automatic recovery
         sudo systemctl edit <UNIT>
         # Add to the drop-in:
