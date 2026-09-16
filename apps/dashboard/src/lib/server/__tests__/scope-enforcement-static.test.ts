@@ -60,6 +60,11 @@ const SCOPE_GATED_ENDPOINTS: GatedEndpoint[] = [
     expected_level: "admin",
     reason: "Audit log read is admin-only (entries may echo request bodies)",
   },
+  {
+    path: "mcp/sessions/+server.ts",
+    expected_level: "admin",
+    reason: "MCP session listing echoes connected grants/clients; admin-gated",
+  },
 ];
 
 const EXEMPT_PATHS = new Map<string, string>([

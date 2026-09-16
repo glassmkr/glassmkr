@@ -9,15 +9,17 @@ import { hashOAuthValueHex } from "$lib/server/oauth/crypto.js";
 import { runWithMcpRequestContext } from "./context.js";
 import { createGlassmkrMcpServer } from "./server.js";
 
-const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
+// A session is reaped after this long without activity. Kept deliberately
+// short: a Claude Code client fans out to many subagents that each open their
+// OWN session on the SHARED grant, and a subagent that exits does NOT send an
+// explicit MCP close, so its session would otherwise sit idle for the full
+// window. The periodic reaper below sweeps on this TTL even when no further
+// request arrives on the process.
+const SESSION_IDLE_TTL_MS = 10 * 60 * 1000;
 const SESSION_ABSOLUTE_TTL_MS = 8 * 60 * 60 * 1000;
-// Hotfix 2026-09-16: raised from 3 / 10. A single Claude Code client
-// legitimately fans out to many subagents that each open their OWN session on
-// the SHARED grant, and a client that exits without an explicit MCP close
-// leaves its session pinned until the idle TTL reaps it (see below). The old
-// per-grant cap of 3 then 429'd normal use within minutes. These higher caps
-// are the stopgap; the real fix (reap sessions on client disconnect, expose an
-// admin session count, right-size the caps) is tracked separately.
+// Caps raised from 3 / 10 (429 hotfix, 2026-09-16): legitimate subagent fan-out
+// on a shared grant needs headroom. With the short idle TTL plus the active
+// reaper keeping the map drained, these are comfortable ceilings.
 const MAX_SESSIONS_PER_GRANT = 20;
 const MAX_SESSIONS_PER_ACCOUNT = 40;
 
@@ -59,16 +61,31 @@ const pendingByAccount = new Map<string, number>();
   }
 })();
 
-function jsonRpcHttpError(status: number, message: string): Response {
+function jsonRpcHttpError(
+  status: number,
+  message: string,
+  extraHeaders?: Record<string, string>,
+): Response {
   return new Response(
     JSON.stringify({
       jsonrpc: "2.0",
       error: { code: -32000, message },
       id: null,
     }),
-    { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+    {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        ...(extraHeaders ?? {}),
+      },
+    },
   );
 }
+
+// How long a client should wait before retrying after a 429 (seconds). Matches
+// the reaper cadence: a stale session is reaped within one sweep.
+const RETRY_AFTER_SECONDS = "60";
 
 function bindingFor(principal: OAuthPrincipal): McpSessionBinding {
   return {
@@ -99,6 +116,21 @@ async function expireStaleSessions(now: number): Promise<void> {
       || now - entry.createdAt > SESSION_ABSOLUTE_TTL_MS,
   );
   await Promise.all(expired.map(removeSession));
+}
+
+// Periodic reaper. expireStaleSessions also runs at the top of every request,
+// but a grant that has gone fully idle (every subagent exited) produces no
+// further requests, so without a timer its sessions would linger until some
+// unrelated request happens to arrive on the process. The interval drains them
+// regardless. unref() so it never keeps the process alive (tests, shutdown).
+const REAPER_INTERVAL_MS = 60 * 1000;
+let reaperTimer: ReturnType<typeof setInterval> | null = null;
+function ensureReaper(): void {
+  if (reaperTimer) return;
+  reaperTimer = setInterval(() => {
+    void expireStaleSessions(Date.now());
+  }, REAPER_INTERVAL_MS);
+  reaperTimer.unref?.();
 }
 
 function reserveSessionSlot(principal: OAuthPrincipal): boolean {
@@ -174,6 +206,7 @@ export async function handleMcpGatewayRequest(
   parsedBody?: unknown,
 ): Promise<Response> {
   const now = Date.now();
+  ensureReaper();
   await expireStaleSessions(now);
 
   const rawSessionId = event.request.headers.get("mcp-session-id");
@@ -197,7 +230,9 @@ export async function handleMcpGatewayRequest(
     return jsonRpcHttpError(400, "An initialize request is required");
   }
   if (!reserveSessionSlot(principal)) {
-    return jsonRpcHttpError(429, "Too many active MCP sessions");
+    return jsonRpcHttpError(429, "Too many active MCP sessions", {
+      "Retry-After": RETRY_AFTER_SECONDS,
+    });
   }
 
   const mcpServer = createGlassmkrMcpServer();
@@ -235,6 +270,13 @@ export async function handleMcpGatewayRequest(
         sessions.delete(hashOAuthValueHex("mcp-session-id", sessionId));
       },
     });
+    // Belt-and-suspenders: onsessionclosed fires on an explicit MCP session
+    // close, but the transport can also close underneath us (stream dropped,
+    // shutdown). Drop the map entry on any transport close so a dead transport
+    // never holds a session slot until the TTL.
+    transport.onclose = () => {
+      if (createdSessionHash) sessions.delete(createdSessionHash);
+    };
     await mcpServer.connect(transport);
     const response = await runWithMcpRequestContext(
       { event, principal, sessionHash: null },
@@ -281,10 +323,51 @@ export async function handleMcpGatewayRequest(
   }
 }
 
+export interface ActiveMcpSession {
+  grantId: string;
+  clientId: string;
+  createdAt: number;
+  lastActivityAt: number;
+  protocolVersion: string;
+}
+
+/** Active MCP sessions for one account, most-recently-active first. Stale
+ *  sessions are expired first so the count reflects what is actually live, not
+ *  what is merely waiting for the next reaper sweep. Reads the in-process
+ *  session map, which is authoritative only because MCP runs on a single
+ *  instance (see warnIfClustered). */
+export async function getActiveMcpSessionsForCustomer(
+  customerId: string,
+): Promise<{ count: number; sessions: ActiveMcpSession[] }> {
+  await expireStaleSessions(Date.now());
+  const list: ActiveMcpSession[] = [];
+  for (const entry of sessions.values()) {
+    if (entry.binding.customerId !== customerId) continue;
+    list.push({
+      grantId: entry.binding.grantId,
+      clientId: entry.binding.clientId,
+      createdAt: entry.createdAt,
+      lastActivityAt: entry.lastActivityAt,
+      protocolVersion: entry.protocolVersion,
+    });
+  }
+  list.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  return { count: list.length, sessions: list };
+}
+
 export function resetMcpSessionsForTests(): void {
   sessions.clear();
   pendingByGrant.clear();
   pendingByAccount.clear();
+  if (reaperTimer) {
+    clearInterval(reaperTimer);
+    reaperTimer = null;
+  }
+}
+
+/** Test hook: run one reaper sweep as if the clock read `now`. */
+export async function reapStaleSessionsNowForTests(now: number = Date.now()): Promise<void> {
+  await expireStaleSessions(now);
 }
 
 export function getMcpSessionCountForTests(): number {
