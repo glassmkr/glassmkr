@@ -11,8 +11,15 @@ import { createGlassmkrMcpServer } from "./server.js";
 
 const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
 const SESSION_ABSOLUTE_TTL_MS = 8 * 60 * 60 * 1000;
-const MAX_SESSIONS_PER_GRANT = 3;
-const MAX_SESSIONS_PER_ACCOUNT = 10;
+// Hotfix 2026-09-16: raised from 3 / 10. A single Claude Code client
+// legitimately fans out to many subagents that each open their OWN session on
+// the SHARED grant, and a client that exits without an explicit MCP close
+// leaves its session pinned until the idle TTL reaps it (see below). The old
+// per-grant cap of 3 then 429'd normal use within minutes. These higher caps
+// are the stopgap; the real fix (reap sessions on client disconnect, expose an
+// admin session count, right-size the caps) is tracked separately.
+const MAX_SESSIONS_PER_GRANT = 20;
+const MAX_SESSIONS_PER_ACCOUNT = 40;
 
 interface McpSessionBinding {
   customerId: string;
