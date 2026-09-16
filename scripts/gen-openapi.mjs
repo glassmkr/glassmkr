@@ -55,6 +55,7 @@ const NOT_IN_CONTRACT = new Map([
   ["/billing/downgrade", "browser session flow with a confirmation step in the UI"],
   ["/billing/resume", "browser session flow"],
   ["/auth/admin/suspend/{customerId}", "operator-only, gated on a specific admin email"],
+  ["/mcp/sessions", "operator-only MCP session visibility, not part of the customer API"],
 ]);
 
 // The `// scope:` marker is ROUTE level, and inside the contract three routes

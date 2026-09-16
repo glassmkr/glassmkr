@@ -22,6 +22,7 @@ import { TIER_PER_KEY, TIER_PER_ACCOUNT } from "$lib/server/auth/rate-limit";
 import { getActiveMcpSessionsForCustomer } from "$lib/server/mcp/gateway";
 import type { Principal } from "$lib/server/auth/principal";
 
+// tier: free
 export const GET: RequestHandler = async (event) => {
   let principal: Principal;
   try {
