@@ -1,4 +1,5 @@
 // GET /api/v1/mcp/sessions
+// scope: admin
 //
 // Admin-only visibility into the account's live MCP sessions. Added alongside
 // the session reaper (2026-09-16) so an operator can see why the gateway is at
