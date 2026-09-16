@@ -31,8 +31,10 @@ vi.mock("@glassmkr/db/pg", async (importOriginal) => {
 });
 
 import {
+  getActiveMcpSessionsForCustomer,
   getMcpSessionCountForTests,
   handleMcpGatewayRequest,
+  reapStaleSessionsNowForTests,
   resetMcpSessionsForTests,
 } from "../gateway.js";
 
@@ -213,5 +215,73 @@ describe("MCP admin tools (Phase 2b)", () => {
       delete process.env.MCP_ADMIN_ENABLED;
       resetMcpSessionsForTests();
     }
+  });
+});
+
+describe("MCP session reaper + admin visibility (2026-09-16)", () => {
+  const INIT = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "t", version: "1" },
+    },
+  };
+  function initReq(): Request {
+    return new Request("https://app.glassmkr.com/mcp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify(INIT),
+    });
+  }
+  async function openSession(p = principal()): Promise<void> {
+    const res = await handleMcpGatewayRequest(eventFor(initReq()), p, INIT);
+    expect(res.status).toBe(200);
+  }
+
+  it("reaps a session only once it is idle past the 10 min TTL", async () => {
+    await openSession();
+    expect(getMcpSessionCountForTests()).toBe(1);
+    const t0 = Date.now();
+    // Still inside the idle window: kept.
+    await reapStaleSessionsNowForTests(t0 + 5 * 60 * 1000);
+    expect(getMcpSessionCountForTests()).toBe(1);
+    // Past the idle window: reaped even though no request arrived.
+    await reapStaleSessionsNowForTests(t0 + 11 * 60 * 1000);
+    expect(getMcpSessionCountForTests()).toBe(0);
+  });
+
+  it("lists active sessions for the authenticated account only", async () => {
+    await openSession(principal()); // customer-a / grant-a / client-a
+    await openSession(principal({
+      customer_id: "customer-b",
+      grant_id: "grant-b",
+      client_id: "client-b",
+      token_id: "token-b",
+    }));
+
+    const a = await getActiveMcpSessionsForCustomer("customer-a");
+    expect(a.count).toBe(1);
+    expect(a.sessions[0].grantId).toBe("grant-a");
+    expect(a.sessions[0].clientId).toBe("client-a");
+    expect(typeof a.sessions[0].protocolVersion).toBe("string");
+    expect(a.sessions[0].protocolVersion.length).toBeGreaterThan(0);
+
+    const b = await getActiveMcpSessionsForCustomer("customer-b");
+    expect(b.count).toBe(1);
+    expect(b.sessions[0].grantId).toBe("grant-b");
+  });
+
+  it("returns 429 with a Retry-After header once the per-grant cap is hit", async () => {
+    for (let i = 0; i < 20; i++) await openSession(); // fill grant-a to the cap
+    expect(getMcpSessionCountForTests()).toBe(20);
+    const res = await handleMcpGatewayRequest(eventFor(initReq()), principal(), INIT);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
   });
 });
