@@ -1291,6 +1291,92 @@ describe("ipmi_sel_critical", () => {
     expect((a.evidence as any).critical_events[0].sensor).toBe("DIMM_A1");
     expect((a.evidence as any).transient_pairs_excluded).toBe(1);
   });
+
+  // Undated SEL rows (Crucible #151). A Pre-Init record ("1 | Pre-Init
+  // |0000000012| Fan #0x41 | ...") has no wall-clock time. Older agents
+  // stamped it with the collection time; newer ones send "". The agent sends
+  // sel_events_recent newest first (collectSelEvents: slice(-20).reverse()),
+  // so a LATER record sits at a LOWER index. Fixtures below use that order.
+  describe("undated (Pre-Init) rows", () => {
+    const fan = (id: number, timestamp: string, direction: "Asserted" | "Deasserted") => ({
+      id, timestamp, sensor: "Fan #0x41", sensor_type: "fan", event: "Lower Critical going low", direction, severity: "critical",
+    });
+    const dimm = (id: number, timestamp: string) => ({
+      id, timestamp, sensor: "DIMM_A1", sensor_type: "memory", event: "Uncorrectable ECC", direction: "Asserted", severity: "critical",
+    });
+
+    it("new agent: an undated Pre-Init assert + later undated deassert pairs away as a transient", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [fan(2, "", "Deasserted"), fan(1, "", "Asserted")];
+      expect(alertsOf("ipmi_sel_critical", s)).toHaveLength(0);
+    });
+
+    it("old agent: the same Pre-Init pair stamped with the collection time still pairs away", () => {
+      const s = healthySnapshot();
+      const now = new Date().toISOString();
+      s.ipmi.sel_events_recent = [fan(2, now, "Deasserted"), fan(1, now, "Asserted")];
+      expect(alertsOf("ipmi_sel_critical", s)).toHaveLength(0);
+    });
+
+    it("an undated assertion with no deassertion still fires (fail-open, age unknown)", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [fan(1, "", "Asserted")];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect(a.severity).toBe("critical");
+      expect((a.evidence as any).critical_events[0].age_days).toBeNull();
+      expect((a.evidence as any).transient_pairs_excluded).toBe(0);
+    });
+
+    it("an undated deassertion OLDER than the assertion does not close it", () => {
+      // SEL order: deassert (id 1) then a fresh assert (id 2) that is still open.
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [fan(2, "", "Asserted"), fan(1, "", "Deasserted")];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect((a.evidence as any).critical_events).toHaveLength(1);
+      expect((a.evidence as any).critical_events[0].id).toBe(2);
+    });
+
+    it("an undated pair split by a dated record (two BMC init windows) is not a transient", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [
+        fan(3, "", "Deasserted"),
+        { id: 2, timestamp: new Date(Date.now() - 86_400_000).toISOString(), sensor: "PS1 Status", sensor_type: "power", event: "Presence detected", direction: "Asserted", severity: "info" },
+        fan(1, "", "Asserted"),
+      ];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect((a.evidence as any).critical_events).toHaveLength(1);
+      expect((a.evidence as any).critical_events[0].id).toBe(1);
+    });
+
+    it("an undated deassertion never pairs away a dated assertion", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [fan(2, "", "Deasserted"), fan(1, new Date(Date.now() - 3_600_000).toISOString(), "Asserted")];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect((a.evidence as any).critical_events).toHaveLength(1);
+      expect((a.evidence as any).critical_events[0].id).toBe(1);
+    });
+
+    it("a dated deassertion never pairs away an undated assertion", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [fan(2, new Date().toISOString(), "Deasserted"), fan(1, "", "Asserted")];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect((a.evidence as any).critical_events).toHaveLength(1);
+      expect((a.evidence as any).critical_events[0].id).toBe(1);
+    });
+
+    it("a paired undated transient does not hide a real dated critical beside it", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [
+        dimm(3, new Date(Date.now() - 2 * 86_400_000).toISOString()),
+        fan(2, "", "Deasserted"),
+        fan(1, "", "Asserted"),
+      ];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect((a.evidence as any).critical_events).toHaveLength(1);
+      expect((a.evidence as any).critical_events[0].sensor).toBe("DIMM_A1");
+      expect((a.evidence as any).transient_pairs_excluded).toBe(1);
+    });
+  });
 });
 
 describe("ipmi_sel_full", () => {

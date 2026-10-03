@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { freshEventKeys } from "../event-stacking";
+import { evaluateAlerts } from "../evaluator";
+import { healthySnapshot } from "./helpers";
 import { EVENT_RULES } from "../../../alerts/presentation";
 
 const selEvent = (ts: string, sensor = "Temperature #0x30", event = "Upper Critical going high") => ({
@@ -88,6 +90,37 @@ describe("freshEventKeys", () => {
 
   it("gpu_xid: null (legacy stacking) when the emission lacks group identity fields", () => {
     expect(freshEventKeys("gpu_xid_critical", { events: [] }, [])).toBeNull();
+  });
+
+  // Undated SEL rows (Crucible #151 sends "" for a Pre-Init record instead of
+  // the collection time). Driven through the evaluator so the evidence is the
+  // shape ingest really stacks. sel_events_recent is newest first.
+  describe("ipmi_sel_critical undated (Pre-Init) records", () => {
+    const preInitFan = (id: number) => ({
+      id, timestamp: "", sensor: "Fan #0x41", sensor_type: "fan", event: "Lower Critical going low", direction: "Asserted", severity: "critical",
+    });
+    const selEmission = (events: ReturnType<typeof preInitFan>[]) => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = events;
+      const [a] = evaluateAlerts(s).filter((x) => x.type === "ipmi_sel_critical");
+      return a.evidence;
+    };
+
+    it("re-reporting the same undated record does not stack or re-notify", () => {
+      const first = selEmission([preInitFan(7)]);
+      const prior = [{ timestamp: "2026-10-03T10:00:00Z", ...first }];
+      expect(freshEventKeys("ipmi_sel_critical", selEmission([preInitFan(7)]), prior)).toEqual([]);
+    });
+
+    it("a second undated record for the same sensor and event (a later BMC init) stacks", () => {
+      // With no time, the record id is what tells the two rows apart; keyed
+      // on "" alone the recurrence folds into the first record and an
+      // acknowledged alert stays acknowledged and silent.
+      const first = selEmission([preInitFan(7)]);
+      const prior = [{ timestamp: "2026-10-03T10:00:00Z", ...first }];
+      const fresh = freshEventKeys("ipmi_sel_critical", selEmission([preInitFan(31), preInitFan(7)]), prior);
+      expect(fresh).toHaveLength(1);
+    });
   });
 
   it("tolerates prior occurrences with malformed or missing critical_events", () => {

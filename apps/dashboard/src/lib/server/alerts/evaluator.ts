@@ -108,9 +108,14 @@ export interface Snapshot {
         // Untyped here (string) so a new class from Crucible doesn't
         // break compile; severity matrix narrows known values.
         redundancy_class?: string;
+        // Non-ONLINE immediate children (members) of this vdev. A hot
+        // spare's `spare-N` slot counts as one member. Sent since C6.
+        degraded_disks_count?: number;
         // True when a hot-spare auto-replacement is in progress; ZFS
         // emits "spare" entries during resilver. Demotes raidz2
-        // DEGRADED from P1 -> P2 per the matrix.
+        // DEGRADED from P1 -> P2 per the matrix, but only while
+        // degraded_disks_count shows a single failed member. Crucible
+        // #151 sends it only in that case; the dashboard re-checks.
         spare_in_progress?: boolean;
       }>;
       slog_vdevs?: Array<{ name: string; state: string }>;
@@ -918,7 +923,15 @@ function classifyZfsVdev(
       return { severity: "critical", reason: `${vdev.state.toLowerCase()} on ${clsLabel}; zero remaining failure tolerance` };
     }
     if (cls === "raidz2") {
-      return vdev.spare_in_progress
+      // A hot spare buys time only while it covers the vdev's ONLY failed
+      // member: with a second member down the raidz2 has no parity left until
+      // the rebuild finishes, spare or not. Trust the flag only alongside a
+      // member count of at most one; a flag without a count (no agent sends
+      // that shape) stays critical rather than guess.
+      const degraded = vdev.degraded_disks_count;
+      const spareCoversOnlyFault =
+        vdev.spare_in_progress === true && typeof degraded === "number" && Number.isFinite(degraded) && degraded <= 1;
+      return spareCoversOnlyFault
         ? { severity: "warning", reason: "raidz2 degraded with hot-spare recovery in progress" }
         : { severity: "critical", reason: "raidz2 degraded; one more failure to raidz1-equivalent" };
     }
@@ -2858,27 +2871,63 @@ const rules: AlertRule[] = [
         list.push({ ts: t, ev: e });
         deassertedByKey.set(key, list);
       }
-      const isTransient = (assertTs: number | null, sensor: string, eventStr: string): boolean => {
-        if (assertTs === null) return false; // unparseable timestamps fail-open (cannot prove transient)
+      const isTransient = (assertTs: number, sensor: string, eventStr: string): boolean => {
         const list = deassertedByKey.get(`${sensor} ${eventStr}`);
         if (!list) return false;
         return list.some((d) => d.ts >= assertTs && d.ts - assertTs <= TRANSIENT_PAIR_WINDOW_MS);
       };
 
+      // Undated rows (2026-10-03, Crucible #151). A Pre-Init SEL record
+      // ("1 | Pre-Init |0000000012| Fan #0x41 | Lower Critical going low |
+      // Asserted") was logged before the BMC had its clock, so it carries no
+      // wall-clock time. Older agents stamped it with the collection time,
+      // which made a Pre-Init assert/deassert pair look 0s apart and pair away
+      // above; newer agents send "", which the time-based pairing cannot use,
+      // so the same pair fired critical for as long as it stayed among the 20
+      // records the agent reports.
+      //
+      // Without times, pair on SEL order instead: an undated Asserted row is a
+      // transient when a LATER undated Deasserted row for the same (sensor,
+      // event) closes it within the same run of consecutive undated records. A
+      // dated record ends the run: the BMC set its clock in between, so the two
+      // rows came from different BMC init windows and nothing says the fault
+      // was brief. Undated rows never pair with dated ones in either direction,
+      // so an undated row cannot hide a dated critical. On a BMC that never
+      // sets its clock every record is undated and the run is the whole log;
+      // that is still no looser than the old agents' "now" stamps.
+      //
+      // Order, not record id: the agent sends sel_events_recent newest first
+      // (crucible collectSelEvents: slice(-20).reverse()), so a later record
+      // has a LOWER index. Record ids cannot order rows: ipmitool prints them
+      // in hex ("%4x") and the agent parses them base-10, so "1a" arrives as 1
+      // and "ff" as 0, and they restart after `ipmitool sel clear`.
+      const selEvents = snap.ipmi.sel_events_recent;
+      const selTimes = selEvents.map((e) => parseSelTimestamp(e.timestamp));
+      const isUndatedTransient = (assertIdx: number): boolean => {
+        const a = selEvents[assertIdx];
+        for (let j = assertIdx - 1; j >= 0; j--) {
+          if (selTimes[j] !== null) return false;
+          const d = selEvents[j];
+          if (d.direction === "Deasserted" && d.sensor === a.sensor && d.event === a.event) return true;
+        }
+        return false;
+      };
+
       // Annotate each event with age_days (number if parseable, null
       // otherwise) and apply window filter. The annotation lives in
       // evidence so the dashboard can display "2 hours ago" /
-      // "1 year ago" / "(unknown age)" per event.
-      const annotated = snap.ipmi.sel_events_recent
-        .filter((e) => e.severity === "critical" && e.direction === "Asserted")
-        .map((e) => {
-          const t = parseSelTimestamp(e.timestamp);
+      // "1 year ago" / "(unknown age)" per event. Unparseable timestamps
+      // fail open: kept in the window, and paired only by SEL order above.
+      const annotated = selEvents
+        .map((e, idx) => ({ e, idx, t: selTimes[idx] }))
+        .filter(({ e }) => e.severity === "critical" && e.direction === "Asserted")
+        .map(({ e, idx, t }) => {
           const age_days = t !== null ? Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000)) : null;
           return {
             ...e,
             age_days,
             in_window: t === null || t >= cutoffMs,
-            transient: isTransient(t, e.sensor, e.event),
+            transient: t === null ? isUndatedTransient(idx) : isTransient(t, e.sensor, e.event),
           };
         });
       const critical = annotated.filter((e) => e.in_window && !e.transient);

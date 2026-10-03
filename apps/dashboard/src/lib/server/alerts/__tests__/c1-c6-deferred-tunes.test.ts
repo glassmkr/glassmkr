@@ -258,7 +258,7 @@ describe("raid_degraded hardware RAID activation", () => {
 function poolBase(overrides: Partial<{
   name: string;
   state: string;
-  vdevs: Array<{ name: string; state: string; redundancy_class?: string; spare_in_progress?: boolean }>;
+  vdevs: Array<{ name: string; state: string; redundancy_class?: string; degraded_disks_count?: number; child_count?: number; spare_in_progress?: boolean }>;
   slog_vdevs: Array<{ name: string; state: string }>;
   l2arc_vdevs: Array<{ name: string; state: string }>;
 }> = {}) {
@@ -409,6 +409,42 @@ describe("zfs_pool_unhealthy severity matrix", () => {
   });
 
   it("DEGRADED on raidz2 WITH spare in progress -> warning", () => {
+    // New-agent shape (Crucible #151): one failed member, its spare-N slot
+    // covered by an ONLINE hot spare, so degraded_disks_count is 1.
+    const s = healthySnapshot();
+    s.zfs = {
+      pools: [
+        poolBase({
+          state: "DEGRADED",
+          vdevs: [{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2", degraded_disks_count: 1, child_count: 6, spare_in_progress: true }],
+        }),
+      ],
+    };
+    const fired = alertsByType(s, "zfs_pool_unhealthy");
+    expect(fired[0]?.severity).toBe("warning");
+    expect(fired[0]?.evidence.spare_in_progress).toBe(true);
+  });
+
+  // The spare demotion holds only while the spare covers the vdev's single
+  // failure. A raidz2 with a spare rebuilding one member and a SECOND member
+  // FAULTED has no parity left. The first cut of Crucible #151 set the flag on
+  // that shape (narrowed before merge), so the dashboard checks the count
+  // itself rather than trusting the flag alone.
+  it("DEGRADED on raidz2 with spare flag but TWO degraded members -> critical", () => {
+    const s = healthySnapshot();
+    s.zfs = {
+      pools: [
+        poolBase({
+          state: "DEGRADED",
+          vdevs: [{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2", degraded_disks_count: 2, child_count: 6, spare_in_progress: true }],
+        }),
+      ],
+    };
+    const fired = alertsByType(s, "zfs_pool_unhealthy");
+    expect(fired[0]?.severity).toBe("critical");
+  });
+
+  it("DEGRADED on raidz2 with spare flag but no degraded-member count -> critical (cannot rule out a double fault)", () => {
     const s = healthySnapshot();
     s.zfs = {
       pools: [
@@ -418,9 +454,20 @@ describe("zfs_pool_unhealthy severity matrix", () => {
         }),
       ],
     };
-    const fired = alertsByType(s, "zfs_pool_unhealthy");
-    expect(fired[0]?.severity).toBe("warning");
-    expect(fired[0]?.evidence.spare_in_progress).toBe(true);
+    expect(alertsByType(s, "zfs_pool_unhealthy")[0]?.severity).toBe("critical");
+  });
+
+  it("DEGRADED on raidz2, two degraded members, no spare flag (released agents) -> critical", () => {
+    const s = healthySnapshot();
+    s.zfs = {
+      pools: [
+        poolBase({
+          state: "DEGRADED",
+          vdevs: [{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2", degraded_disks_count: 2, child_count: 6 }],
+        }),
+      ],
+    };
+    expect(alertsByType(s, "zfs_pool_unhealthy")[0]?.severity).toBe("critical");
   });
 
   it("DEGRADED on raidz3 -> warning (retains tolerance)", () => {
