@@ -1,6 +1,6 @@
 # Submission checklist: Glassmkr hardware triage in ChatGPT and Claude
 
-For Simon. Step by step, in order, for listing the anonymous triage MCP server in
+Step by step, in order, for listing the anonymous triage MCP server in
 OpenAI's plugin directory (shared by ChatGPT and Codex) and Anthropic's
 Connectors Directory. Every step names the doc it comes from (keys in
 [Sources](#sources); all read 2026-10-03). **UNCERTAIN** marks anything the docs
@@ -26,12 +26,13 @@ plugin"]
 
 ## 0. Blockers (both directories)
 
-- [ ] **B1. Deploy the endpoint and the challenge route.** As of 2026-10-03 both
+- [ ] **B1. Deploy the endpoint and the challenge route.** Both
   `https://app.glassmkr.com/api/triage/mcp` and
-  `https://app.glassmkr.com/.well-known/openai-apps-challenge` return 404.
-  Reviewers reject a plugin whose server they cannot connect to; the server must
-  be public and production, not a test endpoint. [app-review "Remote MCP server
-  requirements", "common rejection reasons"]
+  `https://app.glassmkr.com/.well-known/openai-apps-challenge` must answer from
+  the production deployment before submitting. Reviewers reject a plugin whose
+  server they cannot connect to; the server must be public and production, not
+  a test endpoint. [app-review "Remote MCP server requirements", "common
+  rejection reasons"]
 - [ ] **B2. Support URL must resolve and offer support.** The manifest's
   `supportURL` is `https://glassmkr.com/docs/ai-assistants`, which returns 404 on
   the live site today. The page exists on this branch
@@ -357,12 +358,10 @@ the developer portal"]
   `(http.host eq "app.glassmkr.com" and starts_with(http.request.uri.path, "/api/"))`.
   The MCP endpoint (`/api/triage/mcp`) is inside it, so OpenAI's and Anthropic's
   server-side calls are not blocked with error 1010.
-- `/.well-known/openai-apps-challenge` is **not** under `/api/`. Probe on
-  2026-10-03 with `curl -A 'Python-urllib/3.11'`: the challenge path returned
-  **403 from Cloudflare** (`text/plain`), while a POST to `/api/triage/mcp` with
-  the same user agent reached the origin (404 JSON from the app, route not yet
-  deployed). So BIC does block at least one non-browser client on that path
-  today. The user agent of OpenAI's domain verifier is not documented
+- `/.well-known/openai-apps-challenge` is **not** under `/api/`, so Browser
+  Integrity Check still applies there and can answer a non-browser client with
+  Cloudflare's 403 instead of reaching the app. The user agent of OpenAI's domain
+  verifier is not documented
   (**UNCERTAIN** whether it would be challenged); the OpenAI bots page lists
   ChatGPT-User and the crawlers, not the verifier. [bots]
 - [ ] Before **Verify Domain**, change the rule's expression to:
@@ -379,9 +378,8 @@ the developer portal"]
   is unset), never Cloudflare's 403.
 - Exposure is one exact path that serves a public token; BIC stays on for the
   dashboard UI and the marketing site.
-- **UNCERTAIN:** if Bot Fight Mode is enabled on the zone it applies domain-wide
-  and cannot be skipped per path on the Free plan; check it if the verifier still
-  fails after the rule change.
+- **UNCERTAIN:** if Bot Fight Mode is enabled on the zone it applies domain-wide;
+  check it if the verifier still fails after the rule change.
 
 ---
 
@@ -481,5 +479,4 @@ All read on 2026-10-03 as Markdown copies.
 | connectors-auth | https://claude.com/docs/connectors/building/authentication |
 
 Non-doc evidence: review-time figures from the reviewtimes.fyi ChatGPT tracker
-(crowdsourced); the Cloudflare rule expression from the 2026-06-27 BIC fix; the
-403 and 404 probes above, run 2026-10-03.
+(crowdsourced); the Cloudflare rule expression from the 2026-06-27 BIC fix.

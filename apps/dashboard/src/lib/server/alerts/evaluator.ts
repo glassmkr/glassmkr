@@ -633,6 +633,21 @@ export interface ServerConfig {
 }
 
 /**
+ * SEL event text meaning the whole log stopped recording: "Log full",
+ * "Log area full", "All event logging disabled". The per-device offsets of
+ * the same Event Logging Disabled sensor ("Correctable memory error logging
+ * disabled", "Correctable machine check error logging disabled") only say
+ * that one DIMM or CPU hit its correctable-error logging limit; the SEL is
+ * still recording, so they are not a full log (review 2026-10-03: a DIMM
+ * that hit its limit was reported as "SEL full" next to `sel info` showing
+ * 0% used). Shared with the paste-triage SEL parser.
+ */
+export function isSelLogFullEventText(event: string): boolean {
+  if (/correctable (?:memory|machine check) error logging disabled/i.test(event)) return false;
+  return /log( area)? full|logging disabled/i.test(event);
+}
+
+/**
  * Best-effort parse of an IPMI SEL timestamp into a Unix-ms number.
  *
  * Returns null when the string can't be parsed. The intent is fail-
@@ -649,21 +664,6 @@ export interface ServerConfig {
  * The shape-normalisation belongs at Crucible (filed for PR B); this
  * helper is the receive-side tolerance.
  */
-/**
- * SEL event text meaning the whole log stopped recording: "Log full",
- * "Log area full", "All event logging disabled". The per-device offsets of
- * the same Event Logging Disabled sensor ("Correctable memory error logging
- * disabled", "Correctable machine check error logging disabled") only say
- * that one DIMM or CPU hit its correctable-error logging limit; the SEL is
- * still recording, so they are not a full log (review 2026-10-03: a DIMM
- * that hit its limit was reported as "SEL full" next to `sel info` showing
- * 0% used). Shared with the paste-triage SEL parser.
- */
-export function isSelLogFullEventText(event: string): boolean {
-  if (/correctable (?:memory|machine check) error logging disabled/i.test(event)) return false;
-  return /log( area)? full|logging disabled/i.test(event);
-}
-
 function parseSelTimestamp(raw: string | undefined | null): number | null {
   if (!raw) return null;
   // Standard ISO first.

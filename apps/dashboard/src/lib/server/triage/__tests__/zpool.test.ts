@@ -486,3 +486,34 @@ describe("hostile input", () => {
     for (const a of alerts) expect(`${a.title} ${JSON.stringify(a.evidence)}`).not.toMatch(/[`$|']/);
   });
 });
+
+// R2-8: a DEGRADED log mirror leaves the pool DEGRADED, but zfs_pool_unhealthy
+// reads data vdevs and zfs_slog_faulted fires only on a FAULTED, REMOVED or
+// UNAVAIL log top, so nothing fired and nothing said why.
+describe("degraded log (SLOG) mirror", () => {
+  const text = fixture("synthetic-slog-mirror-degraded.txt");
+
+  it("raises no finding but says the log mirror is degraded and that no rule judges it", () => {
+    const r = zpoolParser.parse(text);
+    expect(pools(text)[0]).toMatchObject({
+      name: "fast",
+      state: "DEGRADED",
+      slog_vdevs: [{ name: "mirror-1", state: "DEGRADED" }],
+      vdevs: [{ name: "raidz2-0", state: "ONLINE", redundancy_class: "raidz2" }],
+    });
+    expect(summary(evaluate(r.snapshot))).toEqual([]);
+    expect(r.notes).toContainEqual({
+      level: "warning",
+      message: "1 log (SLOG) vdev(s) are DEGRADED or OFFLINE. No Glassmkr rule judges a degraded log mirror; zfs_slog_faulted fires only when the log vdev itself is FAULTED, REMOVED or UNAVAIL.",
+    });
+    // The tree does explain the pool state, so the pool-level fallback note stays out.
+    expect(r.notes.some((n) => /no vdev row in this output explains it/.test(n.message))).toBe(false);
+  });
+
+  it("a FAULTED log vdev still fires zfs_slog_faulted and gets no degraded-mirror note", () => {
+    const faulted = text.replace("mirror-1     DEGRADED", "mirror-1     FAULTED ");
+    const r = zpoolParser.parse(faulted);
+    expect(summary(evaluate(r.snapshot))).toEqual(["zfs_slog_faulted:critical"]);
+    expect(r.notes.some((n) => /log \(SLOG\) vdev/.test(n.message))).toBe(false);
+  });
+});

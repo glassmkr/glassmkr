@@ -91,3 +91,26 @@ describe("distroFamily", () => {
     expect(distroFamily(undefined)).toBe("unspecified");
   });
 });
+
+// R2-15: some clients forward only the content text. Every string the
+// structured result carries (each command's purpose, the install hint, the
+// paste instructions with the distinct-placeholder rule) must be in it too.
+describe("renderCaptureText carries every field (R2-15)", () => {
+  function leaves(v: unknown, out: string[] = []): string[] {
+    if (typeof v === "string") out.push(v);
+    else if (Array.isArray(v)) for (const x of v) leaves(x, out);
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (k !== "goal") leaves(x, out);
+    return out;
+  }
+  for (const distro of ["ubuntu", "rocky", "arch", undefined]) {
+    it.each(CAPTURE_GOALS)(`%s (${distro ?? "no distro"})`, (goal) => {
+      const result = captureCommands(goal, distro);
+      const text = renderCaptureText(result);
+      for (const s of leaves(result)) expect(text, s).toContain(s);
+    });
+  }
+
+  it("the paste instructions keep the distinct-placeholder rule", () => {
+    expect(renderCaptureText(captureCommands("all_disks"))).toMatch(/a different placeholder \(DISK1, DISK2, \.\.\.\)/);
+  });
+});

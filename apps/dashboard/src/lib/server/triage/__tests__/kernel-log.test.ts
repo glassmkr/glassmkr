@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { kernelLogParser } from "../parsers/kernel-log";
+import { analyzeOutput } from "../analyze";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(__dirname, "fixtures", "kernel_log");
@@ -72,6 +73,14 @@ const ALL_FIXTURES = [
   "synthetic-crlf.txt",
   "synthetic-prompt.txt",
   "synthetic-injection.txt",
+  "synthetic-journalctl-mce-fatal-prevboot.txt",
+  "synthetic-dmesg-T-mce-logged.txt",
+  "synthetic-dmesg-T-ghes-memory-ue.txt",
+  "synthetic-dmesg-T-ghes-with-edac-ue.txt",
+  "synthetic-dmesg-T-btrfs-forced-readonly.txt",
+  "synthetic-dmesg-T-xfs-shutdown.txt",
+  "synthetic-dmesg-T-libata-unc-only.txt",
+  "synthetic-dmesg-T-libata-unc-full.txt",
 ];
 
 describe("kernelLogParser metadata", () => {
@@ -130,7 +139,7 @@ describe("healthy boot log", () => {
     // Absent lines are not zero counters: no io_errors / ecc_edac / gpu keys.
     expect(Object.keys(r.snapshot).sort()).toEqual(["dmesg_events"]);
     expect(r.notes.map((n) => n.message)).toEqual([
-      "Read 27 kernel log lines; none matched a disk, NVMe, filesystem, GPU Xid or memory error event.",
+      "Read 27 kernel log lines; none matched a SCSI sense, NVMe controller fault, ext4 read-only remount, block I/O error, NVIDIA Xid or EDAC memory error line.",
     ]);
   });
 
@@ -417,6 +426,21 @@ describe("shell prompt lines", () => {
     expect(JSON.stringify(r)).not.toContain("host-example");
     expect(types(evaluate(r.snapshot).alerts)).toEqual(["disk_io_errors", "filesystem_readonly"]);
   });
+
+  // R2-1 narrowed the bracketed form to keep it linear; every common prompt
+  // shape must still be skipped.
+  it.each([
+    "[root@host-example ~]# dmesg -T | grep 'I/O error'",
+    "[admin@db-01 /var/log]$ journalctl -k | grep 'I/O error'",
+    "root@host-example:~# dmesg | grep 'I/O error'",
+    "user@host-example:/srv$ dmesg | grep -i 'I/O error'",
+    "$ dmesg | grep 'I/O error'",
+    "# dmesg | grep 'I/O error'",
+  ])("skips the prompt line %s", (prompt) => {
+    const r = kernelLogParser.parse(`${prompt}\n[Fri Oct  3 10:05:12 2026] EXT4-fs (sdb1): Remounting filesystem read-only\n`);
+    expect(r.snapshot.io_errors).toBeUndefined();
+    expect(r.subjects).toBe(1);
+  });
 });
 
 describe("injection text inside matching lines", () => {
@@ -551,6 +575,48 @@ describe("NVMe line selection", () => {
       ["nvme4", "reset"],
     ]);
   });
+
+  // R2-5: nvme_wait_ready prints "Device not ready; aborting %s" with
+  // initialisation, reset or (6.x) shutdown; a controller that never comes
+  // ready at boot is a dead drive, and Crucible's pattern flags it.
+  it.each([
+    [
+      "dmesg -T",
+      [
+        "[Fri Oct  3 10:00:01 2026] nvme nvme1: Device not ready; aborting initialisation, CSTS=0x0",
+        "[Fri Oct  3 10:00:01 2026] nvme nvme1: Removing after probe failure status: -19",
+      ],
+    ],
+    [
+      "journalctl -k",
+      [
+        "Oct 03 10:00:01 host-example kernel: nvme nvme1: Device not ready; aborting initialisation, CSTS=0x0",
+        "Oct 03 10:00:01 host-example kernel: nvme nvme1: Removing after probe failure status: -19",
+      ],
+    ],
+  ])("flags a controller that fails to initialise at boot (%s)", (_form, lines) => {
+    const r = kernelLogParser.parse(lines.join("\n"));
+    expect(r.snapshot.dmesg_events?.events.map((e) => [e.details.controller, e.details.action])).toEqual([
+      ["nvme1", "aborting"],
+      ["nvme1", "disabling"],
+    ]);
+    const alerts = evaluate(r.snapshot).alerts;
+    expect(alerts.map((a) => [a.type, a.severity])).toEqual([
+      ["disk_io_errors", "critical"],
+      ["disk_io_errors", "critical"],
+    ]);
+  });
+
+  it("flags 'aborting shutdown' and a probe-failure removal on its own", () => {
+    const r = kernelLogParser.parse([
+      "[ 5000.000001] nvme nvme2: Device not ready; aborting shutdown, CSTS=0x1",
+      "[    2.000000] nvme nvme3: Removing after probe failure status: -19",
+    ].join("\n"));
+    expect(r.snapshot.dmesg_events?.events.map((e) => [e.details.controller, e.details.action])).toEqual([
+      ["nvme2", "aborting"],
+      ["nvme3", "disabling"],
+    ]);
+  });
 });
 
 describe("origin and dedup", () => {
@@ -636,5 +702,80 @@ describe("5.19+ block-layer and NVMe media errors (R1-18)", () => {
     const r = kernelLogParser.parse(text);
     expect(r.snapshot.io_errors).toBeUndefined();
     expect(r.notes.map((n) => n.message).join("\n")).toMatch(/discard or write-zeroes/);
+  });
+});
+
+// R2-2: hardware lines these rules do not read (machine checks, APEI, btrfs and
+// XFS failures, a libata UNC on its own) must not leave the matching rule
+// listed as "ran and found no matching signal".
+describe("recognised hardware lines no rule reads", () => {
+  function analyze(name: string) {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      return analyzeOutput(fixture(name));
+    } finally {
+      log.mockRestore();
+    }
+  }
+  const checked = (a: ReturnType<typeof analyze>) => a.checked_no_signal.map((c) => c.rule_id);
+  const MCE_NOTE = /machine check or APEI hardware error lines? (?:was|were) seen but not decoded/;
+
+  it.each([
+    "synthetic-journalctl-mce-fatal-prevboot.txt",
+    "synthetic-dmesg-T-mce-logged.txt",
+    "synthetic-dmesg-T-ghes-memory-ue.txt",
+  ])("does not list the memory rules as checked for %s", (name) => {
+    const a = analyze(name);
+    expect(a.findings).toEqual([]);
+    expect(a.input.subjects).toBeGreaterThan(0);
+    expect(checked(a)).not.toContain("ecc_errors");
+    expect(checked(a)).not.toContain("mce_uncorrected");
+    expect(a.notes.some((n) => MCE_NOTE.test(n))).toBe(true);
+    expect(a.notes.join(" ")).not.toMatch(/none matched a disk, NVMe, filesystem, GPU Xid or memory error event/);
+    expect(a.not_determinable.map((n) => n.signal)).toContain("Machine check and APEI hardware errors");
+    // Nothing from the paste is copied into the answer.
+    expect(JSON.stringify(a)).not.toMatch(/host-example|be00000000800400|intel_idle|fru_text/);
+  });
+
+  it("keeps the memory rules when an EDAC UE line fires them", () => {
+    const a = analyze("synthetic-dmesg-T-ghes-with-edac-ue.txt");
+    expect(a.findings.map((f) => f.rule_id).sort()).toEqual(["ecc_errors", "mce_uncorrected"]);
+    expect(a.notes.some((n) => MCE_NOTE.test(n))).toBe(true);
+  });
+
+  it("does not list the read-only check as checked for a btrfs forced read-only", () => {
+    const a = analyze("synthetic-dmesg-T-btrfs-forced-readonly.txt");
+    expect(a.findings).toEqual([]);
+    expect(checked(a)).not.toContain("filesystem_readonly");
+    expect(a.notes.some((n) => /btrfs or XFS filesystem failure lines? (?:was|were) seen but not evaluated/.test(n))).toBe(true);
+  });
+
+  it("reports the XFS I/O errors but not the read-only check for an XFS shutdown", () => {
+    const a = analyze("synthetic-dmesg-T-xfs-shutdown.txt");
+    expect(a.findings.map((f) => f.rule_id)).toEqual(["disk_io_errors"]);
+    expect(checked(a)).not.toContain("filesystem_readonly");
+  });
+
+  it("does not list the disk I/O check as checked for a libata UNC on its own", () => {
+    const a = analyze("synthetic-dmesg-T-libata-unc-only.txt");
+    expect(a.findings).toEqual([]);
+    expect(checked(a)).not.toContain("disk_io_errors");
+    expect(a.notes.some((n) => /libata uncorrectable read \(UNC\) lines? (?:was|were) seen/.test(n))).toBe(true);
+  });
+
+  it("keeps disk_io_errors when the full libata sequence carries sense and I/O error lines", () => {
+    const a = analyze("synthetic-dmesg-T-libata-unc-full.txt");
+    expect(a.findings.map((f) => [f.rule_id, f.severity])).toEqual([
+      ["disk_io_errors", "critical"],
+      ["disk_io_errors", "critical"],
+    ]);
+    expect(a.notes.some((n) => /libata uncorrectable read/.test(n))).toBe(false);
+  });
+
+  it("names what the rules read when nothing matched", () => {
+    const r = kernelLogParser.parse(fixture("dmesg-healthy-boot.txt"));
+    expect(r.notes.map((n) => n.message).join(" ")).toMatch(
+      /none matched a SCSI sense, NVMe controller fault, ext4 read-only remount, block I\/O error, NVIDIA Xid or EDAC memory error line/,
+    );
   });
 });

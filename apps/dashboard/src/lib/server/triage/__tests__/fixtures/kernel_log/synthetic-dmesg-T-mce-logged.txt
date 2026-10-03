@@ -1,0 +1,7 @@
+[Fri Oct  3 08:12:01 2026] mce: [Hardware Error]: Machine check events logged
+[Fri Oct  3 08:12:01 2026] mce: [Hardware Error]: CPU 12: Machine Check: 0 Bank 1: bd80000000100134
+[Fri Oct  3 08:12:01 2026] mce: [Hardware Error]: RIP 10:<ffffffffa3c1d2e0> {native_safe_halt+0xe/0x10}
+[Fri Oct  3 08:12:01 2026] mce: [Hardware Error]: TSC 0 ADDR 3e4f1c000 MISC 86
+[Fri Oct  3 08:12:01 2026] mce: [Hardware Error]: PROCESSOR 0:50657 TIME 1759471921 SOCKET 0 APIC 18 microcode 5003604
+[Fri Oct  3 08:12:02 2026] mce: Uncorrected hardware memory error in user-access at 3e4f1c000
+[Fri Oct  3 08:12:02 2026] Memory failure: 0x3e4f1c: recovery action for dirty LRU page: Recovered

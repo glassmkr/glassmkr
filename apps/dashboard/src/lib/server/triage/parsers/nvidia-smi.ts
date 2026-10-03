@@ -221,6 +221,12 @@ const NVLINK_LINK_RE = /^\s*Link\s+(\d{1,3}):(.*)$/;
 const NVLINK_LINK_LINE_RE = /^[ \t]*Link[ \t]+\d{1,3}:/m;
 const DRIVER_FAIL_RE = /NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver/i;
 const NO_DEVICES_RE = /^[ \t]*No devices were found[ \t]*$/m;
+// A GPU nvidia-smi cannot open: "Unable to determine the device handle for
+// GPU0000:2A:00.0: Unknown Error" (or "...: GPU is lost. Reboot the system
+// ..."), printed by plain nvidia-smi and by -q in place of that GPU's section.
+const DEVICE_HANDLE_RE =
+  /^[ \t]*Unable to determine the device handle for GPU ?((?:[0-9A-Fa-f]{4}|[0-9A-Fa-f]{8}):[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7]):/;
+const DEVICE_HANDLE_LINE_RE = new RegExp(DEVICE_HANDLE_RE.source, "m");
 const CSV_NAME_RE = /^[a-z][a-z0-9_.]*$/;
 
 // ---------------------------------------------------------------------------
@@ -788,6 +794,8 @@ interface BuildCounts {
   vbiosSkipped: number;
   /** GPUs whose link width is below the card's max while the generation is not. */
   widthOnly: number;
+  /** GPUs with neither a temperature nor throttle reasons: the thermal check has nothing to read. */
+  thermalBlind: number;
 }
 
 function num0(r: Reading): number {
@@ -847,6 +855,7 @@ function buildGpus(raws: RawGpu[], counts: BuildCounts): SnapshotGpu[] {
     if (r.temp === undefined) counts.tempMissing++;
     if (r.powerDraw === undefined || r.powerLimit === undefined) counts.powerMissing++;
     if (r.reasons === undefined) counts.reasonsMissing++;
+    if (r.temp === undefined && r.reasons === undefined) counts.thermalBlind++;
 
     const reasons = r.reasons ?? [];
     return {
@@ -898,6 +907,23 @@ function buildGpus(raws: RawGpu[], counts: BuildCounts): SnapshotGpu[] {
 
 function gpuCount(n: number): string {
   return `${n} GPU${n === 1 ? "" : "s"}`;
+}
+
+function unopenedNote(n: number): ParseNote {
+  return {
+    level: "warning",
+    message: `nvidia-smi could not open ${gpuCount(n)} (Unable to determine the device handle), so this paste has no readings for ${n === 1 ? "it" : "them"}.`,
+  };
+}
+
+/** Distinct GPUs nvidia-smi printed "Unable to determine the device handle" for. */
+function unopenedGpus(lines: string[]): number {
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const m = DEVICE_HANDLE_RE.exec(line);
+    if (m) seen.add(m[1].toLowerCase());
+  }
+  return seen.size;
 }
 
 function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unmatched: number, dropped: number): ParseNote[] {
@@ -1012,19 +1038,29 @@ function parseUnsafe(text: string): ParserResult {
   if (query.gpus > 0 || csv.gpus > 0) formats.push("nvidia_smi_query");
   if (nvlink.gpus > 0) formats.push("nvidia_smi_nvlink_status");
 
+  const unopened = unopenedGpus(lines);
   if (table.list.length === 0) {
-    const notes: ParseNote[] = [];
+    // nvidia-smi's own failure output is read in full and reports why there
+    // are no readings; it is not a cut-off paste to capture again (R2-9).
+    let note: ParseNote | null = null;
     if (DRIVER_FAIL_RE.test(text)) {
-      notes.push({
+      note = {
         level: "warning",
         message: "nvidia-smi reported that it could not communicate with the NVIDIA driver, so this paste has no GPU readings.",
-      });
+      };
+    } else if (unopened > 0) {
+      note = unopenedNote(unopened);
     } else if (NO_DEVICES_RE.test(text)) {
-      notes.push({ level: "warning", message: "nvidia-smi reported no devices, so this paste has no GPU readings." });
-    } else {
-      notes.push({ level: "info", message: "No GPU section with readable fields was found in the nvidia-smi output." });
+      note = { level: "warning", message: "nvidia-smi reported no devices, so this paste has no GPU readings." };
     }
-    return { domain: "nvidia_gpu", formats: [], snapshot: {}, subjects: 0, notes };
+    if (note) return { domain: "nvidia_gpu", formats: [], snapshot: {}, subjects: 0, notes: [note], nothing_to_report: true };
+    return {
+      domain: "nvidia_gpu",
+      formats: [],
+      snapshot: {},
+      subjects: 0,
+      notes: [{ level: "info", message: "No GPU section with readable fields was found in the nvidia-smi output." }],
+    };
   }
 
   const counts: BuildCounts = {
@@ -1040,9 +1076,25 @@ function parseUnsafe(text: string): ParserResult {
     remapFailure: 0,
     vbiosSkipped: 0,
     widthOnly: 0,
+    thermalBlind: 0,
   };
   const gpus = buildGpus(table.list, counts);
   const driver = query.driver ?? csv.driver;
+  const notes = buildNotes(gpus.length, counts, nvlink.gpus, nvlink.unmatched, table.dropped);
+  if (unopened > 0) notes.push(unopenedNote(unopened));
+  // A rule is checked only when some GPU carries what it reads; a memory-only
+  // CSV said six GPU rules "ran and found no matching signal" while its own
+  // notes said each check was skipped (R2-17).
+  const n = gpus.length;
+  const fed: Record<(typeof RULES)[number], boolean> = {
+    nvlink_link_down: nvlink.gpus > 0,
+    gpu_uncorrected_ecc: counts.eccSkipped < n,
+    gpu_corrected_ecc_storm: counts.eccSkipped < n,
+    gpu_thermal_critical: counts.thermalBlind < n,
+    gpu_pcie_link_degraded: counts.pcieSkipped < n,
+    gpu_power_cap_throttling: counts.reasonsMissing < n,
+    gpu_driver_or_firmware_drift: driftComparable(table.list),
+  };
   return {
     domain: "nvidia_gpu",
     formats,
@@ -1070,14 +1122,25 @@ function parseUnsafe(text: string): ParserResult {
       },
     },
     subjects: gpus.length,
-    notes: buildNotes(gpus.length, counts, nvlink.gpus, nvlink.unmatched, table.dropped),
-    // Link state comes only from `nvidia-smi nvlink --status`, and every other
-    // rule reads fields only -q or the CSV query carry. Each half is checked
-    // only when its output is in the paste.
-    rules_checked: RULES.filter((r) =>
-      r === "nvlink_link_down" ? nvlink.gpus > 0 : query.gpus > 0 || csv.gpus > 0,
-    ),
+    notes,
+    // Link state comes only from `nvidia-smi nvlink --status`; every other
+    // rule reads fields only -q or the CSV query carry, and only some GPUs or
+    // some columns may have them.
+    rules_checked: RULES.filter((r) => fed[r]),
   };
+}
+
+/** Two or more GPUs of one model, each with a product name and a VBIOS version: the drift check has something to compare. */
+function driftComparable(raws: RawGpu[]): boolean {
+  const byModel = new Map<string, { n: number; complete: boolean }>();
+  for (const r of raws) {
+    if (r.name === undefined) continue;
+    const g = byModel.get(r.name) ?? { n: 0, complete: true };
+    g.n++;
+    if (r.vbios === undefined) g.complete = false;
+    byModel.set(r.name, g);
+  }
+  return [...byModel.values()].some((g) => g.n >= 2 && g.complete);
 }
 
 export const nvidiaSmiParser: TriageParser = {
@@ -1092,6 +1155,8 @@ export const nvidiaSmiParser: TriageParser = {
         GPU_HEADER_LINE_RE.test(text) ||
         (NVLINK_GPU_LINE_RE.test(text) && NVLINK_LINK_LINE_RE.test(text)) ||
         DRIVER_FAIL_RE.test(text) ||
+        DEVICE_HANDLE_LINE_RE.test(text) ||
+        NO_DEVICES_RE.test(text) ||
         hasCsvHeader(text)
       );
     } catch {

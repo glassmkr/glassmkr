@@ -1,0 +1,183 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      4
+    ],
+    "argv": [
+      "smartctl",
+      "-j",
+      "-a",
+      "/dev/sdc"
+    ],
+    "exit_status": 64
+  },
+  "device": {
+    "name": "/dev/sdc",
+    "info_name": "/dev/sdc [SAT]",
+    "type": "sat",
+    "protocol": "ATA"
+  },
+  "model_family": "Western Digital Red",
+  "model_name": "WDC WD30EFRX-68EUZN0",
+  "serial_number": "WD-WCC4N1234567",
+  "firmware_version": "82.00A82",
+  "user_capacity": {
+    "blocks": 5860533168,
+    "bytes": 3000592982016
+  },
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "smart_status": {
+    "passed": true
+  },
+  "ata_smart_attributes": {
+    "revision": 16,
+    "table": [
+      {
+        "id": 1,
+        "name": "Raw_Read_Error_Rate",
+        "value": 200,
+        "worst": 200,
+        "thresh": 51,
+        "when_failed": "",
+        "flags": {
+          "value": 47
+        },
+        "raw": {
+          "value": 1873,
+          "string": "1873"
+        }
+      },
+      {
+        "id": 5,
+        "name": "Reallocated_Sector_Ct",
+        "value": 200,
+        "worst": 200,
+        "thresh": 140,
+        "when_failed": "",
+        "flags": {
+          "value": 51
+        },
+        "raw": {
+          "value": 0,
+          "string": "0"
+        }
+      },
+      {
+        "id": 9,
+        "name": "Power_On_Hours",
+        "value": 18,
+        "worst": 18,
+        "thresh": 0,
+        "when_failed": "",
+        "flags": {
+          "value": 50
+        },
+        "raw": {
+          "value": 60123,
+          "string": "60123"
+        }
+      },
+      {
+        "id": 197,
+        "name": "Current_Pending_Sector",
+        "value": 200,
+        "worst": 200,
+        "thresh": 0,
+        "when_failed": "",
+        "flags": {
+          "value": 50
+        },
+        "raw": {
+          "value": 24,
+          "string": "24"
+        }
+      },
+      {
+        "id": 198,
+        "name": "Offline_Uncorrectable",
+        "value": 200,
+        "worst": 200,
+        "thresh": 0,
+        "when_failed": "",
+        "flags": {
+          "value": 48
+        },
+        "raw": {
+          "value": 24,
+          "string": "24"
+        }
+      },
+      {
+        "id": 199,
+        "name": "UDMA_CRC_Error_Count",
+        "value": 200,
+        "worst": 200,
+        "thresh": 0,
+        "when_failed": "",
+        "flags": {
+          "value": 50
+        },
+        "raw": {
+          "value": 0,
+          "string": "0"
+        }
+      }
+    ]
+  },
+  "power_on_time": {
+    "hours": 60123
+  },
+  "temperature": {
+    "current": 29
+  },
+  "ata_smart_error_log": {
+    "summary": {
+      "revision": 1,
+      "count": 41
+    }
+  },
+  "ata_smart_self_test_log": {
+    "standard": {
+      "revision": 1,
+      "table": [
+        {
+          "type": {
+            "value": 2,
+            "string": "Extended offline"
+          },
+          "status": {
+            "value": 121,
+            "string": "Completed: read failure",
+            "remaining_percent": 90,
+            "passed": false
+          },
+          "lifetime_hours": 60115,
+          "lba": 1953521234
+        },
+        {
+          "type": {
+            "value": 1,
+            "string": "Short offline"
+          },
+          "status": {
+            "value": 0,
+            "string": "Completed without error",
+            "passed": true
+          },
+          "lifetime_hours": 59000
+        }
+      ],
+      "count": 2,
+      "error_count_total": 1,
+      "error_count_outdated": 0
+    }
+  }
+}

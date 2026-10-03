@@ -160,17 +160,36 @@ const TRIAGE_SUMMARY: Record<string, string> = {
   ecc_errors:
     "The memory controller or the BMC reported one or more uncorrectable ECC errors in this output. An uncorrectable error is a hardware fault in memory; check when it happened (the dates in the paste), then identify the DIMM and plan its replacement.",
   zfs_scrub_errors:
-    "The pool's most recent scrub found checksum or repair errors, or the pool has never been scrubbed. Errors suggest failing disks or silent corruption (warning); a never-run scrub is a maintenance gap reported at info (a just-created pool simply needs its first scrub).",
+    "The pool's most recent scrub found checksum or repair errors. They point at failing disks or silent corruption; zpool status -v lists the affected files.",
   gpu_thermal_critical:
     "GPU die temperature at or above the HW slowdown threshold, or nvidia-smi reports a hardware thermal slowdown. A software thermal slowdown at the card's thermal target (normal load behavior) does not fire. Sustained operation at thermal limits accelerates wear and reduces throughput.",
   gpu_corrected_ecc_storm:
     "The GPU's corrected-ECC counter is high, or single-bit retired pages are non-zero. Corrected errors were repaired by the GPU; one paste shows the counters, not how fast they are rising, so compare with a reading taken later.",
+  // The YAML names the agent version that added per-vdev classes and says
+  // which severities page (R2-22).
+  zfs_pool_unhealthy:
+    "A ZFS pool in this output is SUSPENDED or has a vdev that is not ONLINE. Severity follows the vdev's redundancy: a SUSPENDED pool, a FAULTED top-level vdev, or a DEGRADED single-disk, raidz1, two-way mirror or raidz2 vdev is critical; a DEGRADED raidz2 already resilvering onto a spare, a raidz3 or a wider mirror is a warning; an OFFLINE vdev or a failed L2ARC cache device is info. A failed log (SLOG) device is reported by zfs_slog_faulted.",
   drive_smart_unreadable:
     "One or more fixed disks are present but their SMART health cannot be read, so a failure on them would go unseen. This is NOT a drive fault: it is a coverage gap. The usual cause is that smartmontools (the `smartctl` binary) is not installed, or a disk sits behind a RAID/HBA controller that needs a specific `smartctl -d` device type (`smartctl --scan-open` finds it). Some virtual or enclosure devices genuinely expose no SMART.",
 };
 
+/**
+ * grep -iE pattern for the kernel lines disk_io_errors reads. The YAML quick
+ * check filters dmesg to err and crit, but SCSI sense data is logged at info
+ * and NVMe timeouts at warn, and its grep misses "critical medium error": it
+ * printed nothing for the very line that fired, then blamed the empty output
+ * on a controller fault (R2-10). Tested against every line the kernel log
+ * reader counts.
+ */
+export const DISK_IO_GREP =
+  "I/O error|critical (medium|target) error|device offline error|Sense Key|Add\\. Sense|nvme[0-9]+: .*(timeout|reset|abort|disabl|remov)|sct 0x2|end_request";
+
 // Quick checks that tell the reader to open the dashboard, or describe it.
 const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: string }> = {
+  disk_io_errors: {
+    command: `sudo dmesg -T | grep -iE '${DISK_IO_GREP}' | tail -40`,
+    explanation: "Kernel lines for block-device errors, SCSI sense data and NVMe timeouts, resets and aborts, from every log level: SCSI sense data is logged at info, so the log is not filtered by level.",
+  },
   gpu_corrected_ecc_storm: {
     command: "nvidia-smi --query-gpu=index,uuid,ecc.errors.corrected.aggregate.total,ecc.errors.corrected.volatile.total --format=csv",
     explanation: "Per-GPU corrected ECC counters, lifetime and since the last driver reload. Run it again later and compare: a counter that keeps climbing is the storm signal.",
@@ -179,6 +198,41 @@ const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: string 
     command: "nvidia-smi --query-gpu=index,uuid,name,driver_version,vbios_version --format=csv",
     explanation: "Per-GPU driver and VBIOS version. GPUs of the same model on one host are expected to run the same VBIOS.",
   },
+};
+
+/**
+ * Passages of the YAML fix text that speak about Glassmkr's roadmap, an
+ * internal incident, or a forecast, rewritten for a paste answer; the YAML
+ * stays the dashboard's source (R2-22). Exact text: a test fails when the YAML
+ * changes under one of these.
+ */
+export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string, string]>> = {
+  nvme_wear_high: [
+    ["Match the SERIAL from the alert evidence, not the device letter", "Match the serial this answer names, not the device letter"],
+    [" (a validation session compared the wrong twin of an MX500 pair and wrongly concluded the alert overstated wear 25x; the alerted twin really was at 80%)", ""],
+  ],
+  nvme_critical_warning: [
+    ["Reserved blocks below threshold; SSD nearing end of life.", "Reserved blocks below the drive's spare threshold."],
+    ["Plan replacement; data may still be readable but failure\n#   is forecast.", "Plan replacement; data may still be readable."],
+  ],
+  disk_io_errors: [
+    ["Recent backup verified (the affected drive may be on the verge of total failure)", "Recent backup verified before working on a drive that reports errors"],
+  ],
+  gpu_corrected_ecc_storm: [
+    [
+      '#    (cross-snapshot signal; future rule), plan preventive\n#    replacement. Per-snapshot the threshold is "level is\n#    unusually high"; cross-snapshot rate-based detection\n#    is a follow-up.',
+      "#    between readings taken some time apart, plan preventive\n#    replacement. One reading shows only whether the level is\n#    unusually high.",
+    ],
+  ],
+};
+
+// Branches of a rule whose YAML title says something the finding does not:
+// "ZFS scrub found errors" on a pool that was never scrubbed (R2-11). Constant
+// text keyed on sanitized evidence, never built from the paste.
+const NEVER_SCRUBBED = {
+  title: "ZFS pool has never been scrubbed",
+  summary:
+    "The pool shows no record of a scrub. A scrub reads every block and finds silent corruption; a just-created pool simply needs its first one. This is a maintenance gap reported at info, not a fault.",
 };
 
 // Evidence that misleads in a paste answer: ipmi_sel_critical's
@@ -216,7 +270,10 @@ export const analysisOutputShape = {
       fix: z.object({
         quick_check: z.object({ command: z.string(), explanation: z.string() }).strict().optional(),
         steps: z.array(z.object({ title: z.string(), command: z.string().optional() }).strict()).optional(),
-        verdict_prior: z.string().optional(),
+        verdict_prior: z
+          .enum(["recoverable", "investigation", "vendor-side"])
+          .optional()
+          .describe("Static ownership prior for this rule from Glassmkr's fix workflow (recoverable: a host-side fix; investigation: needs diagnosis; vendor-side: usually hardware or vendor escalation). A prior for the rule, not a conclusion drawn from this paste."),
       }).strict().nullable(),
     }).strict(),
   ),
@@ -300,23 +357,33 @@ function mergeSlices(results: ParserResult[]): Record<string, unknown> {
  * where that can happen, so the call is wrapped to learn WHICH rules threw (they
  * did not check anything and must not be reported as "no matching signal") and
  * to keep the error object, which can quote snapshot values, out of the log.
- * The call is synchronous, so swapping console.error cannot catch anyone else's
- * output.
+ *
+ * Rules also log their decision path with console.log (psu_redundancy_loss
+ * prints PSU counts and states on every evaluation), which the privacy policy's
+ * "one line per call" does not cover (R2-21). Those calls are dropped here
+ * rather than in the evaluator, whose path logs serve the ingest path.
+ *
+ * The call is synchronous, so swapping the console methods cannot catch anyone
+ * else's output.
  */
 function evaluateCapturingFailures(
   snapshot: Snapshot,
   config: ServerConfig,
 ): { results: AlertResult[]; failed: string[] } {
   const failed: string[] = [];
-  const original = console.error;
+  const original = { error: console.error, log: console.log, info: console.info, debug: console.debug };
+  const silent = () => {};
   console.error = (...args: unknown[]) => {
     const m = typeof args[0] === "string" ? /^Alert rule (\S+) error:$/.exec(args[0]) : null;
     if (m) {
       failed.push(m[1]);
       return;
     }
-    original(...args);
+    original.error(...args);
   };
+  console.log = silent;
+  console.info = silent;
+  console.debug = silent;
   try {
     const results = evaluateAlerts(snapshot, config);
     return { results, failed };
@@ -325,7 +392,10 @@ function evaluateCapturingFailures(
     // unevaluated rather than crash the tool call.
     return { results: [], failed: ["*"] };
   } finally {
-    console.error = original;
+    console.error = original.error;
+    console.log = original.log;
+    console.info = original.info;
+    console.debug = original.debug;
   }
 }
 
@@ -430,6 +500,7 @@ function sanitizeEvidence(evidence: Record<string, unknown>): Observed {
     if (count >= MAX_OBSERVED_KEYS) break;
     if (DROP_KEYS.has(key) || !/^[A-Za-z0-9_]{1,48}$/.test(key)) continue;
     let clean: string | number | boolean | null | undefined;
+    let total: { key: string; value: number } | null = null;
     if (value === null) clean = null;
     else if (typeof value === "number") clean = Number.isFinite(value) ? value : undefined;
     else if (typeof value === "boolean") clean = value;
@@ -437,25 +508,33 @@ function sanitizeEvidence(evidence: Record<string, unknown>): Observed {
     else if (Array.isArray(value)) {
       // Short lists of identifiers (failed members, link ids, flag names) are
       // joined into one token list; lists of objects keep only each item's
-      // name; anything with prose is dropped.
-      if (value.length === 0 || value.length > MAX_ARRAY_ITEMS) continue;
-      if (value.every(isPlainObject)) {
-        const items = value.map((item) => itemName(key, item)).filter(Boolean);
-        if (items.length !== value.length) continue;
+      // name; anything with prose is dropped. A longer list keeps its first
+      // MAX_ARRAY_ITEMS items plus its real length: dropped whole, an HBA
+      // fault on 24 disks named none of them (R2-7).
+      if (value.length === 0) continue;
+      const list = value.slice(0, MAX_ARRAY_ITEMS);
+      if (list.every(isPlainObject)) {
+        const items = list.map((item) => itemName(key, item)).filter(Boolean);
+        if (items.length !== list.length) continue;
         clean = items.join(",");
         // zfs_slog_faulted names its pool only inside each item.
-        sharedPool ||= sharedItemValue(value, "pool");
+        sharedPool ||= sharedItemValue(list, "pool");
       } else {
-        if (!value.every((v) => typeof v === "string" || (typeof v === "number" && Number.isFinite(v)))) continue;
-        const items = value
+        if (!list.every((v) => typeof v === "string" || (typeof v === "number" && Number.isFinite(v)))) continue;
+        const items = list
           .map((v) => (typeof v === "number" ? String(v) : /\s/.test(v.trim()) ? "" : safeIdent(v.trim(), 64)))
           .filter(Boolean);
         clean = items.length > 0 ? items.join(",") : undefined;
       }
+      if (clean !== undefined && value.length > list.length) total = { key: `${key}_total`, value: value.length };
     }
     if (clean === undefined) continue;
     out[key] = clean;
     count += 1;
+    if (total && count < MAX_OBSERVED_KEYS && /^[A-Za-z0-9_]{1,48}$/.test(total.key)) {
+      out[total.key] = total.value;
+      count += 1;
+    }
   }
   if (sharedPool && out.pool === undefined) out.pool = sharedPool;
   return out;
@@ -533,19 +612,26 @@ function explanation(description: string, evidence: Observed): string {
 function buildFix(ruleId: string, fix: ResolvedFix | null, evidence: Observed): Finding["fix"] {
   if (!fix) return null;
   const devices = fixDevices(evidence);
-  const cmd = (c: string) => fillDevices(c, devices);
+  const replacements = TRIAGE_TEXT_REPLACE[ruleId] ?? [];
+  const text = (t: string) => replacements.reduce((acc, [from, to]) => acc.split(from).join(to), t);
+  const cmd = (c: string) => fillDevices(text(c), devices);
   const steps: NonNullable<NonNullable<Finding["fix"]>["steps"]> = [];
-  for (const p of fix.prerequisites) steps.push({ title: `Before you start: ${p}` });
+  for (const p of fix.prerequisites) steps.push({ title: `Before you start: ${text(p)}` });
   if (fix.safe_mode) steps.push({ title: "Confirm the current state (read-only)", command: cmd(fix.safe_mode.command) });
   steps.push({ title: "Remediation", command: cmd(fix.command) });
   if (fix.validation) steps.push({ title: "Confirm the fix worked", command: cmd(fix.validation.command) });
   const override = TRIAGE_QUICK_CHECK[ruleId];
   const quick = override ?? {
     command: cmd(fix.quick_check.command),
-    explanation: explanation(fix.quick_check.description, evidence),
+    explanation: text(explanation(fix.quick_check.description, evidence)),
   };
   if ([quick.command, ...steps.map((s) => s.command ?? "")].some((c) => c.includes(DEVICE_PLACEHOLDER))) {
     steps.unshift({ title: `Replace ${DEVICE_PLACEHOLDER} in the commands below with the affected disk's kernel name, for example sda or nvme0n1` });
+  }
+  const total = evidence.devices_total;
+  const listed = [fix.quick_check.command, fix.safe_mode?.command, fix.command, fix.validation?.command].some((c) => c?.includes("${DEVICES}"));
+  if (listed && typeof total === "number" && devices.length > 0 && total > devices.length) {
+    steps.unshift({ title: `The commands below cover the first ${devices.length} of ${total} devices; run them again for the rest.` });
   }
   const out: NonNullable<Finding["fix"]> = { quick_check: quick, steps };
   if (fix.verdict_prior) out.verdict_prior = fix.verdict_prior;
@@ -563,9 +649,13 @@ const NO_LOCATOR: ServerLocator = { os_id: null, os_id_like: null, os_version_id
  * from the paste fills them in. For the test that keeps dashboard-only wording
  * out of triage answers.
  */
-export function triageRuleCopy(ruleId: string): { summary: string; quick_check: { command: string; explanation: string } | null } {
+export function triageRuleCopy(ruleId: string): {
+  summary: string;
+  quick_check: { command: string; explanation: string } | null;
+  fix: Finding["fix"];
+} {
   const fix = buildFix(ruleId, resolveFix(ruleId, {}, NO_LOCATOR), {});
-  return { summary: triageSummary(ruleId), quick_check: fix?.quick_check ?? null };
+  return { summary: triageSummary(ruleId), quick_check: fix?.quick_check ?? null, fix };
 }
 
 function shapeFinding(
@@ -610,15 +700,27 @@ function shapeFinding(
   }
 
   let severity = alert.severity;
+  let title = meta?.title ?? alert.type;
   let summary = triageSummary(alert.type);
+  // The YAML verdict prior is the rule's default; a branch the triage below
+  // marks benign carries "recoverable" so it does not say "vendor-side" beside
+  // "common and recoverable on their own" (R2-14).
+  let recoverable = false;
+  if (alert.type === "zfs_scrub_errors" && observed.scrub_never_run === true) {
+    title = NEVER_SCRUBBED.title;
+    summary = NEVER_SCRUBBED.summary;
+    recoverable = true;
+  }
   // A recoverable sense key (Recovered Error, Not Ready, Unit Attention): the
   // evaluator itself calls these common and says to escalate only on repeats,
   // but that text is in the message this answer drops, and the YAML summary
   // says "investigate immediately to prevent data loss" (R1-17).
   if (alert.type === "disk_io_errors" && observed.scope === "scsi_sense" && severity !== "critical") {
     observed.severity_basis = "recoverable_sense_key";
+    title = "Recoverable SCSI sense key";
     summary =
       "The kernel reported a recoverable SCSI sense key on this drive (for example Recovered Error, Not Ready or Unit Attention). These are common and recoverable on their own; cross-check SMART for the drive, and treat them as a fault only if they keep repeating.";
+    recoverable = true;
   }
   // nvidia-smi's width maximum is the card's, never the slot's, and a paste has
   // no slot width (the agent reads it from sysfs). Narrower than the card with
@@ -631,15 +733,18 @@ function shapeFinding(
     if (!genDown) {
       severity = "info";
       observed.width_ceiling_basis = "card_max_slot_unknown";
+      title = "GPU PCIe link narrower than card maximum";
       summary =
         "The GPU's PCIe link is narrower than the card's maximum width at the same generation. nvidia-smi does not show the slot's electrical width, so this output cannot tell a slot wired for fewer lanes (expected, not a fault) from a link that trained down; check the slot's width before re-seating anything.";
     }
   }
 
+  if (recoverable && fix) fix.verdict_prior = "recoverable";
+
   return {
     rule_id: alert.type,
     severity,
-    title: meta?.title ?? alert.type,
+    title,
     subject,
     summary,
     observed,
@@ -750,6 +855,35 @@ function selTiming(alert: AlertResult, sel: SelRow[]): { evidence: Record<string
   return { evidence, historical };
 }
 
+const MAX_COMPONENTS = 3;
+const COMPONENTS_CHARS = 64;
+
+/**
+ * ipmi_sel_critical's component list, rebuilt from whole sensor labels: at
+ * most three, never cut mid-name, then "+N more". The rule joins every
+ * critical sensor, and each is capped at 16 characters in the parser, so five
+ * rows carried 64 characters of arranged prose, cut at the end (R2-18).
+ */
+function componentList(events: unknown): string | null {
+  if (!Array.isArray(events)) return null;
+  const labels: string[] = [];
+  for (const e of events) {
+    const label = isPlainObject(e) ? safeLabel(e.sensor, COMPONENTS_CHARS).replace(/,/g, " ").trim() : "";
+    if (label && !labels.includes(label)) labels.push(label);
+  }
+  if (labels.length === 0) return null;
+  const kept: string[] = [];
+  for (const label of labels) {
+    if (kept.length === MAX_COMPONENTS) break;
+    const rest = labels.length - kept.length - 1;
+    const text = [...kept, label].join(", ") + (rest > 0 ? ` +${rest} more` : "");
+    if (text.length > COMPONENTS_CHARS) break;
+    kept.push(label);
+  }
+  const more = labels.length - kept.length;
+  return kept.join(", ") + (more > 0 ? ` +${more} more` : "");
+}
+
 function hasUnknownTimes(snapshot: Record<string, unknown>): boolean {
   const unknown = (ts: unknown) => typeof ts !== "string" || ts === "" || Number.isNaN(Date.parse(ts));
   const dmesg = snapshot.dmesg_events as { events?: Array<{ timestamp_iso?: unknown }> } | undefined;
@@ -812,11 +946,13 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
   }
 
   const formats: TriageFormat[] = [];
+  const warnings = new Set<string>(notes);
   for (const { result } of parsed) {
     for (const f of result.formats ?? []) if (!formats.includes(f)) formats.push(f);
     for (const n of result.notes ?? []) {
       const note = cleanNote(String(n?.message ?? ""));
       if (note && !notes.includes(note)) notes.push(note);
+      if (note && n?.level === "warning") warnings.add(note);
     }
   }
 
@@ -855,9 +991,12 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     failed = evaluation.failed;
     for (const rule of failed) {
       if (rule === "*") {
-        notes.push("The rules could not be evaluated on this input; nothing was checked.");
+        notes.push(RULES_FAILED_NOTE);
+        warnings.add(RULES_FAILED_NOTE);
       } else if (allowSet.has(rule)) {
-        notes.push(`Rule ${safeIdent(rule, 64)} could not be evaluated on this input and was skipped.`);
+        const note = `Rule ${safeIdent(rule, 64)} could not be evaluated on this input and was skipped.`;
+        notes.push(note);
+        warnings.add(note);
         console.warn(JSON.stringify({ evt: "triage_rule_error", rule: safeIdent(rule, 64) }));
       }
     }
@@ -876,7 +1015,11 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     if (a.type !== "ipmi_sel_critical") return a;
     const timing = selTiming(a, Array.isArray(selRows) ? selRows : []);
     selHistorical ||= timing.historical;
-    return { ...a, evidence: { ...(a.evidence ?? {}), ...timing.evidence } };
+    const components = componentList(a.evidence?.critical_events);
+    return {
+      ...a,
+      evidence: { ...(a.evidence ?? {}), ...timing.evidence, ...(components ? { affected_components: components } : {}) },
+    };
   });
   const shaped = timed.map((a) => shapeFinding(a, ruleDomain.get(a.type), locator));
   const ordered = dedupeFindings(shaped)
@@ -885,7 +1028,9 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     .map(({ f }) => f);
   const findings = ordered.slice(0, MAX_FINDINGS);
   if (ordered.length > findings.length) {
-    notes.push(`${ordered.length - findings.length} more findings were left out of this answer; paste a smaller section to see them.`);
+    const note = `${ordered.length - findings.length} more findings were left out of this answer; paste a smaller section to see them.`;
+    notes.push(note);
+    warnings.add(note);
   }
 
   // 5. What ran and found nothing, and what one paste cannot say.
@@ -938,14 +1083,33 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     notes,
   };
   if (subjects > 0) result.continuous_monitoring = { ...CONTINUOUS_MONITORING };
+  WARNING_NOTES.set(result, new Set(notes.filter((n) => warnings.has(n))));
   return result;
 }
+
+const RULES_FAILED_NOTE = "The rules could not be evaluated on this input; nothing was checked.";
+
+/**
+ * Which notes of an answer are warnings. Notes stay plain strings in the
+ * output contract; the text block reads their level from here, for the object
+ * analyzeOutput returned, and treats an unknown object as having none.
+ */
+const WARNING_NOTES = new WeakMap<TriageAnalysis, ReadonlySet<string>>();
 
 // ---------------------------------------------------------------------------
 // Next capture
 // ---------------------------------------------------------------------------
 
 const NOTHING_RECOGNISED_GOALS: CaptureGoal[] = ["all_disks", "raid_md", "zfs", "kernel_errors", "bmc_events", "gpu"];
+
+// Where to look next when an output reports that it has nothing to read.
+// Running the same command again only prints the same thing (R2-9, R2-16).
+const NOTHING_TO_REPORT_NEXT: Partial<Record<TriageDomain, { goal: CaptureGoal; why: string }>> = {
+  nvidia_gpu: {
+    goal: "kernel_errors",
+    why: "The kernel log shows whether the GPU reported an Xid such as 79 (fallen off the bus) or the NVIDIA driver failed to load.",
+  },
+};
 
 function nextCapture(
   detected: ParserResult[],
@@ -957,13 +1121,22 @@ function nextCapture(
     if (out.some((o) => o.goal === goal)) return;
     out.push({ goal, command: captureCommandText(goal), why });
   };
+  /** A detected output that ran no rule: capture it again, unless it said there was nothing to read. */
+  const recapture = (r: ParserResult, why: string) => {
+    if (!r.nothing_to_report) return add(DOMAIN_GOAL[r.domain], why);
+    const next = NOTHING_TO_REPORT_NEXT[r.domain];
+    if (next) add(next.goal, next.why);
+  };
 
   if (active.length === 0) {
     for (const r of detected) {
-      add(DOMAIN_GOAL[r.domain], "This output was recognised but could not be read in full; capture it again with this command and paste the complete output.");
+      recapture(r, "This output was recognised but could not be read in full; capture it again with this command and paste the complete output.");
     }
-    if (detected.length === 0) {
-      for (const goal of NOTHING_RECOGNISED_GOALS) add(goal, captureWhy(goal));
+    if (out.length === 0) {
+      // Nothing recognised, or only output that had nothing to evaluate: the
+      // other captures, never the one just pasted.
+      const pasted = new Set(detected.map((r) => DOMAIN_GOAL[r.domain]));
+      for (const goal of NOTHING_RECOGNISED_GOALS) if (!pasted.has(goal)) add(goal, captureWhy(goal));
     }
     return out;
   }
@@ -974,8 +1147,14 @@ function nextCapture(
 
   for (const r of detected) {
     if (!domains.has(r.domain)) {
-      add(DOMAIN_GOAL[r.domain], "Part of this paste was recognised but could not be read in full; capture it again with this command.");
+      recapture(r, "Part of this paste was recognised but could not be read in full; capture it again with this command.");
     }
+  }
+  // A GPU paste without the ECC or temperature fields (a short --query-gpu
+  // CSV) ran none of those checks (R2-17).
+  const gpuRules = active.find((r) => r.domain === "nvidia_gpu")?.rules_checked;
+  if (gpuRules && !(gpuRules.includes("gpu_uncorrected_ecc") && gpuRules.includes("gpu_thermal_critical"))) {
+    add("gpu", "nvidia-smi -q carries the ECC, temperature, throttle-reason and PCIe fields this output lacks, so those checks can run.");
   }
   if (domains.has("mdraid") && !formats.has("mdadm_detail")) add("raid_md", captureWhy("raid_md"));
   if (domains.has("ipmi_sel") && !formats.has("ipmitool_sel_info")) {
@@ -1008,6 +1187,13 @@ function nextCapture(
 // commands, and named no failed member or quick check (R1-24).
 const TEXT_QUICK_CHECKS = 8;
 const TEXT_OBSERVED_KEYS = 12;
+// Parser notes are constant text. The answer prints warning-level ones (a
+// failed self-test with no finding, an unnamed failed member, a GPU nvidia-smi
+// could not open), and every note when no rule ran, since then the notes are
+// the explanation (R2-3, R2-9, R2-16).
+const TEXT_WARNINGS = 4;
+const TEXT_NOTES = 6;
+const TEXT_SUMMARY_CHARS = 300;
 
 function captureLines(analysis: TriageAnalysis): string[] {
   const lines: string[] = [];
@@ -1018,17 +1204,26 @@ function captureLines(analysis: TriageAnalysis): string[] {
   return lines;
 }
 
+function capped(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 3).trimEnd()}...`;
+}
+
 /** The model-visible text block that accompanies structuredContent. */
 export function renderAnalysisText(analysis: TriageAnalysis): string {
   const lines: string[] = [];
+  const noteLines = (notes: readonly string[], max: number) => notes.slice(0, max).map((n) => `- ${n}`);
   // Keyed on subjects, not formats: a recognised format with nothing readable
   // in it (`zpool status -x`, a cut-off paste) ran no rule either, and must not
-  // claim it was checked.
+  // claim it was checked. The readers' notes say why (no pools, nvidia-smi
+  // could not reach the GPU, a block cut off); a guess here contradicted them
+  // (R2-9, R2-16).
   if (analysis.input.subjects === 0) {
-    if (analysis.input.formats.length === 0) {
-      lines.push("No supported command output was recognised in this paste, so no rule was checked.");
+    const recognised = analysis.input.formats.length > 0 ? `Recognised ${analysis.input.formats.join(", ")}, but it held nothing the rules can read, so no rule was checked` : null;
+    if (analysis.notes.length === 0) {
+      lines.push(recognised ? `${recognised}.` : "No supported command output was recognised in this paste, so no rule was checked.");
     } else {
-      lines.push(`Recognised ${analysis.input.formats.join(", ")}, but it held nothing the rules can read (for example a one-line summary or a cut-off paste), so no rule was checked.`);
+      lines.push(recognised ? `${recognised}:` : "Nothing in this paste could be checked with Glassmkr's rules:");
+      lines.push(...noteLines(analysis.notes, TEXT_NOTES));
     }
     if (analysis.next_capture.length > 0) {
       lines.push("Run one of these on the server and paste the output:");
@@ -1037,6 +1232,21 @@ export function renderAnalysisText(analysis: TriageAnalysis): string {
     return lines.join("\n");
   }
   const read = analysis.input.formats.length > 0 ? analysis.input.formats.join(", ") : "the pasted output";
+  const warnings = analysis.notes.filter((n) => WARNING_NOTES.get(analysis)?.has(n));
+  // A recognised paste with none of the fields any rule reads (a memory-only
+  // GPU CSV) ran nothing, and must not say it was checked (R2-17).
+  if (analysis.findings.length === 0 && analysis.checked_no_signal.length === 0) {
+    const why = analysis.notes.includes(RULES_FAILED_NOTE)
+      ? "the rules could not be evaluated on it"
+      : "it has none of the fields Glassmkr's rules read";
+    lines.push(`Read ${read} (${analysis.input.subjects} subject(s)), but ${why}, so no rule was checked.`);
+    lines.push(...noteLines(analysis.notes, TEXT_NOTES));
+    if (analysis.next_capture.length > 0) {
+      lines.push("To check more, run on the server and paste the output:");
+      lines.push(...captureLines(analysis));
+    }
+    return lines.join("\n");
+  }
   lines.push(`Read ${read} (${analysis.input.subjects} subject(s)) and checked it with Glassmkr's alert rules.`);
   const counts = { critical: 0, warning: 0, info: 0 };
   for (const f of analysis.findings) counts[f.severity] += 1;
@@ -1045,9 +1255,17 @@ export function renderAnalysisText(analysis: TriageAnalysis): string {
   } else {
     lines.push(`${analysis.findings.length} finding(s): ${counts.critical} critical, ${counts.warning} warning, ${counts.info} info.`);
     const shown = new Set<string>();
+    const summaries = new Set<string>();
     for (const f of analysis.findings) {
       const who = [f.subject.kind, f.subject.id, f.subject.serial ? `S/N ${f.subject.serial}` : ""].filter(Boolean).join(" ");
       lines.push(`- [${f.severity}] ${f.title} (${who})`);
+      // The summary carries the corrections a title cannot (a recoverable
+      // sense key, a slot width nvidia-smi cannot see); content-only clients
+      // never saw it (R2-11). Once per distinct summary.
+      if (f.summary && !summaries.has(f.summary)) {
+        summaries.add(f.summary);
+        lines.push(`  ${capped(f.summary, TEXT_SUMMARY_CHARS)}`);
+      }
       const facts = Object.entries(f.observed)
         .filter(([, v]) => v !== null && v !== "")
         .slice(0, TEXT_OBSERVED_KEYS)
@@ -1063,6 +1281,10 @@ export function renderAnalysisText(analysis: TriageAnalysis): string {
   }
   if (analysis.checked_no_signal.length > 0) {
     lines.push(`${analysis.checked_no_signal.length} other rule(s) ran and found no matching signal in this output.`);
+  }
+  if (warnings.length > 0) {
+    lines.push("Also in this output:");
+    lines.push(...noteLines(warnings, TEXT_WARNINGS));
   }
   if (analysis.not_determinable.some((n) => n.signal === "event_timing")) {
     lines.push("Times unknown: some events have relative or missing timestamps, so their age cannot be judged from this paste.");

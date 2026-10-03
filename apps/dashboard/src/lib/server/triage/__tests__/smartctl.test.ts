@@ -168,7 +168,11 @@ describe("ATA text (smartctl -a / -x)", () => {
     expect(fired(results)).toEqual(["smart_failing:critical:/dev/sdc"]);
     expect(results[0].title).toBe("SMART failure on /dev/sdc (S/N WD-FAKE0000002)");
     expect(results[0].evidence.serial).toBe("WD-FAKE0000002");
-    expect(parsed.notes).toEqual([]);
+    // Only the self-test and 197/198 notes (R2-3), nothing about the read.
+    expect(parsed.notes.map((n) => n.message)).toEqual([
+      expect.stringMatching(/^1 drive records a failed SMART self-test \(newest failure: "Completed: read failure" at LBA 234593524, 47772 power-on hours\)/),
+      expect.stringMatching(/^1 drive reports 16 pending and 0 offline-uncorrectable sectors \(SMART 197\/198\)/),
+    ]);
   });
 
   it("CRLF line endings parse identically to LF", () => {
@@ -338,7 +342,8 @@ describe("smartctl JSON", () => {
       .join("\n");
     const { parsed, results } = runText(`root@db-04.example.invalid:~# smartctl -j -a /dev/sda\n${flat}`);
     expect(smartOf(parsed)).toEqual(smartOf(smartctlParser.parse(fixture("json-sata-failing.json"))));
-    expect(parsed.notes).toEqual([]);
+    expect(parsed.notes).toEqual(smartctlParser.parse(fixture("json-sata-failing.json")).notes);
+    expect(noteText(parsed)).not.toMatch(/cut off|could not be read/);
     expect(fired(results)).toEqual(["smart_failing:critical:/dev/sda"]);
   });
 
@@ -738,5 +743,68 @@ describe("byte order mark (R1-34)", () => {
     const { parsed, results } = runText("\uFEFF" + fixture("json-sata-failing.json"));
     expect(parsed.subjects).toBe(1);
     expect(results.some((a) => a.type === "smart_failing")).toBe(true);
+  });
+});
+
+// R2-3: a drive with a failed extended self-test and held pending sectors gets
+// no finding (no rule reads the self-test log, and 197/198 need history), but
+// the answer must say what the paste shows instead of only "no rule matched".
+describe("failed self-test and pending sectors with no rule finding (R2-3)", () => {
+  it.each([
+    ["text", "synthetic-ata-pending-selftest-read-failure.txt"],
+    ["JSON", "synthetic-json-selftest-read-failure-pending.json"],
+  ])("%s: names the failed self-test and the 197/198 counts in warning notes", (_form, name) => {
+    const { parsed, results } = run(name);
+    expect(results).toEqual([]);
+    const warnings = parsed.notes.filter((n) => n.level === "warning").map((n) => n.message).join("\n");
+    expect(warnings).toMatch(/1 drive records a failed SMART self-test \(newest failure: "Completed: read failure" at LBA 1953521234, 60115 power-on hours\)/);
+    expect(warnings).toMatch(/No Glassmkr rule evaluates the self-test log/);
+    expect(warnings).toMatch(/1 drive reports 24 pending and 24 offline-uncorrectable sectors \(SMART 197\/198\)/);
+    // Constant text and counts only: nothing else from the paste.
+    expect(warnings).not.toMatch(/WD-WCC4N1234567|WDC|host-example|Extended offline/);
+  });
+
+  it("does not describe a large pending count as a 0/1 flap", () => {
+    const pending = smartctlParser.notDeterminable[0];
+    expect(pending.signal).toMatch(/197\/198/);
+    expect(pending.reason).not.toMatch(/flap between 0 and 1 without a fault/);
+    expect(pending.reason).toMatch(/holding, rising or clearing/);
+  });
+
+  it("an aborted or interrupted self-test is not reported as failed", () => {
+    const { parsed } = runText([
+      "SMART overall-health self-assessment test result: PASSED",
+      "Num  Test_Description    Status                  Remaining  LifeTime(hours)  LBA_of_first_error",
+      "# 1  Extended offline    Aborted by host               90%     60115         -",
+      "# 2  Short offline       Interrupted (host reset)      10%     60112         -",
+    ].join("\n"));
+    expect(noteText(parsed)).not.toMatch(/failed SMART self-test/);
+  });
+});
+
+// R2-13: smartctl run on an md array, an LVM / device-mapper volume, a loop
+// device or a zvol prints "Unable to detect device type". Those are not disks
+// and have no SMART; the agent never probes them (it lists sd*, nvme*, hd*).
+describe("software block devices are not unreadable disks (R2-13)", () => {
+  const unable = (dev: string) =>
+    `root@host-example:~# smartctl -a ${dev}\nsmartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.8.0-45-generic] (local build)\n\n${dev}: Unable to detect device type\nPlease specify device type with the -d option.\n\nUse smartctl -h to get a usage summary\n`;
+
+  it.each(["/dev/md0", "/dev/md/root", "/dev/dm-0", "/dev/mapper/ubuntu--vg-ubuntu--lv", "/dev/loop3", "/dev/zd16"])("%s is skipped with a note", (dev) => {
+    const { parsed, results } = runText(unable(dev));
+    expect(unreadableOf(parsed)).toEqual([]);
+    expect(results).toEqual([]);
+    expect(noteText(parsed)).toMatch(/Skipped 1 software or virtual block device \(md RAID, device-mapper or LVM, loop, zvol and similar\)/);
+  });
+
+  it("an md array beside its PASSED member disks raises nothing", () => {
+    const { parsed, results } = run("synthetic-md-array-plus-members.txt");
+    expect(smartOf(parsed).map((d) => [d.device, d.health])).toEqual([["/dev/sda", "PASSED"], ["/dev/sdb", "PASSED"]]);
+    expect(unreadableOf(parsed)).toEqual([]);
+    expect(results).toEqual([]);
+  });
+
+  it("a real disk that needs a -d type is still flagged unreadable", () => {
+    const { parsed } = runText(unable("/dev/sdb"));
+    expect(unreadableOf(parsed)).toEqual([{ device: "/dev/sdb", reason: "no_smart_data" }]);
   });
 });

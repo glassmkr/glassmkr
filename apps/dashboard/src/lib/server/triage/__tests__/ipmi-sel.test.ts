@@ -34,6 +34,7 @@ const ALL_FIXTURES = [
   "synthetic-sdr-psu-healthy.txt",
   "synthetic-sdr-list-psu-hex.txt",
   "synthetic-sel-ce-logging-disabled.txt",
+  "synthetic-sensor-psu-hex-only.txt",
 ];
 
 function fixture(name: string): string {
@@ -175,7 +176,7 @@ describe("healthy SEL + sel info + sdr type Fan", () => {
   it("fires nothing and says which inputs were missing rather than calling it healthy", () => {
     expect(evaluate(ipmiSelParser.parse(text).snapshot)).toEqual([]);
     const notes = noteText(text);
-    expect(notes).toContain("Not in this output, so not checked: power supply rows (ipmitool sensor).");
+    expect(notes).toContain("Not in this output, so not checked: power supply rows (ipmitool sdr elist).");
     expect(notes.toLowerCase()).not.toContain("healthy");
   });
 });
@@ -708,6 +709,26 @@ describe("sdr power supply state text (R1-8)", () => {
     expect(r.rules_checked).not.toContain("psu_redundancy_loss");
     expect(r.rules_checked).toContain("ipmi_fan_failure");
     expect(r.notes.map((n) => n.message).join("\n")).toMatch(/show only a hex state code/);
+  });
+
+  // R2-4: `ipmitool sensor` prints a discrete PSU's state as a hex mask
+  // (0x0b00 is presence + failure detected + input lost on a Power Supply
+  // sensor), which psu_redundancy_loss reads as healthy. The table carries no
+  // sensor type to decode it by, so the check is not claimed on those rows.
+  it("ipmitool sensor: hex-only power supply rows are not claimed as checked", () => {
+    const r = ipmiSelParser.parse(fixture("synthetic-sensor-psu-hex-only.txt"));
+    expect(r.formats).toEqual(["ipmitool_sensor"]);
+    expect(r.rules_checked).not.toContain("psu_redundancy_loss");
+    expect(r.rules_checked).toContain("ipmi_fan_failure");
+    expect(r.notes.map((n) => n.message).join("\n")).toMatch(/show only a hex state code.*ipmitool sdr elist/);
+  });
+
+  it("ipmitool sensor: analog PSU rows keep the check, and the hex rows beside them get a note", () => {
+    const r = ipmiSelParser.parse(fixture("synthetic-sensor-psu.txt"));
+    expect(r.rules_checked).toContain("psu_redundancy_loss");
+    expect(r.notes.map((n) => n.message)).toContainEqual(
+      expect.stringMatching(/^2 power supply rows show only a hex state code, which is not decoded here/),
+    );
   });
 
   it("Predictive Failure is a note, not a finding", () => {

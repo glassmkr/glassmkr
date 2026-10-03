@@ -629,7 +629,10 @@ describe("rules_checked: which half of the GPU rules this paste can feed", () =>
   const allButNvlink = nvidiaSmiParser.rules.filter((x) => x !== "nvlink_link_down").sort();
 
   it("-q alone carries no NVLink link state, so nvlink_link_down is not checked", () => {
-    expect(rules(nvidiaSmiParser.parse(fixture("synthetic-failing-a100-q.txt")))).toEqual(allButNvlink);
+    // One GPU: the VBIOS drift check has nothing to compare it with (R2-17).
+    expect(rules(nvidiaSmiParser.parse(fixture("synthetic-failing-a100-q.txt")))).toEqual(
+      allButNvlink.filter((x) => x !== "gpu_driver_or_firmware_drift"),
+    );
   });
 
   it("-q plus nvlink --status checks every rule", () => {
@@ -700,5 +703,78 @@ describe("PCIe width below the card's maximum (R1-19)", () => {
   it("notes that nvidia-smi cannot see the slot's electrical width", () => {
     const r = nvidiaSmiParser.parse(fixture("synthetic-l4-x8-slot-csv.txt"));
     expect(r.notes.map((n) => n.message).join("\n")).toMatch(/cannot tell a slot wired for fewer lanes from a link that trained down/);
+  });
+});
+
+// R2-9: nvidia-smi's own failure output. The paste has no GPU readings, but it
+// is nvidia-smi output that reports why, so it is recognised, says so, and is
+// marked as having nothing to report rather than as a cut-off paste.
+describe("nvidia-smi failure output (R2-9)", () => {
+  it("a -q paste whose GPU handle could not be opened", () => {
+    const text = fixture("synthetic-q-device-handle-error.txt");
+    expect(nvidiaSmiParser.detect(text)).toBe(true);
+    const r = nvidiaSmiParser.parse(text);
+    expect(r.subjects).toBe(0);
+    expect(r.nothing_to_report).toBe(true);
+    expect(r.notes).toEqual([
+      {
+        level: "warning",
+        message: "nvidia-smi could not open 1 GPU (Unable to determine the device handle), so this paste has no readings for it.",
+      },
+    ]);
+  });
+
+  it("plain nvidia-smi printing the device-handle error or No devices were found is recognised", () => {
+    const lost = "root@gpu-node-07:~# nvidia-smi\nUnable to determine the device handle for GPU 0000:2A:00.0: GPU is lost.  Reboot the system to recover this GPU\n";
+    expect(nvidiaSmiParser.detect(lost)).toBe(true);
+    expect(nvidiaSmiParser.parse(lost).nothing_to_report).toBe(true);
+    const none = fixture("synthetic-no-devices.txt");
+    expect(nvidiaSmiParser.detect(none)).toBe(true);
+    const r = nvidiaSmiParser.parse(none);
+    expect(r.nothing_to_report).toBe(true);
+    expect(r.notes).toEqual([{ level: "warning", message: "nvidia-smi reported no devices, so this paste has no GPU readings." }]);
+  });
+
+  it("a driver failure is marked as having nothing to report", () => {
+    const r = nvidiaSmiParser.parse("NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running.\n");
+    expect(r.nothing_to_report).toBe(true);
+  });
+
+  it("GPUs that were read keep their readings, and the one that could not be opened gets a warning", () => {
+    const text = `${fixture("synthetic-healthy-h100x2-q.txt")}\nUnable to determine the device handle for GPU0000:2A:00.0: Unknown Error\n`;
+    const r = nvidiaSmiParser.parse(text);
+    expect(r.subjects).toBe(2);
+    expect(r.nothing_to_report).toBeUndefined();
+    expect(r.notes).toContainEqual({
+      level: "warning",
+      message: "nvidia-smi could not open 1 GPU (Unable to determine the device handle), so this paste has no readings for it.",
+    });
+  });
+});
+
+// R2-17: rules_checked follows the fields each GPU actually carries, so a
+// memory-only CSV no longer claims six GPU rules ran and found nothing.
+describe("rules_checked follows the fields in the paste (R2-17)", () => {
+  const rules = (r: ParserResult) => [...(r.rules_checked ?? [])].sort();
+
+  it("a memory-only CSV checks no rule", () => {
+    const r = nvidiaSmiParser.parse(fixture("synthetic-csv-memory-only.txt"));
+    expect(r.subjects).toBe(2);
+    expect(rules(r)).toEqual([]);
+  });
+
+  it("temperature and ECC without throttle reasons or PCIe fields check only the thermal and ECC rules", () => {
+    const r = nvidiaSmiParser.parse([
+      "index, name, temperature.gpu, ecc.mode.current, ecc.errors.corrected.volatile.total, ecc.errors.uncorrected.volatile.total",
+      "0, NVIDIA A100-SXM4-80GB, 41, Enabled, 0, 0",
+      "1, NVIDIA A100-SXM4-80GB, 43, Enabled, 0, 0",
+    ].join("\n"));
+    expect(rules(r)).toEqual(["gpu_corrected_ecc_storm", "gpu_thermal_critical", "gpu_uncorrected_ecc"]);
+  });
+
+  it("a full -q paste of two GPUs of one model still checks every non-NVLink rule", () => {
+    expect(rules(nvidiaSmiParser.parse(fixture("synthetic-healthy-h100x2-q.txt")))).toEqual(
+      nvidiaSmiParser.rules.filter((x) => x !== "nvlink_link_down").sort(),
+    );
   });
 });

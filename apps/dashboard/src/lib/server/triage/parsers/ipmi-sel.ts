@@ -536,9 +536,13 @@ function parseIpmi(text: string): ParserResult {
   let sensorUsed = false;
   let psuRedundancy: IpmiSlice["psu_redundancy_state"] | null = null;
   let psuPredictive = 0;
-  // PSU rows whose state can be read: a sensor-table row, or an sdr row with
-  // a number or state text. Plain `sdr list` prints a hex code there.
+  // PSU rows whose state can be read: a sensor-table row with a threshold
+  // status, or an sdr row with a number or state text. Plain `sdr list` prints
+  // a hex code in the reading, and `ipmitool sensor` prints a discrete
+  // sensor's state as a hex mask in the status column (R2-4); the rule reads
+  // either as healthy, and the table names no sensor type to decode it by.
   let psuStateRows = 0;
+  let psuHexRows = 0;
 
   for (const line of lines) {
     if (line.length > MAX_LINE) continue;
@@ -574,7 +578,8 @@ function parseIpmi(text: string): ParserResult {
             psuNames.add(psu.name);
             psus.push(psu);
             used = true;
-            if (sensor.layout === "sensor" || !HEX_VALUE.test(sensor.reading)) psuStateRows++;
+            if (HEX_VALUE.test(sensor.layout === "sensor" ? sensor.code : sensor.reading)) psuHexRows++;
+            else psuStateRows++;
             if (psu.status === "ok" && PSU_PREDICTIVE_TEXT.test(sensor.reading)) psuPredictive++;
           }
         }
@@ -732,12 +737,19 @@ function parseIpmi(text: string): ParserResult {
       level: "info",
       message: "The power supply rows show only a hex state code, so their state could not be read and the power supply check did not run. ipmitool sdr elist prints the state as text.",
     });
+  } else if (psuHexRows > 0) {
+    notes.push({
+      level: "warning",
+      message: `${psuHexRows} power supply ${psuHexRows === 1 ? "row shows" : "rows show"} only a hex state code, which is not decoded here, so the power supply check cannot see a failure in ${psuHexRows === 1 ? "it" : "them"}. ipmitool sdr elist prints that state as text.`,
+    });
   }
   const missing: string[] = [];
   if (events.length === 0) missing.push("SEL event rows (ipmitool sel elist)");
   if (!selInfoUsable) missing.push("SEL fullness (ipmitool sel info)");
   if (fans.length === 0) missing.push("fan rows (ipmitool sdr type Fan)");
-  if (psus.length === 0 && psuRedundancy === null) missing.push("power supply rows (ipmitool sensor)");
+  // Not `ipmitool sensor`: it prints a discrete PSU state as a hex mask the
+  // check cannot read (R2-4).
+  if (psus.length === 0 && psuRedundancy === null) missing.push("power supply rows (ipmitool sdr elist)");
   if (missing.length > 0) {
     notes.push({ level: "info", message: `Not in this output, so not checked: ${missing.join("; ")}.` });
   }

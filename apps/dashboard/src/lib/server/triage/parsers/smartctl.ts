@@ -151,8 +151,16 @@ interface Counters {
   unreadableJson: number;
   grownDefectDrives: number;
   grownDefectTotal: number;
+  /** Drives whose self-test log holds a failed test (status 3..8), and the first one's newest failure. */
+  failedSelfTestDrives: number;
+  failedSelfTest?: { nibble: number; lba?: number; hours?: number };
+  /** Drives with SMART 197 or 198 above zero, and the largest of each. */
+  pendingDrives: number;
+  maxPending: number;
+  maxOfflineUncorrectable: number;
   vdSuppressed: number;
   hypervisorDisk: number;
+  softwareBlock: number;
   sharedSerial: number;
   budgetHit: boolean;
 }
@@ -231,6 +239,14 @@ const BMC_USB_VENDORS = new Set(["0x046b", "0x0557", "0x0624"]);
 // probed by the agent, which lists only sd*, nvme* and hd* devices.
 const HYPERVISOR_DISK_RE = /\bQEMU\b|\bVMware\b|\bMsft\b|\bVBOX\b|\bVirtualBox\b|\bXen\b|\bVirtIO\b/i;
 const HYPERVISOR_PATH_RE = /^\/dev\/x?vd[a-z]+$/;
+// Block devices that are not disks: md arrays, device-mapper and LVM volumes,
+// loop, zvols, network and cache devices, optical, RAM disks. smartctl cannot
+// map these names to a disk interface and prints "Unable to detect device
+// type", which read as a disk whose SMART is unreadable and raised a warning
+// even beside PASSED member disks (R2-13). The agent lists only sd*, nvme* and
+// hd* devices, so it never probes them.
+const SOFTWARE_BLOCK_PATH_RE =
+  /^\/dev\/(?:md\d{1,4}|md_d\d{1,4}|md\/[^/]{1,64}|dm-\d{1,4}|mapper\/[^/]{1,128}|loop\d{1,4}|zd\d{1,5}|nbd\d{1,4}|rbd\d{1,4}|drbd\d{1,4}|bcache\d{1,4}|sr\d{1,3}|ram\d{1,3}|zram\d{1,3}|disk\/by-id\/(?:md|dm|lvm)-[^/]{1,128})$/;
 
 const SMARTCTL_JSON_KEY_RE =
   /"(?:json_format_version|smartctl|model_name|serial_number|smart_status|ata_smart_attributes|nvme_smart_health_information_log)"\s*:/;
@@ -1309,6 +1325,7 @@ function classify(d: DeviceRead, c: Counters): Outcome {
   }
   if (isVirtualMedia(d)) c.virtualMedia++;
   else if (isHypervisorDisk(d)) c.hypervisorDisk++;
+  else if (d.path && SOFTWARE_BLOCK_PATH_RE.test(d.path)) c.softwareBlock++;
   else if (d.optical) c.optical++;
   else if (d.usbBridge) c.usbBridge++;
   else if (d.permissionDenied) c.permission++;
@@ -1344,6 +1361,9 @@ function buildNotes(c: Counters, subjects: number): ParseNote[] {
   if (c.hypervisorDisk > 0) {
     info(`Skipped ${c.hypervisorDisk} virtual ${plural(c.hypervisorDisk, "disk", "disks")} presented by a hypervisor: ${plural(c.hypervisorDisk, "it has", "they have")} no SMART. Check the physical disks on the host instead.`);
   }
+  if (c.softwareBlock > 0) {
+    info(`Skipped ${c.softwareBlock} software or virtual block ${plural(c.softwareBlock, "device", "devices")} (md RAID, device-mapper or LVM, loop, zvol and similar): they have no SMART. Run smartctl on the member disks; lsblk -s lists them.`);
+  }
   if (c.sharedSerial > 0) {
     info(`${c.sharedSerial} ${plural(c.sharedSerial, "drive shares", "drives share")} a serial number with another drive in the paste (for example the same redaction placeholder) and ${plural(c.sharedSerial, "was", "were")} counted as a separate drive.`);
   }
@@ -1375,6 +1395,24 @@ function buildNotes(c: Counters, subjects: number): ParseNote[] {
   }
   if (c.grownDefectDrives > 0) {
     warn(`${c.grownDefectDrives} SAS ${plural(c.grownDefectDrives, "drive reports", "drives report")} a non-empty grown defect list (${c.grownDefectTotal} ${plural(c.grownDefectTotal, "entry", "entries")} in total). Glassmkr's rules do not evaluate this SCSI counter, so it raised no finding on its own.`);
+  }
+  // A failed self-test and held pending sectors are the strongest evidence in
+  // the most common failing-disk paste (health PASSED, nothing reallocated),
+  // and no rule reads either, so the answer said only "no rule matched" (R2-3).
+  // The status is the smartmontools phrase for the status code, not paste text.
+  if (c.failedSelfTestDrives > 0 && c.failedSelfTest) {
+    const f = c.failedSelfTest;
+    const status = SELF_TEST_STATUSES.find(([, code]) => code === f.nibble)?.[0] ?? "failed";
+    const where = [f.lba !== undefined ? `at LBA ${f.lba}` : "", f.hours !== undefined ? `${f.hours} power-on hours` : ""].filter(Boolean).join(", ");
+    const lead = c.failedSelfTestDrives === 1 ? "1 drive records" : `${c.failedSelfTestDrives} drives record`;
+    const which = c.failedSelfTestDrives === 1 ? "newest failure" : "the first one's newest failure";
+    warn(`${lead} a failed SMART self-test (${which}: "${status}"${where ? ` ${where}` : ""}). No Glassmkr rule evaluates the self-test log, so it raised no finding on its own.`);
+  }
+  if (c.pendingDrives > 0) {
+    const lead = c.pendingDrives === 1
+      ? `1 drive reports ${c.maxPending} pending and ${c.maxOfflineUncorrectable} offline-uncorrectable sectors (SMART 197/198)`
+      : `${c.pendingDrives} drives report pending or offline-uncorrectable sectors (SMART 197/198; highest ${c.maxPending} pending, ${c.maxOfflineUncorrectable} offline-uncorrectable)`;
+    warn(`${lead}. Glassmkr judges these over days of readings, so one paste raised no finding on its own.`);
   }
   if (c.truncatedJson > 0) {
     warn(`${c.truncatedJson} smartctl JSON ${plural(c.truncatedJson, "block was", "blocks were")} cut off: only the fields before the cut were read.`);
@@ -1408,8 +1446,13 @@ function parseSmartctl(input: string): ParserResult {
     unreadableJson: 0,
     grownDefectDrives: 0,
     grownDefectTotal: 0,
+    failedSelfTestDrives: 0,
+    pendingDrives: 0,
+    maxPending: 0,
+    maxOfflineUncorrectable: 0,
     vdSuppressed: 0,
     hypervisorDisk: 0,
+    softwareBlock: 0,
     sharedSerial: 0,
     budgetHit: false,
   };
@@ -1495,7 +1538,20 @@ function parseSmartctl(input: string): ParserResult {
       counters.grownDefectDrives++;
       counters.grownDefectTotal += d.grownDefects;
     }
-    smart.push(toSmartEntry(d, device));
+    const entry = toSmartEntry(d, device);
+    const failedTest = d.selfTest?.find((r) => r.nibble !== null && r.nibble >= 3 && r.nibble <= 8);
+    if (failedTest && failedTest.nibble !== null) {
+      counters.failedSelfTestDrives++;
+      counters.failedSelfTest ??= { nibble: failedTest.nibble, lba: failedTest.lba, hours: failedTest.lifetime };
+    }
+    const pending = entry.pending_sectors ?? 0;
+    const offline = entry.offline_uncorrectable ?? 0;
+    if (pending > 0 || offline > 0) {
+      counters.pendingDrives++;
+      counters.maxPending = Math.max(counters.maxPending, pending);
+      counters.maxOfflineUncorrectable = Math.max(counters.maxOfflineUncorrectable, offline);
+    }
+    smart.push(entry);
   });
 
   const snapshot: Partial<Snapshot> = {};
@@ -1520,7 +1576,7 @@ export const smartctlParser: TriageParser = {
   notDeterminable: [
     {
       signal: "Pending and offline-uncorrectable sector trend (SMART 197/198)",
-      reason: "Pending sectors can flap between 0 and 1 without a fault; Glassmkr only flags a rise that holds or repeats across days of readings, and one paste is a single point",
+      reason: "One reading cannot show whether these counts are holding, rising or clearing (some firmware toggles the pending count between 0 and 1 on drives with no fault); Glassmkr judges them across days of readings, and one paste is a single point",
     },
     {
       signal: "Reallocated and reported-uncorrectable growth (SMART 5/187)",

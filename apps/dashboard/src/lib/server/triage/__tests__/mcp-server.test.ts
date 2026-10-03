@@ -171,6 +171,32 @@ describe("tools/call", () => {
     expect(setupOutputSchema.parse(setup.structuredContent).distro_family).toBe("apt");
   });
 
+  // R2-19: a distro over 64 characters or a format outside the enum failed
+  // the whole call, and the paste was never analyzed.
+  it("an over-long distro or an unknown format hint never fails the call (R2-19)", async () => {
+    const { client } = await connect();
+    const longDistro = "Red Hat Enterprise Linux Server release 7.9 (Maipo) 3.10.0-1160.el7.x86_64";
+    for (const args of [{ distro: longDistro }, { format: "mdstat" }, { format: "dmesg -T" }, { format: null }, { format: "" }, { distro: 7 }]) {
+      const result = await client.callTool({ name: "analyze_server_output", arguments: { output: PASTE, ...args } });
+      expect(result.isError, JSON.stringify(args)).toBeFalsy();
+      expect(analysisOutputSchema.parse(result.structuredContent).findings.map((f) => f.rule_id)).toEqual(["smart_failing"]);
+    }
+    const capture = await client.callTool({ name: "get_capture_command", arguments: { goal: "all_disks", distro: longDistro } });
+    expect(capture.isError).toBeFalsy();
+    expect(captureOutputSchema.parse(capture.structuredContent).install_hint?.command).toBe("sudo dnf install -y smartmontools");
+    const setup = await client.callTool({ name: "get_monitoring_setup", arguments: { distro: longDistro } });
+    expect(setup.isError).toBeFalsy();
+  });
+
+  it("still advertises the hint limits in tools/list (R2-19)", async () => {
+    const { client } = await connect();
+    const { tools } = await client.listTools();
+    const props = tools[0].inputSchema.properties as any;
+    expect(JSON.stringify(props.distro)).toContain('"maxLength":64');
+    expect(JSON.stringify(props.format)).toContain('"proc_mdstat"');
+    expect(JSON.stringify(props.format)).toContain("Normally omit it");
+  });
+
   it("rejects an empty paste through input validation", async () => {
     const { client } = await connect();
     const result = await client.callTool({ name: "analyze_server_output", arguments: { output: "" } });

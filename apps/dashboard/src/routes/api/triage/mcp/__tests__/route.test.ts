@@ -224,20 +224,33 @@ describe("HTTP guards", () => {
     }
   });
 
-  it("adds a per-/64 bucket for IPv6 callers and keeps the full address for the per-IP one (R1-15)", async () => {
-    await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": "2001:db8:1:2::abcd" });
-    await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": "2001:0db8:0001:0002:ffff:0:0:1" });
-    await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": "::ffff:198.51.100.9" });
+  it("adds per-/64 and per-/48 buckets for IPv6 callers and keeps the full address for the per-IP one (R1-15, R2-6)", async () => {
+    const call = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_capture_command", arguments: { goal: "zfs" } } });
+    await post(call, { "X-Forwarded-For": "2001:db8:1:2::abcd" });
+    await post(call, { "X-Forwarded-For": "2001:0db8:0001:0002:ffff:0:0:1" });
+    await post(call, { "X-Forwarded-For": "::ffff:198.51.100.9" });
     expect(takeMock.mock.calls.map((c) => [c[0].namespace, c[1]])).toEqual([
       ["triage:ip", "2001:db8:1:2::abcd"],
       ["triage:net64", "2001:db8:1:2::/64"],
+      ["triage:net48", "2001:db8:1::/48"],
       ["triage:global", "all"],
       ["triage:ip", "2001:0db8:0001:0002:ffff:0:0:1"],
       ["triage:net64", "2001:db8:1:2::/64"],
+      ["triage:net48", "2001:db8:1::/48"],
       ["triage:global", "all"],
       ["triage:ip", "::ffff:198.51.100.9"],
       ["triage:global", "all"],
     ]);
+  });
+
+  // R2-6: eight /64s of one /56 at the per-/64 rate drained the global bucket
+  // for every connector user; the /48 bucket caps the whole allocation.
+  it("one /48 shares one bucket across all of its /64s", async () => {
+    for (const ip of ["2001:db8:5:1::1", "2001:db8:5:2::1", "2001:db8:5:ff00::1"]) {
+      await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": ip });
+    }
+    const net48 = takeMock.mock.calls.filter((c) => c[0].namespace === "triage:net48").map((c) => c[1]);
+    expect(net48).toEqual(["2001:db8:5::/48", "2001:db8:5::/48", "2001:db8:5::/48"]);
   });
 
   it("a 429 from the /64 bucket stops the request before the global bucket", async () => {
@@ -296,6 +309,26 @@ describe("HTTP guards", () => {
 });
 
 describe("CORS", () => {
+  // R2-6: any https origin used to pass, so any web page could make each
+  // visitor's browser spend the global bucket. R2-24: a local inspector in a
+  // browser (MCP Inspector's Direct mode) sends a plain-http loopback origin.
+  it("allows only the connector origins and loopback, and refuses others before any bucket is debited", async () => {
+    for (const origin of ["https://chatgpt.com", "https://chat.openai.com", "https://claude.ai", "http://localhost:6274", "http://127.0.0.1:6274", "http://[::1]:6274", "https://localhost:8443"]) {
+      const res = await OPTIONS(eventFor(new Request(URL_, { method: "OPTIONS", headers: { origin } })));
+      expect(res.status, origin).toBe(204);
+      expect(res.headers.get("access-control-allow-origin")).toBe(origin);
+    }
+    for (const origin of ["https://attacker.example", "https://claude.ai.attacker.example", "http://evil.localhost.example", "http://192.168.1.10:6274"]) {
+      const pre = await OPTIONS(eventFor(new Request(URL_, { method: "OPTIONS", headers: { origin } })));
+      expect(pre.status, origin).toBe(403);
+      expect(pre.headers.get("access-control-allow-origin")).toBeNull();
+      takeMock.mockClear();
+      const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { Origin: origin });
+      expect(res.status, origin).toBe(403);
+      expect(takeMock).not.toHaveBeenCalled();
+    }
+  });
+
   it("answers a preflight from an https origin without credentials", async () => {
     const res = await OPTIONS(eventFor(new Request(URL_, { method: "OPTIONS", headers: { origin: "https://chatgpt.com" } })));
     expect(res.status).toBe(204);
@@ -325,12 +358,24 @@ describe("CORS", () => {
 });
 
 describe("rate limits", () => {
-  it("debits a per-IP and a global bucket before parsing the body", async () => {
+  it("debits the per-IP bucket before parsing the body, and the global bucket only for a tool call", async () => {
     await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }));
+    expect(takeMock.mock.calls.map((c) => [c[0].namespace, c[1]])).toEqual([["triage:ip", "198.51.100.7"]]);
+    takeMock.mockClear();
+    await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_capture_command", arguments: { goal: "zfs" } } }));
     expect(takeMock.mock.calls.map((c) => [c[0].namespace, c[1]])).toEqual([
       ["triage:ip", "198.51.100.7"],
       ["triage:global", "all"],
     ]);
+  });
+
+  // R2-6: a malformed body or a notification cost a global token, so cheap
+  // junk from many sources could empty it for everyone.
+  it("does not debit the global bucket for a rejected body or a notification", async () => {
+    expect((await post("not json")).status).toBe(400);
+    expect((await post("x", { "Content-Type": "text/plain" })).status).toBe(415);
+    expect((await post(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }))).status).toBe(202);
+    expect(takeMock.mock.calls.map((c) => c[0].namespace)).toEqual(["triage:ip", "triage:ip", "triage:ip"]);
   });
 
   it("429s with Retry-After when the IP bucket is empty", async () => {
@@ -349,8 +394,9 @@ describe("rate limits", () => {
     takeMock
       .mockResolvedValueOnce({ allowed: true, remaining: 10, retryAfterSeconds: 0, degraded: false })
       .mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfterSeconds: 1, degraded: false });
-    const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }));
+    const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_capture_command", arguments: { goal: "zfs" } } }));
     expect(res.status).toBe(429);
+    expect(takeMock.mock.calls.map((c) => c[0].namespace)).toEqual(["triage:ip", "triage:global"]);
   });
 
   it("turns a per-subject limit into a tool error, not an HTTP error", async () => {

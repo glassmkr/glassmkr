@@ -1,0 +1,10 @@
+[Fri Oct  3 09:30:00 2026] ata3.00: exception Emask 0x0 SAct 0x800000 SErr 0x0 action 0x0
+[Fri Oct  3 09:30:00 2026] ata3.00: irq_stat 0x40000008
+[Fri Oct  3 09:30:00 2026] ata3.00: failed command: READ FPDMA QUEUED
+[Fri Oct  3 09:30:00 2026] ata3.00: cmd 60/08:b8:28:3c:a1/00:00:1d:00:00/40 tag 23 ncq dma 4096 in
+[Fri Oct  3 09:30:00 2026]          res 41/40:00:28:3c:a1/00:00:1d:00:00/40 Emask 0x409 (media error) <F>
+[Fri Oct  3 09:30:00 2026] ata3.00: status: { DRDY ERR }
+[Fri Oct  3 09:30:00 2026] ata3.00: error: { UNC }
+[Fri Oct  3 09:30:01 2026] ata3: hard resetting link
+[Fri Oct  3 09:30:01 2026] ata3.00: configured for UDMA/133
+[Fri Oct  3 09:30:01 2026] ata3: EH complete

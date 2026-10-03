@@ -89,6 +89,10 @@ export function adversarialInputs(size: number): AdversarialInput[] {
     },
     { name: "ipmi: padded SEL sensor column", text: fill("1 | 01/01/2020 | 00:00:00 | ", " ", size, "x | y | Asserted\n") },
     { name: "kernel: long relative-stamp line", text: fill("[    1.000000] ", "x", size) },
+    // R2-1: the shell-prompt regex runs on every line of every paste (detect()
+    // included); a bracketed prompt of '@' made it quadratic inside the line cap.
+    { name: "kernel: bracketed prompt of @", text: fill("", "[" + "@".repeat(2047) + "\n", size) },
+    { name: "kernel: closed bracketed prompt of @", text: fill("", "[" + "@".repeat(2046) + "]\n", size) },
     { name: "kernel: padded sense key", text: fill("sd 0:0:0:0: [sda] Sense Key :", " ", size, "x") },
     {
       name: "kernel: many recovered-error sense lines",

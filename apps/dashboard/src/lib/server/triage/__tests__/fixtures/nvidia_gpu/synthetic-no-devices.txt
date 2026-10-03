@@ -1,0 +1,2 @@
+root@gpu-node-07:~# nvidia-smi
+No devices were found

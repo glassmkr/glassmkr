@@ -9,9 +9,10 @@
 // transport per POST, no sessions, no auth, no cookies, no database. GET and
 // DELETE (SSE stream and session close) do not apply to a stateless server and
 // answer 405. Abuse control is token buckets: per source IP, per IPv6 /64 and
-// global here, per anonymous end user inside the tool handlers. The request body is
-// never logged; see $lib/server/triage/mcp-server.ts for the one log line per
-// tool call.
+// /48, and global (tool calls only) here, per anonymous end user inside the
+// tool handlers. Browsers are held to the connector origins plus loopback. The
+// request body is never logged; see $lib/server/triage/mcp-server.ts for the
+// one log line per tool call.
 //
 // MCP_TRIAGE_ENABLED="0" turns the endpoint off (404) and "1" turns it on.
 // Unset: on for the hosted deployment, off for self-hosted, so an
@@ -40,12 +41,26 @@ const TIER_TRIAGE_IP: RateLimitConfig = { namespace: "triage:ip", capacity: 60, 
 // connector platform calling from many addresses in one /64 keeps more than a
 // single address's allowance.
 const TIER_TRIAGE_NET64: RateLimitConfig = { namespace: "triage:net64", capacity: 120, refillPerSecond: 4 };
+// A residential /56 holds 256 /64s and a tunnel-broker /48 65,536, so five /64s
+// of one allocation matched the global refill and eight held it at zero for
+// everyone else (R2-6). The whole /48 gets less than a third of it.
+const TIER_TRIAGE_NET48: RateLimitConfig = { namespace: "triage:net48", capacity: 180, refillPerSecond: 6 };
 // Ceiling for the whole endpoint, so a flood from many IPs cannot monopolise
-// the evaluator on a single-process dashboard.
+// the evaluator on a single-process dashboard. Debited only by tool calls,
+// after the body is read: the evaluator runs there, and a malformed body or a
+// notification spent a token everyone shares (R2-6).
 const TIER_TRIAGE_GLOBAL: RateLimitConfig = { namespace: "triage:global", capacity: 600, refillPerSecond: 20 };
 
-/** "2001:db8:1:2::/64" for an IPv6 address, null for anything else (IPv4-mapped included). */
-function ipv6Net64(ip: string): string | null {
+// The connector platforms call from their servers, with no Origin. A browser
+// always sends one, so only these may call from a page: the connector hosts,
+// and loopback for a local inspector (MCP Inspector's Direct mode, R2-24). Any
+// https origin used to pass, which let any web page spend the shared buckets
+// from every visitor's browser (R2-6).
+const CONNECTOR_ORIGINS = new Set(["https://chatgpt.com", "https://chat.openai.com", "https://claude.ai"]);
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** The address's /64 and /48 ("2001:db8:1:2::/64", "2001:db8:1::/48"), or null unless it is IPv6 (IPv4-mapped excluded). */
+function ipv6Prefixes(ip: string): { net64: string; net48: string } | null {
   const addr = ip.trim().split("%")[0].toLowerCase();
   if (!isIPv6(addr) || /^::ffff:\d/.test(addr)) return null;
   const halves = addr.split("::");
@@ -56,7 +71,8 @@ function ipv6Net64(ip: string): string | null {
   const tail = groups(halves[1]);
   const all = halves.length > 1 ? [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail] : head;
   if (all.length !== 8) return null;
-  return `${all.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(":")}::/64`;
+  const hex = all.map((g) => parseInt(g, 16).toString(16));
+  return { net64: `${hex.slice(0, 4).join(":")}::/64`, net48: `${hex.slice(0, 3).join(":")}::/48` };
 }
 
 function isTriageEnabled(): boolean {
@@ -87,17 +103,20 @@ function validateHost(event: Parameters<RequestHandler>[0]): boolean {
 }
 
 /**
- * The caller's Origin when it is an exact https origin, null when there is no
- * Origin header (server-to-server calls), false for anything else. There are no
- * credentials to protect, so any https origin may read the response; plain
- * http and opaque ("null") origins are refused.
+ * The caller's Origin when it is a connector host or a loopback origin, null
+ * when there is no Origin header (server-to-server calls), false for anything
+ * else, including opaque ("null") origins. There are no credentials to
+ * protect; the allowlist is there so a third-party page cannot spend the
+ * shared rate limits from its visitors' browsers.
  */
 function corsOrigin(request: Request): string | null | false {
   const raw = request.headers.get("origin");
   if (raw === null) return null;
   try {
     const url = new URL(raw);
-    if (url.protocol === "https:" && url.origin === raw) return url.origin;
+    if (url.origin !== raw) return false;
+    if (CONNECTOR_ORIGINS.has(url.origin)) return url.origin;
+    if ((url.protocol === "http:" || url.protocol === "https:") && LOOPBACK_HOSTS.has(url.hostname)) return url.origin;
   } catch {
     // fall through
   }
@@ -121,12 +140,7 @@ function gate(event: Parameters<RequestHandler>[0]): Response | null {
   return null;
 }
 
-async function routeLimited(event: Parameters<RequestHandler>[0]): Promise<Response | null> {
-  const ip = getSourceIp(event);
-  const net64 = ipv6Net64(ip);
-  const tiers: Array<readonly [RateLimitConfig, string]> = [[TIER_TRIAGE_IP, ip]];
-  if (net64) tiers.push([TIER_TRIAGE_NET64, net64]);
-  tiers.push([TIER_TRIAGE_GLOBAL, "all"]);
+async function limited(tiers: Array<readonly [RateLimitConfig, string]>): Promise<Response | null> {
   for (const [tier, id] of tiers) {
     const result = await take(tier, id);
     if (!result.allowed) {
@@ -138,6 +152,15 @@ async function routeLimited(event: Parameters<RequestHandler>[0]): Promise<Respo
     }
   }
   return null;
+}
+
+/** Per-source buckets, debited by every POST before its body is read. */
+function sourceLimited(event: Parameters<RequestHandler>[0]): Promise<Response | null> {
+  const ip = getSourceIp(event);
+  const prefixes = ipv6Prefixes(ip);
+  const tiers: Array<readonly [RateLimitConfig, string]> = [[TIER_TRIAGE_IP, ip]];
+  if (prefixes) tiers.push([TIER_TRIAGE_NET64, prefixes.net64], [TIER_TRIAGE_NET48, prefixes.net48]);
+  return limited(tiers);
 }
 
 class BodyTooLarge extends Error {}
@@ -180,8 +203,8 @@ export const POST: RequestHandler = async (event) => {
   const origin = corsOrigin(event.request);
   if (origin === false) return withHeaders(jsonRpcHttpError(403, -32000, "Origin is not allowed"), null);
 
-  const limited = await routeLimited(event);
-  if (limited) return withHeaders(limited, origin);
+  const sourceBlocked = await sourceLimited(event);
+  if (sourceBlocked) return withHeaders(sourceBlocked, origin);
 
   const contentType = event.request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
   if (contentType !== "application/json") {
@@ -209,6 +232,10 @@ export const POST: RequestHandler = async (event) => {
   // without it got an error instead of the result (R1-33).
   if (isPlainObject(parsedBody) && parsedBody.method === "tools/call" && isPlainObject(parsedBody.params) && parsedBody.params.arguments === undefined) {
     parsedBody.params.arguments = {};
+  }
+  if (isPlainObject(parsedBody) && parsedBody.method === "tools/call") {
+    const globalBlocked = await limited([[TIER_TRIAGE_GLOBAL, "all"]]);
+    if (globalBlocked) return withHeaders(globalBlocked, origin);
   }
 
   const server = createTriageMcpServer();

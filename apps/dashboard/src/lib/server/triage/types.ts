@@ -68,6 +68,13 @@ export interface ParserResult {
    * `nvidia-smi -q` paste has no NVLink link state.
    */
   rules_checked?: readonly string[];
+  /**
+   * Set with subjects: 0 when the output was read in full and itself says
+   * there is nothing to evaluate: no pools, no md arrays, nvidia-smi unable to
+   * reach the driver or a GPU. That is not a cut-off or unreadable paste, so
+   * the answer must not ask for the same command again (R2-9, R2-16).
+   */
+  nothing_to_report?: true;
 }
 
 export interface TriageParser {

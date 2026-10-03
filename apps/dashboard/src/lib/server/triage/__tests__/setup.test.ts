@@ -122,3 +122,45 @@ describe("key handling copy", () => {
     }
   });
 });
+
+// R2-15: the text block carried step titles and commands only, so a
+// content-only client could not say where the key comes from, what to install
+// first, or what a working agent prints.
+describe("renderSetupText carries every field (R2-15)", () => {
+  function leaves(v: unknown, out: string[] = []): string[] {
+    if (typeof v === "string") out.push(v);
+    else if (Array.isArray(v)) for (const x of v) leaves(x, out);
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (k !== "target" && k !== "distro_family") leaves(x, out);
+    return out;
+  }
+  it.each(CASES)("%s", (_label, input) => {
+    const r = monitoringSetup(input);
+    const text = renderSetupText(r);
+    for (const s of leaves(r)) expect(text, s).toContain(s);
+  });
+
+  it("names where the key comes from and what a working agent prints", () => {
+    const text = renderSetupText(monitoringSetup({ target: "hosted", distro: "debian" }));
+    expect(text).toContain("https://app.glassmkr.com");
+    expect(text).toContain("gmk_cru_live_");
+    expect(text).toContain("smartmontools and ipmitool");
+    expect(text).toContain("active (running)");
+    expect(text).toContain("Push successful");
+  });
+});
+
+// R2-20: compose publishes the dashboard on 127.0.0.1 unless DASHBOARD_BIND is
+// set, so agents on other hosts following the steps could never connect.
+describe("self-hosted steps make the dashboard reachable from other hosts (R2-20)", () => {
+  it("sets DASHBOARD_BIND or a reverse proxy before the setup script runs", () => {
+    const r = monitoringSetup({ target: "self_hosted", distro: "debian" });
+    const stack = r.steps[0];
+    expect(stack.detail).toMatch(/DASHBOARD_BIND/);
+    expect(stack.detail).toMatch(/127\.0\.0\.1/);
+    expect(stack.detail).toMatch(/reverse proxy/);
+    const setupAt = stack.commands.indexOf("./scripts/selfhost-setup.sh");
+    expect(setupAt).toBeGreaterThan(-1);
+    const install = r.steps.find((s) => s.commands.some((c) => c.includes("GLASSMKR_INGEST_URL")))!;
+    expect(install.detail).toMatch(/the address you set in DASHBOARD_BIND|DASHBOARD_PUBLIC_URL/);
+  });
+});

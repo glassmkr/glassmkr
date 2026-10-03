@@ -104,11 +104,22 @@ const apiErrorShapeHandle: Handle = async ({ event, resolve }) => {
   // flattening a more specific code into a generic one.
   const existingCode = typeof parsed?.error === "string" ? (parsed.error as string) : undefined;
   const allow = response.headers.get("allow");
+  // A JSON-RPC error (the MCP endpoints) carries its reason in error.message
+  // and its code in error.code. The envelope's `error` replaces that object, so
+  // both are kept: the reason as the message, the object under details. Read
+  // only the top-level message, every such error said "Request failed" (R2-23).
+  const rpcError =
+    parsed?.error && typeof parsed.error === "object" && !Array.isArray(parsed.error)
+      ? (parsed.error as Record<string, unknown>)
+      : null;
+  const rpcMessage = typeof rpcError?.message === "string" && rpcError.message ? rpcError.message.slice(0, 300) : null;
 
   const message =
     typeof parsed?.message === "string" && parsed.message
       ? (parsed.message as string)
-      : response.status === 405
+      : response.status !== 405 && rpcMessage
+        ? rpcMessage
+        : response.status === 405
         ? allow
           ? `${event.request.method} is not supported on this endpoint. Allowed: ${allow}.`
           : `${event.request.method} is not supported on this endpoint.`
@@ -126,10 +137,12 @@ const apiErrorShapeHandle: Handle = async ({ event, resolve }) => {
       const n = h ? Number(h) : NaN;
       return Number.isFinite(n) ? n : null;
     })(),
-    details:
-      response.status === 405 && allow
-        ? [{ allowed_methods: allow.split(",").map((m) => m.trim()) }]
-        : [],
+    details: [
+      ...(response.status === 405 && allow ? [{ allowed_methods: allow.split(",").map((m) => m.trim()) }] : []),
+      ...(rpcError && rpcMessage
+        ? [{ jsonrpc_error: { code: typeof rpcError.code === "number" ? rpcError.code : null, message: rpcMessage } }]
+        : []),
+    ],
   });
 
   // Anything else the callsite sent (upgrade_url, errorId, sentryEventId,

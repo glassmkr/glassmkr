@@ -364,10 +364,13 @@ function parse(text: string): ParserResult {
   let orphanDetail = false;
   let foreignHeader = false;
   let dropped = false;
+  // /proc/mdstat's last line: an mdstat that has it was pasted whole.
+  let mdstatEnd = false;
 
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+    if (MDSTAT_UNUSED_RE.test(line)) mdstatEnd = true;
     if (MDSTAT_HEAD_RE.test(line)) {
       formats.add("proc_mdstat");
       foreignHeader = false;
@@ -481,13 +484,19 @@ function parse(text: string): ParserResult {
     notes.push({ level: "info", message: "The /proc/mdstat output in this paste lists no md arrays." });
   }
 
-  return {
+  const result: ParserResult = {
     domain: "mdraid",
     formats: [...formats],
     snapshot: { raid: merged.map((a) => a.entry) },
     subjects: merged.length,
     notes,
   };
+  // A whole mdstat with no arrays (a host with hardware RAID or none) is the
+  // answer, not a cut-off paste to capture again (R2-16).
+  if (merged.length === 0 && mdstatEnd && formats.has("proc_mdstat") && !formats.has("mdadm_detail")) {
+    result.nothing_to_report = true;
+  }
+  return result;
 }
 
 export const mdraidParser: TriageParser = {

@@ -294,7 +294,11 @@ interface Tally {
   unrecognizedErrors: number;
   nonzeroCounterRows: number;
   sparesUnusable: number;
+  degradedLogs: number;
 }
+
+// zfs_slog_faulted fires on these log-vdev states only.
+const SLOG_FAULT_STATES: ReadonlySet<string> = new Set(["FAULTED", "REMOVED", "UNAVAIL"]);
 
 function finalize(b: Block, tally: Tally): ZfsPool | null {
   const state = b.stateLine ?? b.rowState;
@@ -337,6 +341,10 @@ function finalize(b: Block, tally: Tally): ZfsPool | null {
     }
     pool.slog_vdevs = b.tops.filter((t) => t.kind === "logs").map((t) => ({ name: t.name, state: t.state }));
     pool.l2arc_vdevs = b.tops.filter((t) => t.kind === "cache").map((t) => ({ name: t.name, state: t.state }));
+    // A DEGRADED or OFFLINE log mirror explains a DEGRADED pool, but neither
+    // ZFS rule judges it: the answer said "no rule matched" and nothing about
+    // the log (R2-8).
+    tally.degradedLogs += b.tops.filter((t) => t.kind === "logs" && t.state !== "ONLINE" && !SLOG_FAULT_STATES.has(t.state)).length;
     const explained = b.tops.some((t) => t.state !== "ONLINE");
     if (state !== "ONLINE" && state !== "SUSPENDED" && !explained) {
       tally.unexplained += 1;
@@ -431,6 +439,12 @@ function buildNotes(t: Tally, poolCount: number, xHealthy: number, xNoPools: num
       message: `${t.sparesUnusable} hot spare(s) are listed as FAULTED, UNAVAIL, REMOVED or OFFLINE. No Glassmkr rule judges hot spares.`,
     });
   }
+  if (t.degradedLogs > 0) {
+    notes.push({
+      level: "warning",
+      message: `${t.degradedLogs} log (SLOG) vdev(s) are DEGRADED or OFFLINE. No Glassmkr rule judges a degraded log mirror; zfs_slog_faulted fires only when the log vdev itself is FAULTED, REMOVED or UNAVAIL.`,
+    });
+  }
   return notes;
 }
 
@@ -438,6 +452,7 @@ function parse(text: string): ParserResult {
   const tally: Tally = {
     skipped: 0, flat: 0, unexplained: 0, cutOff: 0, scrubDates: 0, hiddenScans: 0,
     scrubsRunning: 0, dataErrors: 0, unrecognizedErrors: 0, nonzeroCounterRows: 0, sparesUnusable: 0,
+    degradedLogs: 0,
   };
   const blocks: Block[] = [];
   let cur: Block | null = null;
@@ -542,13 +557,16 @@ function parse(text: string): ParserResult {
   }
 
   const recognized = pools.length > 0 || xHealthy > 0 || xNoPools > 0;
-  return {
+  const result: ParserResult = {
     domain: "zfs",
     formats: recognized ? ["zpool_status"] : [],
     snapshot: pools.length > 0 ? { zfs: { pools } } : {},
     subjects: pools.length,
     notes: buildNotes(tally, pools.length, xHealthy, xNoPools),
   };
+  // "no pools available" is the whole answer, not a cut-off paste (R2-16).
+  if (xNoPools > 0 && pools.length === 0 && xHealthy === 0 && blocks.length === 0) result.nothing_to_report = true;
+  return result;
 }
 
 function detect(text: string): boolean {

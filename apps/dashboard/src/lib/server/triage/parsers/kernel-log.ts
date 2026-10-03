@@ -64,8 +64,11 @@ const LEVEL_PREFIX_RE =
   /^(?:<\d{1,3}>|(?:kern|user|mail|daemon|auth|syslog|lpr|news|uucp|cron|authpriv|ftp|local[0-7])\s*:\s*(?:emerg|alert|crit|err|warn|notice|info|debug)\s*:\s?)/;
 // Shell prompt lines pasted along with the output: "root@host:~# dmesg -T",
 // "[root@host ~]# journalctl -k", "$ dmesg". They can contain "I/O error"
-// (a grep pattern) and must not count as a kernel line.
-const PROMPT_RE = /^(?:\[[^\]]*@[^\]]*\]\s*[#$]|[\w.-]+@[\w.-]+(?::\S*)?\s*[#$%]|[#$])(?:\s|$)/;
+// (a grep pattern) and must not count as a kernel line. The user part of the
+// bracketed form excludes '@': with it, every '@' on a line was a split point
+// and "[" followed by 2047 '@' cost 3 ms a line, 400 ms a paste, on every
+// paste's detect() (R2-1).
+const PROMPT_RE = /^(?:\[[^\]@]*@[^\]]*\]\s*[#$]|[\w.-]+@[\w.-]+(?::\S*)?\s*[#$%]|[#$])(?:\s|$)/;
 
 interface KernelLine {
   /** null when the line carries no recognised prefix (dmesg -t, grep output). */
@@ -264,9 +267,16 @@ function senseKeyOf(text: string): string | null {
 // "timeout|reset|aborting|disabling" after "nvme nvmeN:", which also catches
 // the benign boot line "Shutdown timeout set to 8 seconds" and the lost-IRQ
 // "timeout, completion polled"; those are not controller resets.
+// nvme_wait_ready prints "Device not ready; aborting %s" for initialisation,
+// reset and (6.x) shutdown: a controller that never comes ready at boot is
+// the classic dead drive, and Crucible flags it (R2-5). "Removing after probe
+// failure" is the driver giving the controller up; when the device has
+// dropped off the bus it is the only line printed, so it counts too, beyond
+// what Crucible's keywords catch.
 const NVME_RE = /\bnvme (nvme\d{1,4}):\s+(.*)$/;
 const NVME_FAULT_RE =
-  /\btimeout, (?:reset controller|aborting|disable controller)\b|\bcontroller is down; will reset\b|\breset(?:ting)? controller\b|\bDevice not ready; aborting reset\b|\bDisabling device after reset failure\b/i;
+  /\btimeout, (?:reset controller|aborting|disable controller)\b|\bcontroller is down; will reset\b|\breset(?:ting)? controller\b|\bDevice not ready; aborting (?:reset|initiali[sz]ation|shutdown)\b|\bDisabling device after reset failure\b|\bRemoving after probe failure status: -?\d{1,5}\b/i;
+const NVME_PROBE_REMOVAL_RE = /\bRemoving after probe failure\b/i;
 
 // Ported from Crucible src/collect/dmesg-events.ts EXT4_READONLY_HANDLER, with
 // the device name limited to block-device characters.
@@ -312,12 +322,35 @@ const EDAC_RE = /\bEDAC MC(\d{1,3}): (\d{1,9}) (CE|UE)\b(.*)$/;
 // rather than risk carrying free text into a title.
 const EDAC_LABEL_RE = / on ([A-Za-z0-9_#.:/-]{1,64}) \(/;
 
+// Hardware lines the kernel prints that no rule here reads (R2-2). They are
+// only counted, never copied or decoded: the answer says they were seen and
+// not evaluated, and the matching rule is not reported as "ran and found no
+// matching signal" on a paste whose headline is a fatal machine check.
+//   - x86 MCE (arch/x86/kernel/cpu/mce), the AMD decoder's "[Hardware
+//     Error]:" lines, APEI/GHES "{N}[Hardware Error]:" records, and the
+//     panic a fatal one causes. ecc_errors and mce_uncorrected read EDAC
+//     "N CE / N UE" lines only.
+const MCE_RE =
+  /\bmce: (?:\[Hardware Error\]|Uncorrected hardware memory error\b)|^(?:\{\d{1,3}\})?\[Hardware Error\]:|\bnot syncing: (?:Fatal (?:local )?)?[Mm]achine check\b/;
+//   - btrfs forcing itself read-only and XFS shutting a filesystem down.
+//     filesystem_readonly reads the ext4 remount line only.
+const FS_FAIL_RE =
+  /\bBTRFS\b[^\n]{0,120}\bforced readonly\b|\bXFS \([^)\s]{1,64}\):[^\n]{0,200}\b(?:Shutting down filesystem|Filesystem has been shut down)\b/;
+//   - a libata uncorrectable read. With the whole dmesg the SCSI sense and
+//     block-layer lines that follow it feed disk_io_errors; a paste trimmed
+//     to the ata lines has only this one.
+const LIBATA_UNC_RE = /\bata\d{1,3}(?:\.\d{2})?: error: \{[^}]{0,80}\bUNC\b/;
+
 // ---------------------------------------------------------------------------
 // detect / parse
 // ---------------------------------------------------------------------------
 
 function splitLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/);
+}
+
+function matchesUnevaluated(message: string): boolean {
+  return MCE_RE.test(message) || FS_FAIL_RE.test(message) || LIBATA_UNC_RE.test(message);
 }
 
 function matchesAnyEvent(message: string): boolean {
@@ -370,14 +403,18 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+const RULES = ["disk_io_errors", "filesystem_readonly", "gpu_xid_critical", "ecc_errors", "mce_uncorrected"] as const;
+
 export const kernelLogParser: TriageParser = {
   domain: "kernel_log",
-  rules: ["disk_io_errors", "filesystem_readonly", "gpu_xid_critical", "ecc_errors", "mce_uncorrected"],
+  rules: RULES,
   notDeterminable: [
     { signal: "Error trend over time", reason: "Whether I/O, NVMe or GPU errors are increasing needs repeated readings; one paste is a single point" },
     { signal: "Corrected memory error rate", reason: "Corrected ECC errors are judged by their rate over 24 hours, which needs readings over time" },
     { signal: "Events no longer in the log", reason: "The kernel ring buffer keeps only recent messages; older events may already be overwritten" },
     { signal: "Current read-only mount state", reason: "The log shows the remount event; whether the filesystem is still read-only needs findmnt output" },
+    { signal: "Machine check and APEI hardware errors", reason: "The memory rules read EDAC CE/UE count lines only; machine check (mce:) and APEI ({N}[Hardware Error]) records are not decoded here. mcelog --ascii or rasdaemon (ras-mc-ctl --errors) decodes them" },
+    { signal: "btrfs and XFS failures", reason: "The read-only check reads the ext4 remount line only; a btrfs forced read-only or an XFS shutdown is not evaluated. findmnt shows the current mount state" },
   ],
 
   detect(text: string): boolean {
@@ -388,7 +425,7 @@ export const kernelLogParser: TriageParser = {
         const line = classify(trimmed);
         if (!line.fromKernel) continue;
         if (line.format !== null) return true;
-        if (matchesAnyEvent(line.message)) return true;
+        if (matchesAnyEvent(line.message) || matchesUnevaluated(line.message)) return true;
       }
     } catch {
       return false;
@@ -416,6 +453,9 @@ export const kernelLogParser: TriageParser = {
     let unknownSenseLines = 0;
     let probeSenseLines = 0;
     let probeIoLines = 0;
+    let mceLines = 0;
+    let fsFailLines = 0;
+    let libataUncLines = 0;
     const nvmeMediaByDevice = new Map<string, number>();
 
     try {
@@ -466,7 +506,11 @@ export const kernelLogParser: TriageParser = {
           const nvme = msg.match(NVME_RE);
           if (nvme && NVME_FAULT_RE.test(nvme[2])) {
             // Same action word Crucible derives, so titles match the live agent's.
-            const action = (nvme[2].match(/(timeout|reset|aborting|disabling)/i)?.[1] ?? "reset").toLowerCase();
+            // The probe-failure removal has none of those words; it is the
+            // driver disabling the controller, not a reset.
+            const action = NVME_PROBE_REMOVAL_RE.test(nvme[2])
+              ? "disabling"
+              : (nvme[2].match(/(timeout|reset|aborting|disabling)/i)?.[1] ?? "reset").toLowerCase();
             ev = {
               event_type: "nvme_reset",
               severity: "critical",
@@ -553,12 +597,20 @@ export const kernelLogParser: TriageParser = {
           }
         }
 
-        if (matched) {
+        let unevaluated = true;
+        if (MCE_RE.test(msg)) mceLines++;
+        else if (FS_FAIL_RE.test(msg)) fsFailLines++;
+        else if (LIBATA_UNC_RE.test(msg)) libataUncLines++;
+        else unevaluated = false;
+
+        if (matched || unevaluated) {
           // An un-prefixed matching line is dmesg -t / grep output.
           if (line.format === null) {
             kernelLines++;
             formats.add("dmesg");
           }
+        }
+        if (matched) {
           if (line.timeKind === "unknown") unknownTimeLines++;
           else if (line.timeKind === "local") localTimeLines++;
         }
@@ -617,12 +669,41 @@ export const kernelLogParser: TriageParser = {
     const subjects = kernelLines;
     const matchedEvents = events.length + xids.length + ioCount + edacLines;
 
+    // A rule whose evidence the paste shows in a form it does not read is left
+    // out, unless what it does read is also present (then it runs and fires).
+    const unread = new Set<string>();
+    if (mceLines > 0 && edacUe === 0) {
+      unread.add("ecc_errors");
+      unread.add("mce_uncorrected");
+    }
+    if (fsFailLines > 0 && !events.some((e) => e.event_type === "ext4_remount_readonly")) unread.add("filesystem_readonly");
+    const diskInput = ioCount > 0 || events.some((e) => e.event_type !== "ext4_remount_readonly");
+    if (libataUncLines > 0 && !diskInput) unread.add("disk_io_errors");
+
     if (formats.size === 0) {
       notes.push({ level: "info", message: "No kernel log lines were recognised." });
     } else if (matchedEvents === 0) {
       notes.push({
         level: "info",
-        message: `Read ${plural(kernelLines, "kernel log line", "kernel log lines")}; none matched a disk, NVMe, filesystem, GPU Xid or memory error event.`,
+        message: `Read ${plural(kernelLines, "kernel log line", "kernel log lines")}; none matched a SCSI sense, NVMe controller fault, ext4 read-only remount, block I/O error, NVIDIA Xid or EDAC memory error line.`,
+      });
+    }
+    if (mceLines > 0) {
+      notes.push({
+        level: "warning",
+        message: `${plural(mceLines, "machine check or APEI hardware error line was", "machine check or APEI hardware error lines were")} seen but not decoded: the memory rules read EDAC CE/UE lines only. Decode them with mcelog --ascii or rasdaemon (ras-mc-ctl --errors).`,
+      });
+    }
+    if (fsFailLines > 0) {
+      notes.push({
+        level: "warning",
+        message: `${plural(fsFailLines, "btrfs or XFS filesystem failure line was", "btrfs or XFS filesystem failure lines were")} seen but not evaluated: the read-only check reads ext4 remount lines only. findmnt shows whether the filesystem is read-only now.`,
+      });
+    }
+    if (unread.has("disk_io_errors")) {
+      notes.push({
+        level: "warning",
+        message: `${plural(libataUncLines, "libata uncorrectable read (UNC) line was", "libata uncorrectable read (UNC) lines were")} seen but not evaluated: the disk I/O check reads SCSI sense and block I/O error lines, which this excerpt does not have. Paste the full dmesg, or run smartctl -a on the disk.`,
       });
     }
     if (unknownTimeLines > 0) {
@@ -680,12 +761,14 @@ export const kernelLogParser: TriageParser = {
       });
     }
 
-    return {
+    const result: ParserResult = {
       domain: "kernel_log",
       formats: Array.from(formats),
       snapshot,
       subjects,
       notes,
     };
+    if (unread.size > 0) result.rules_checked = RULES.filter((r) => !unread.has(r));
+    return result;
   },
 };

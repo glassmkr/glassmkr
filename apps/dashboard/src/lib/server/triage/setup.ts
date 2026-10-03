@@ -83,7 +83,7 @@ function installerStep(target: SetupTarget): SetupStep {
       `For ${INSTALLER_FAMILIES}. The first command waits for you to paste the collector key and press Enter; the key is not echoed and does not enter shell history. ` +
       "The installer adds Node.js 24 if it is missing, installs smartmontools and ipmitool where available, installs @glassmkr/crucible, writes /etc/glassmkr/crucible.yaml (mode 0600) and starts the glassmkr-crucible service as the non-root glassmkr user." +
       (target === "self_hosted"
-        ? " GLASSMKR_INGEST_URL points the agent at your own dashboard; replace the host with yours."
+        ? " GLASSMKR_INGEST_URL points the agent at your own dashboard: replace the host and port with your DASHBOARD_PUBLIC_URL (the address you set in DASHBOARD_BIND, or your reverse proxy)."
         : ""),
     commands,
   };
@@ -130,10 +130,14 @@ function keyStep(target: SetupTarget): SetupStep {
   };
 }
 
+// The compose file publishes the dashboard on 127.0.0.1 unless DASHBOARD_BIND
+// says otherwise, so agents on other hosts, the normal case, could not reach
+// the ingest URL these steps gave them (R2-20). SELF_HOSTING.md is the source.
 const SELF_HOSTED_STACK: SetupStep = {
   title: "Run the dashboard on your own hardware",
   detail:
-    "Starts the dashboard, Postgres and ClickHouse with Docker Compose; migrations apply on boot. Then open http://localhost:3000 and register the first account.",
+    "Starts the dashboard, Postgres and ClickHouse with Docker Compose; migrations apply on boot. Then open http://localhost:3000 and register the first account. " +
+    "The dashboard is published on 127.0.0.1 only by default. If agents will run on other hosts, before running selfhost-setup.sh set DASHBOARD_BIND in .env to an address they can reach, or put a reverse proxy with TLS in front and set DASHBOARD_PUBLIC_URL to it; selfhost-setup.sh keeps DASHBOARD_PUBLIC_URL in step with DASHBOARD_BIND (re-run it after a change).",
   commands: [
     "git clone https://github.com/glassmkr/glassmkr.git",
     "cd glassmkr",
@@ -197,15 +201,26 @@ export function monitoringSetup(input: { distro?: string | null; target: SetupTa
   };
 }
 
-/** Plain-text rendering for the tool result's content block. */
+/**
+ * Plain-text rendering for the tool result's content block. Every field is in
+ * it: clients that forward only content lost where the key comes from, the
+ * prerequisites and what a working agent prints (R2-15).
+ */
 export function renderSetupText(result: SetupResult): string {
-  const lines: string[] = [];
+  const lines: string[] = ["Prerequisites:"];
+  for (const p of result.prerequisites) lines.push(`- ${p}`);
   result.steps.forEach((step, i) => {
     lines.push(`${i + 1}. ${step.title}`);
+    lines.push(`   ${step.detail}`);
     for (const c of step.commands) lines.push(`   ${c}`);
   });
-  lines.push(`Verify: ${result.verify.map((v) => v.command).join(" ; ")}`);
+  lines.push("Verify:");
+  for (const v of result.verify) {
+    lines.push(`   ${v.command}`);
+    lines.push(`   Expect: ${v.expect}`);
+  }
   lines.push(result.key_handling);
-  lines.push(`Docs: ${result.docs.map((d) => d.url).join(" ")}`);
+  for (const d of result.docs) lines.push(`${d.title}: ${d.url}`);
+  lines.push(`Agent source: ${result.source_url}`);
   return lines.join("\n");
 }

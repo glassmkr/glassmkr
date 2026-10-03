@@ -83,12 +83,19 @@ function toolMeta(invoking: string, invoked: string): Record<string, unknown> {
 
 // Loose on purpose: an optional hint must never fail the call it rides on.
 // normalizeDistroHint reduces it to one lowercase word, and nothing echoes the
-// raw value back.
+// raw value back. The limit stays in the advertised schema as guidance, but a
+// longer value is cut to it and anything that is not a string is dropped: a
+// 74-character /etc/redhat-release line failed the call and the paste was
+// never analyzed (R2-19).
 const distroSchema = z
-  .string()
-  .max(64)
-  .nullish()
+  .preprocess((v) => (typeof v === "string" ? v.slice(0, 64) : v === null ? null : undefined), z.string().max(64).nullish())
   .describe("Optional os-release ID of the server, for example ubuntu, debian, rhel, rocky, almalinux or proxmox. Omit it if unknown.");
+
+// The same for the format hint: a value outside the list ("mdstat", null) is
+// ignored and the format is detected from the text, as when it is omitted.
+const formatSchema = z
+  .preprocess((v) => ((TRIAGE_FORMATS as readonly unknown[]).includes(v) ? v : undefined), z.enum(TRIAGE_FORMATS).optional())
+  .describe("Optional hint for which command produced the output. Normally omit it; the format is detected from the text.");
 
 /** Truncated keyed hash of the client-supplied anonymous subject, or null. */
 export function hashSubject(raw: unknown): string | null {
@@ -172,10 +179,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
           .max(MAX_OUTPUT_CHARS)
           .describe("The command output exactly as the user pasted it, including prompt and header lines. Several outputs in one paste are fine. If it is longer than 200,000 characters, pass the section for the affected device."),
         distro: distroSchema,
-        format: z
-          .enum(TRIAGE_FORMATS)
-          .optional()
-          .describe("Optional hint for which command produced the output. Normally omit it; the format is detected from the text."),
+        format: formatSchema,
       },
       outputSchema: analysisOutputShape,
       annotations: triageAnnotations,

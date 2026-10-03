@@ -1,0 +1,4 @@
+[Fri Oct  3 09:20:00 2026] XFS (sdb1): metadata I/O error in "xfs_buf_ioend+0x1a0/0x3c0 [xfs]" at daddr 0x3a8f10 len 8 error 5
+[Fri Oct  3 09:20:00 2026] XFS (sdb1): log I/O error -5
+[Fri Oct  3 09:20:00 2026] XFS (sdb1): Filesystem has been shut down due to log error (0x2).
+[Fri Oct  3 09:20:00 2026] XFS (sdb1): Please unmount the filesystem and rectify the problem(s).

@@ -153,8 +153,8 @@ const GOALS: Record<CaptureGoal, GoalSpec> = {
     pasteNote: "Paste the whole output, including the scan line and the errors line.",
   },
   kernel_errors: {
-    summary: "Kernel log: disk I/O errors, NVMe resets, read-only remounts, GPU Xid events, memory errors.",
-    why: "Kernel I/O errors, NVMe resets, read-only remounts and GPU Xid events corroborate a hardware finding.",
+    summary: "Kernel log: disk I/O errors, NVMe resets, ext4 read-only remounts, GPU Xid events, memory errors reported by EDAC.",
+    why: "Kernel I/O errors, NVMe resets, ext4 read-only remounts and GPU Xid events corroborate a hardware finding.",
     steps: [
       {
         // No --level filter. The lines the rules read are logged at several
@@ -288,12 +288,23 @@ export function captureWhy(goal: CaptureGoal): string {
   return GOALS[goal].why;
 }
 
-/** Plain-text rendering for the tool result's content block. */
+/**
+ * Plain-text rendering for the tool result's content block. Every field is in
+ * it: clients that forward only content lost each command's purpose and the
+ * paste instructions, which carry the distinct-placeholder rule (R2-15).
+ * Purposes are shell comments, so the block still pastes into a shell.
+ */
 export function renderCaptureText(result: CaptureResult): string {
   const lines = [`${result.summary} Run on the server, then paste the output back:`];
-  for (const c of result.commands) lines.push(c.command);
-  if (result.install_hint?.command) {
-    lines.push(`If needed first: ${result.install_hint.command}`);
+  const hint = result.install_hint;
+  if (hint) {
+    lines.push(`# ${hint.purpose}`);
+    if (hint.command) lines.push(hint.command);
   }
+  for (const c of result.commands) {
+    lines.push(`# ${c.purpose}`);
+    lines.push(c.command);
+  }
+  lines.push("", result.paste_instructions);
   return lines.join("\n");
 }
