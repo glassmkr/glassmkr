@@ -1364,6 +1364,49 @@ describe("ipmi_sel_critical", () => {
       expect((a.evidence as any).critical_events[0].id).toBe(1);
     });
 
+    // A dated row the dashboard cannot parse is NOT undated. On a non-UTC
+    // host ipmitool 1.8.19+ prints the local zone ("09:05:27 CEST"); every
+    // agent strips only " UTC", so the row arrives as "...T09:05:27 CESTZ"
+    // and parseSelTimestamp returns null. It must stay fail-open (never
+    // transient, as before undated pairing), not join an undated SEL-order run.
+    const cestz = (hhmmss: string) => `2026-09-30T${hhmmss} CESTZ`;
+
+    it("an unparseable dated assert/deassert pair 6h apart still fires (old and new agents)", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [fan(2, cestz("15:05:27"), "Deasserted"), fan(1, cestz("09:05:27"), "Asserted")];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect(a?.severity).toBe("critical");
+      expect((a.evidence as any).critical_events).toHaveLength(1);
+      expect((a.evidence as any).critical_events[0].id).toBe(1);
+      expect((a.evidence as any).transient_pairs_excluded).toBe(0);
+    });
+
+    it("an unparseable dated row ends an undated run", () => {
+      const s = healthySnapshot();
+      s.ipmi.sel_events_recent = [
+        fan(3, "", "Deasserted"),
+        { id: 2, timestamp: cestz("09:05:27"), sensor: "PS1 Status", sensor_type: "power", event: "Presence detected", direction: "Asserted", severity: "info" },
+        fan(1, "", "Asserted"),
+      ];
+      const [a] = alertsOf("ipmi_sel_critical", s);
+      expect((a?.evidence as any)?.critical_events).toHaveLength(1);
+      expect((a.evidence as any).critical_events[0].id).toBe(1);
+    });
+
+    it("an unparseable dated row never pairs with an undated one in either direction", () => {
+      const s1 = healthySnapshot();
+      s1.ipmi.sel_events_recent = [fan(2, cestz("09:05:27"), "Deasserted"), fan(1, "", "Asserted")];
+      const [a1] = alertsOf("ipmi_sel_critical", s1);
+      expect((a1?.evidence as any)?.critical_events).toHaveLength(1);
+      expect((a1.evidence as any).critical_events[0].id).toBe(1);
+
+      const s2 = healthySnapshot();
+      s2.ipmi.sel_events_recent = [fan(2, "", "Deasserted"), fan(1, cestz("09:05:27"), "Asserted")];
+      const [a2] = alertsOf("ipmi_sel_critical", s2);
+      expect((a2?.evidence as any)?.critical_events).toHaveLength(1);
+      expect((a2.evidence as any).critical_events[0].id).toBe(1);
+    });
+
     it("a paired undated transient does not hide a real dated critical beside it", () => {
       const s = healthySnapshot();
       s.ipmi.sel_events_recent = [

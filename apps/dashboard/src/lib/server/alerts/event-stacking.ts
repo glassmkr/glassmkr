@@ -60,11 +60,13 @@ function selKeys(evidence: Evidence): string[] | null {
 // behavior; no worse than before. Newer agents send "" and also fold every
 // undated line of one (pci_bdf, xid_code) into a single event, the oldest
 // still in the ring buffer. "bdf|code|" alone would be stable, but it would
-// also match the same XID recurring after a reboot (the event alert stays open
-// for 24h after its last emission), so a GPU falling off the bus again would
-// refresh it silently. An undated group keys on that event's raw kernel line
-// instead: its relative stamp is fixed while the line stays in the ring
-// buffer and differs for a post-reboot recurrence.
+// also match the same XID recurring after a reboot: the alert stays open while
+// consecutive snapshots keep emitting it (ingest resolves it on the first
+// snapshot that does not), so an XID already back in the ring buffer at the
+// first post-boot snapshot, such as a GPU falling off the bus again at driver
+// load, would refresh it silently. An undated group keys on that event's raw
+// kernel line instead: its relative stamp is fixed while the line stays in the
+// ring buffer and differs for a post-reboot recurrence.
 function xidKeys(evidence: Evidence): string[] | null {
   const e = evidence as { pci_bdf?: unknown; xid_code?: unknown; last_event_iso?: unknown; raw_message?: unknown };
   if (e.pci_bdf === undefined || e.xid_code === undefined) return null;

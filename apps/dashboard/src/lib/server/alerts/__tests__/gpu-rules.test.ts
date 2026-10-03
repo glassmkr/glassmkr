@@ -371,9 +371,11 @@ describe("gpu_xid_critical undated events and stacking", () => {
   });
 
   it("new agent: the XID recurring after a reboot (new kernel line) stacks and re-notifies", () => {
-    // The event alert stays open for 24h after its last emission. Keyed on
-    // the empty time alone, a GPU falling off the bus again after the reboot
-    // matches the recorded key and refreshes silently.
+    // The event alert stays open while consecutive snapshots emit it, so an
+    // XID already back in the ring buffer at the first post-boot snapshot
+    // lands on the still-open alert. Keyed on the empty time alone, a GPU
+    // falling off the bus again after the reboot matches the recorded key
+    // and refreshes silently.
     const first = emission(xid79("", line(" 8312.441027")));
     const prior = [{ timestamp: "2026-10-03T10:00:00Z", ...first }];
     expect(freshEventKeys("gpu_xid_critical", emission(xid79("", line("  301.112233"))), prior)).toHaveLength(1);

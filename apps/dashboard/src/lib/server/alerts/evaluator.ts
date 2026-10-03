@@ -2896,6 +2896,14 @@ const rules: AlertRule[] = [
       // sets its clock every record is undated and the run is the whole log;
       // that is still no looser than the old agents' "now" stamps.
       //
+      // "Undated" means the agent's "" marker, NOT "parseSelTimestamp returned
+      // null". On a non-UTC host ipmitool 1.8.19+ prints the local zone
+      // ("09:05:27 CEST"), every agent strips only " UTC", and the row arrives
+      // as "...T09:05:27 CESTZ", which does not parse. Such a row is dated: it
+      // keeps the fail-open path (never transient) and ends an undated run.
+      // Treating it as undated made the whole SEL one run on those hosts, so a
+      // PSU failure deasserted hours later paired away silently.
+      //
       // Order, not record id: the agent sends sel_events_recent newest first
       // (crucible collectSelEvents: slice(-20).reverse()), so a later record
       // has a LOWER index. Record ids cannot order rows: ipmitool prints them
@@ -2906,8 +2914,8 @@ const rules: AlertRule[] = [
       const isUndatedTransient = (assertIdx: number): boolean => {
         const a = selEvents[assertIdx];
         for (let j = assertIdx - 1; j >= 0; j--) {
-          if (selTimes[j] !== null) return false;
           const d = selEvents[j];
+          if (d.timestamp !== "") return false;
           if (d.direction === "Deasserted" && d.sensor === a.sensor && d.event === a.event) return true;
         }
         return false;
@@ -2917,7 +2925,8 @@ const rules: AlertRule[] = [
       // otherwise) and apply window filter. The annotation lives in
       // evidence so the dashboard can display "2 hours ago" /
       // "1 year ago" / "(unknown age)" per event. Unparseable timestamps
-      // fail open: kept in the window, and paired only by SEL order above.
+      // fail open: kept in the window. Only an undated ("") row pairs by SEL
+      // order above; any other unparseable row is never a transient.
       const annotated = selEvents
         .map((e, idx) => ({ e, idx, t: selTimes[idx] }))
         .filter(({ e }) => e.severity === "critical" && e.direction === "Asserted")
@@ -2927,7 +2936,7 @@ const rules: AlertRule[] = [
             ...e,
             age_days,
             in_window: t === null || t >= cutoffMs,
-            transient: t === null ? isUndatedTransient(idx) : isTransient(t, e.sensor, e.event),
+            transient: t !== null ? isTransient(t, e.sensor, e.event) : e.timestamp === "" ? isUndatedTransient(idx) : false,
           };
         });
       const critical = annotated.filter((e) => e.in_window && !e.transient);
