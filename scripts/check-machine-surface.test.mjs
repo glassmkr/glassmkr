@@ -129,8 +129,10 @@ check(has(appIndexRuleProblems(`## Alert Rules (70)\n\n${listing(cat)}`, cat), "
 check(has(appIndexRuleProblems(`self-hostable. 70 alert rules, per-core CPU, SMART\n\n${listing(cat)}`, cat), "70 alert rules"),
   'catches "70 alert rules" in the summary line (shipped, never checked)');
 const shippedP4 = "Priority P4 Low (next maintenance):\n- no_firewall, kernel_needs_reboot, clock_drift";
-const p4 = appIndexRuleProblems(`${listing(cat)}\n\n${shippedP4}`, cat);
-check(has(p4, "no_firewall") && has(p4, "clock_drift"),
+// As shipped: each id listed once, under P4 only, so this is the wrong-priority
+// path and not the duplicate one.
+const p4 = appIndexRuleProblems(`${listing(cat.filter((r) => !shippedP4.includes(r.id)))}\n\n${shippedP4}`, cat);
+check(has(p4, "no_firewall under P4, declared P1") && has(p4, "clock_drift under P4, declared P2"),
   "catches rules listed under a priority their definition does not declare (shipped P4 block)");
 check(has(p4, "kernel_needs_reboot"),
   "catches a listed id the catalogue does not hold");
@@ -142,9 +144,33 @@ check(has(appIndexRuleProblems(`## Alert Rules (${RULES.length})\n\n${listing(RU
 check(has(appIndexRuleProblems(`${RULES.length} alert rules\n\n${listing(RULES)}`, RULES), `${RULES.length} alert rules`),
   "and so is the same number in prose");
 
+// The shared matcher was written for Svelte prose: two digits, then a
+// lowercase noun. This file is hard-wrapped Markdown with title-case headings,
+// and these forms all passed it.
+for (const form of [
+  `## ${RULES.length} Alert Rules`,
+  `## Alert Rules: ${RULES.length}`,
+  `self-hostable. ${RULES.length - 2}+ alert rules, per-core CPU`,
+  "self-hostable. 100 alert rules, per-core CPU",
+  `self-hostable. ${RULES.length}\nalert rules, per-core CPU`,
+]) {
+  check(has(appIndexRuleProblems(`${form}\n\n${listing(RULES)}`, RULES), "states a rule count"),
+    `refuses ${JSON.stringify(form)}`);
+}
+check(appIndexRuleProblems(`5. Mute noisy rules via POST /servers/:id/mutes\n\n${listing(RULES)}`, RULES).length === 0,
+  'does not fire on "5. Mute noisy rules" (shipped list item)');
+
 // Drift in the other direction: a rule lands and nobody lists it.
 check(has(appIndexRuleProblems(listing(cat.slice(1)), cat), "mce_uncorrected"),
   "catches a catalogue rule missing from the listing");
+
+// Every rule PR fails here until the id is listed, so the failure must say
+// where: the CI line names only the check, and the site's llms.txt files share
+// the file name but are generated.
+const listingProblems = [...appIndexRuleProblems(listing(cat.slice(1)), cat), ...p4];
+check(["does not list", "does not hold", "wrong priority"].every((kind) =>
+  listingProblems.some((p) => p.includes(kind) && p.includes("apps/dashboard/static/llms.txt"))),
+  "each listing problem names the hand-maintained file to edit");
 
 // A listing the parser cannot find must fail, not pass with nothing compared.
 check(appIndexRuleProblems("## Alert Rules\n\nSee the catalogue.", cat).length > 0,
