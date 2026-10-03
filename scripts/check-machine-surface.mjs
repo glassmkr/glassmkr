@@ -15,6 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { appIndexRuleProblems } from "./lib/app-machine-index.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = path.join(ROOT, "apps/site");
@@ -27,9 +28,10 @@ const ok = (c, m) => console.log(`[machine] ok   ${c}: ${m}`);
 let skipped = 0;
 const skip = (c, m) => { skipped++; console.log(`[machine] skip ${c}: ${m}`); };
 
-const ruleCount = JSON.parse(
+const rules = JSON.parse(
   fs.readFileSync(path.join(SITE, "src/lib/data/rules.json"), "utf8"),
-).length;
+);
+const ruleCount = rules.length;
 
 const readLocal = (rel) => fs.readFileSync(path.join(SITE, "static", rel), "utf8");
 
@@ -200,12 +202,10 @@ const localHas = (rel) => {
   if (skipped) {
     skip("app-machine-index", "no APP_ORIGIN given; pass APP_ORIGIN=https://app.glassmkr.com to check it");
   } else if (text) {
-    // Rule count must equal the catalogue, exactly as the site index must.
-    for (const m of text.matchAll(/Alert Rules \((\d+)\)/g)) {
-      if (Number(m[1]) !== ruleCount) {
-        problems.push(`states "Alert Rules (${m[1]})" but the catalogue holds ${ruleCount}`);
-      }
-    }
+    // No stated rule count, and the listing must be the catalogue by priority.
+    // Comparing only the heading's number let a 70 ship against 72 rules, with
+    // 40 rules unlisted and 19 under the wrong priority; see the module.
+    problems.push(...appIndexRuleProblems(text, rules));
     // Documentation lives on the marketing origin. An app-origin /docs/ link is
     // a 404 by construction, and there were eight of them.
     const appDocs = [...text.matchAll(/https:\/\/app\.glassmkr\.com\/docs\/[a-z-]+/g)].map((m) => m[0]);
