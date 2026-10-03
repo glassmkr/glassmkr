@@ -1,0 +1,14 @@
+root@stor-03:~# ipmitool sel info
+SEL Information
+Version          : 1.5 (v1.5, v2 compliant)
+Entries          : 512
+Free Space       : 0 bytes 
+Percent Used     : 100%
+Last Add Time    : 08/02/2026 17:40:12
+Last Del Time    : Not Available
+Overflow         : true
+Supported Cmds   : 'Reserve' 'Get Alloc Info' 
+root@stor-03:~# ipmitool sel elist | tail -3
+ 1fe | 08/02/2026 | 17:39:58 | Memory #0x02 | Correctable ECC | Asserted
+ 1ff | 08/02/2026 | 17:40:03 | Event Logging Disabled SEL Fullness | Log almost full | Asserted
+ 200 | 08/02/2026 | 17:40:12 | Event Logging Disabled SEL Fullness | Log full | Asserted

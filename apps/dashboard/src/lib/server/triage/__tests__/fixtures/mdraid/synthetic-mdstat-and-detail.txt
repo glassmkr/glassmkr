@@ -1,0 +1,35 @@
+[root@stor-03 ~]# cat /proc/mdstat
+Personalities : [raid1]
+md127 : active raid1 sdb1[1](F) sda1[0]
+      1953382400 blocks super 1.2 [2/1] [U_]
+      bitmap: 5/15 pages [20KB], 65536KB chunk
+
+unused devices: <none>
+[root@stor-03 ~]# mdadm --detail /dev/md/data
+/dev/md/data:
+           Version : 1.2
+        Raid Level : raid1
+        Array Size : 1953382400 (1862.89 GiB 2000.26 GB)
+      Raid Devices : 2
+     Total Devices : 2
+       Persistence : Superblock is persistent
+
+     Intent Bitmap : Internal
+
+             State : clean, degraded
+    Active Devices : 1
+   Working Devices : 1
+    Failed Devices : 1
+     Spare Devices : 0
+
+Consistency Policy : bitmap
+
+              Name : stor-03.example.test:data  (local to host stor-03.example.test)
+              UUID : aaaaaaaa:bbbbbbbb:cccccccc:dddddddd
+            Events : 30211
+
+    Number   Major   Minor   RaidDevice State
+       0       8        1        0      active sync   /dev/sda1
+       -       0        0        1      removed
+
+       1       8       17        -      faulty   /dev/sdb1

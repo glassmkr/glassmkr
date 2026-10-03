@@ -1,0 +1,14 @@
+PS C:\Users\ops> ssh root@node-c09 "ipmitool sel info; ipmitool sel elist"
+SEL Information
+Version          : 1.5 (v1.5, v2 compliant)
+Entries          : 4
+Free Space       : 16320 bytes 
+Percent Used     : 0%
+Last Add Time    : 09/29/2026 03:11:42
+Last Del Time    : Not Available
+Overflow         : false
+Supported Cmds   : 'Reserve' 'Get Alloc Info' 
+   1 | 09/28/2026 | 14:23:05 | Memory #0x02 | Correctable ECC | Asserted
+   2 | 09/28/2026 | 14:23:09 | Memory #0x02 | Uncorrectable ECC | Asserted
+   3 | 09/29/2026 | 03:11:42 | Power Supply PS2 Status | Failure detected | Asserted
+   4 | 09/29/2026 | 03:11:42 | Power Supply PS2 Status | Presence detected | Asserted

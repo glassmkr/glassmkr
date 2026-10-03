@@ -1,0 +1,31 @@
+  pool: fast
+ state: DEGRADED
+status: One or more devices are faulted in response to persistent errors.
+	Sufficient replicas exist for the pool to continue functioning in a
+	degraded state.
+action: Replace the faulted device, or use 'zpool clear' to mark the device
+	repaired.
+  scan: scrub repaired 0B in 00:18:40 with 0 errors on Sun Sep 14 00:42:41 2025
+config:
+
+	NAME                                STATE     READ WRITE CKSUM
+	fast                                DEGRADED     0     0     0
+	  mirror-0                          ONLINE       0     0     0
+	    ata-HGST_HUH721212ALE600_FAKE01  ONLINE       0     0     0
+	    ata-HGST_HUH721212ALE600_FAKE02  ONLINE       0     0     0
+	dedup	
+	  mirror-1                          ONLINE       0     0     0
+	    nvme-FAKE_NVME_DDT_A             ONLINE       0     0     0
+	    nvme-FAKE_NVME_DDT_B             ONLINE       0     0     0
+	special	
+	  mirror-2                          ONLINE       0     0     0
+	    nvme-FAKE_NVME_META_A            ONLINE       0     0     0
+	    nvme-FAKE_NVME_META_B            ONLINE       0     0     0
+	logs	
+	  nvme-FAKE_NVME_SLOG_A-part1        FAULTED      0    17     0  too many errors
+	cache
+	  nvme-FAKE_NVME_L2ARC_A-part2       UNAVAIL      0     0     0  cannot open
+	spares
+	  ata-HGST_HUH721212ALE600_FAKE03    UNAVAIL   cannot open
+
+errors: No known data errors

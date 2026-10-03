@@ -131,7 +131,7 @@ const PAGES = [
   "/privacy", "/terms", "/billing-policy",
   "/docs/self-hosting", "/docs/getting-started", "/docs/configuration",
   "/docs/channels", "/docs/api", "/docs/faq",
-  "/docs/mcp", "/docs/programmatic-api", "/docs/automated-onboarding",
+  "/docs/mcp", "/docs/ai-assistants", "/docs/programmatic-api", "/docs/automated-onboarding",
   "/docs/rules", "/docs/troubleshooting", "/docs/troubleshooting/ipmi",
   "/docs/api/errors",
   "/docs/changelog",

@@ -1,0 +1,4 @@
+root@host-example:~# dmesg -T | grep -iE 'I/O error|remount|xid'
+[Fri Oct  3 10:05:11 2026] blk_update_request: I/O error, dev sdb, sector 2048 op 0x1:(WRITE) flags 0x800 phys_seg 1 prio class 0
+[Fri Oct  3 10:05:12 2026] EXT4-fs (sdb1): Remounting filesystem read-only
+root@host-example:~#

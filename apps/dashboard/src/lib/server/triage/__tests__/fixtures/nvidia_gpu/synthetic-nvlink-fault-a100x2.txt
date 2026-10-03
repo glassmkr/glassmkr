@@ -1,0 +1,31 @@
+$ nvidia-smi --query-gpu=index,uuid,name,pci.bus_id --format=csv
+index, uuid, name, pci.bus_id
+0, GPU-0000feed-0000-4000-8000-000000000600, NVIDIA A100-SXM4-80GB, 00000000:07:00.0
+1, GPU-0000feed-0000-4000-8000-000000000601, NVIDIA A100-SXM4-80GB, 00000000:0F:00.0
+$ nvidia-smi nvlink --status
+GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-0000feed-0000-4000-8000-000000000600)
+	 Link 0: 25 GB/s
+	 Link 1: 25 GB/s
+	 Link 2: 25 GB/s
+	 Link 3: 25 GB/s
+	 Link 4: 25 GB/s
+	 Link 5: 25 GB/s
+	 Link 6: 25 GB/s
+	 Link 7: 25 GB/s
+	 Link 8: 25 GB/s
+	 Link 9: 25 GB/s
+	 Link 10: 25 GB/s
+	 Link 11: 25 GB/s
+GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-0000feed-0000-4000-8000-000000000601)
+	 Link 0: 25 GB/s
+	 Link 1: 25 GB/s
+	 Link 2: 25 GB/s
+	 Link 3: 25 GB/s
+	 Link 4: 25 GB/s
+	 Link 5: 25 GB/s
+	 Link 6: Down
+	 Link 7: Down
+	 Link 8: 25 GB/s
+	 Link 9: 25 GB/s
+	 Link 10: 25 GB/s
+	 Link 11: 25 GB/s

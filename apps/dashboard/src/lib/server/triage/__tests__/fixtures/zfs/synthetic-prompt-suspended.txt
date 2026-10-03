@@ -1,0 +1,16 @@
+root@zfs-test-01:~# zpool status -v backup
+  pool: backup
+ state: SUSPENDED
+status: One or more devices are faulted in response to IO failures.
+        The pool has been suspended.
+action: Make sure the affected devices are connected, then run 'zpool clear'.
+   see: https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-HC
+  scan: scrub repaired 0B in 03:01:19 with 0 errors on Sun Sep 14 03:25:20 2025
+config:
+
+        NAME                               STATE     READ WRITE CKSUM
+        backup                             UNAVAIL      0     0     0  insufficient replicas
+          usb-WD_Elements_25A3_FAKE0001-0:0  FAULTED      1    24     0  too many errors
+
+errors: List of errors unavailable: pool I/O is currently suspended
+root@zfs-test-01:~# 

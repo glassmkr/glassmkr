@@ -29,6 +29,14 @@ if (process.env.SENTRY_DSN) {
     environment: process.env.NODE_ENV || "development",
     sendDefaultPii: false,
     tracesSampleRate: 0,
+    // Paste triage promises that pasted command output is never stored. An
+    // unexpected throw would otherwise ship the request body with the event.
+    beforeSend(event) {
+      if (event.request?.url?.includes("/api/triage/")) {
+        delete event.request.data;
+      }
+      return event;
+    },
   });
 }
 

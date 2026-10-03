@@ -1,0 +1,54 @@
+root@stor-12.example.invalid:~# smartctl -a /dev/sdf
+smartctl 7.3 2022-02-28 r5338 [x86_64-linux-6.1.0-25-amd64] (local build)
+Copyright (C) 2002-22, Bruce Allen, Christian Franke, www.smartmontools.org
+
+=== START OF INFORMATION SECTION ===
+Vendor:               HGST
+Product:              HUH721212AL5200
+Revision:             A3D0
+Compliance:           SPC-4
+User Capacity:        12,000,138,625,024 bytes [12.0 TB]
+Logical block size:   4096 bytes
+LU is fully provisioned
+Rotation Rate:        7200 rpm
+Form Factor:          3.5 inches
+Logical Unit id:      0x5000cca000000008
+Serial number:        8DFAKE08
+Device type:          disk
+Transport protocol:   SAS (SPL-3)
+Local Time is:        Thu Oct  2 10:12:40 2026 UTC
+SMART support is:     Available - device has SMART capability.
+SMART support is:     Enabled
+Temperature Warning:  Enabled
+
+=== START OF READ SMART DATA SECTION ===
+SMART Health Status: HARDWARE IMPENDING FAILURE GENERAL HARD DRIVE FAILURE [asc=5d, ascq=10]
+
+Current Drive Temperature:     36 C
+Drive Trip Temperature:        85 C
+
+Accumulated power on time, hours:minutes 51877:03
+Manufactured in week 33 of year 2019
+Specified cycle count over device lifetime:  50000
+Accumulated start-stop cycles:  90
+Specified load-unload count over device lifetime:  600000
+Accumulated load-unload cycles:  2213
+Elements in grown defect list: 1856
+
+Error counter log:
+           Errors Corrected by           Total   Correction     Gigabytes    Total
+               ECC          rereads/    errors   algorithm      processed    uncorrected
+           fast | delayed   rewrites  corrected  invocations   [10^9 bytes]  errors
+read:          0     2211         0      2211     481233     512345.678          14
+write:         0        0         0         0      12001     201234.567           0
+verify:        0       98         0        98       4410      12345.678           2
+
+Non-medium error count:        0
+
+SMART Self-test log
+Num  Test              Status                 segment  LifeTime  LBA_first_err [SK ASC ASQ]
+     Description                              number   (hours)
+# 1  Background long   Failed in segment -->       8   51860        1883410432 [0x3 0x11 0x0]
+
+Long (extended) Self-test duration: 79680 seconds [1328.0 minutes]
+

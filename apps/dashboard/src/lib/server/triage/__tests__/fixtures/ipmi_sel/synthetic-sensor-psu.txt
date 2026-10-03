@@ -1,0 +1,12 @@
+root@web-04:~# ipmitool sensor
+CPU1 Temp        | 52.000     | degrees C  | ok    | 0.000     | 0.000     | 0.000     | 95.000    | 100.000   | 100.000
+System Temp      | 31.000     | degrees C  | ok    | -10.000   | -5.000    | 0.000     | 80.000    | 85.000    | 90.000
+FAN1             | 3500.000   | RPM        | ok    | 300.000   | 500.000   | 700.000   | 25300.000 | 25400.000 | 25500.000
+FAN2             | 3400.000   | RPM        | ok    | 300.000   | 500.000   | 700.000   | 25300.000 | 25400.000 | 25500.000
+FAN3             | na         | RPM        | na    | na        | na        | na        | na        | na        | na
+12V              | 12.060     | Volts      | ok    | 10.173    | 10.299    | 10.740    | 12.945    | 13.260    | 13.386
+VBAT             | 2.310      | Volts      | cr    | 2.400     | 2.475     | 2.580     | na        | na        | na
+PSU1 VIN         | 230.000    | Volts      | ok    | na        | 180.000   | na        | na        | 264.000   | na
+PSU2 VIN         | 0.000      | Volts      | cr    | na        | 180.000   | na        | na        | 264.000   | na
+PS1 Status       | 0x1        | discrete   | 0x0100| na        | na        | na        | na        | na        | na
+PS2 Status       | 0x3        | discrete   | 0x0300| na        | na        | na        | na        | na        | na

@@ -1,0 +1,60 @@
+root@gpu-node-03:~# nvidia-smi -q -d ECC,TEMPERATURE
+
+==============NVSMI LOG==============
+
+Timestamp                                 : Fri Oct  3 06:12:40 2026
+Driver Version                            : 535.183.01
+CUDA Version                              : 12.2
+
+Attached GPUs                             : 2
+GPU 00000000:17:00.0
+    ECC Mode
+        Current                           : Enabled
+        Pending                           : Enabled
+    ECC Errors
+        Volatile
+            SRAM Correctable              : 0
+            SRAM Uncorrectable            : 0
+            DRAM Correctable              : 0
+            DRAM Uncorrectable            : 0
+        Aggregate
+            SRAM Correctable              : 0
+            SRAM Uncorrectable            : 0
+            DRAM Correctable              : 0
+            DRAM Uncorrectable            : 0
+    Temperature
+        GPU Current Temp                  : 41 C
+        GPU T.Limit Temp                  : N/A
+        GPU Shutdown Temp                 : 92 C
+        GPU Slowdown Temp                 : 89 C
+        GPU Max Operating Temp            : 85 C
+        GPU Target Temperature            : N/A
+        Memory Current Temp               : 47 C
+        Memory Max Operating Temp         : 95 C
+
+GPU 00000000:CA:00.0
+    ECC Mode
+        Current                           : Enabled
+        Pending                           : Enabled
+    ECC Errors
+        Volatile
+            SRAM Correctable              : 0
+            SRAM Uncorrectable            : 0
+            DRAM Correctable              : 0
+            DRAM Uncorrectable            : 1
+        Aggregate
+            SRAM Correctable              : 0
+            SRAM Uncorrectable            : 0
+            DRAM Correctable              : 9
+            DRAM Uncorrectable            : 3
+    Temperature
+        GPU Current Temp                  : 44 C
+        GPU T.Limit Temp                  : N/A
+        GPU Shutdown Temp                 : 92 C
+        GPU Slowdown Temp                 : 89 C
+        GPU Max Operating Temp            : 85 C
+        GPU Target Temperature            : N/A
+        Memory Current Temp               : 50 C
+        Memory Max Operating Temp         : 95 C
+
+root@gpu-node-03:~# 

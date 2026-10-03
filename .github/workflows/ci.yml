@@ -105,6 +105,11 @@ jobs:
       # Parser fixtures for the per-method credential/privilege derivation
       # (requireProGatedAuth blind spot, Codex 2026-08-29 #9).
       - run: pnpm gen-openapi:test
+      # The ChatGPT / Claude plugin listing: field limits, documented
+      # category, icon sizes, a single no-auth MCP server, and no pricing,
+      # plan or em-dash in the copy a store reviewer reads.
+      - run: pnpm lint:ai-plugin
+      - run: pnpm lint:ai-plugin:test
 
   # DCO sign-off (round-2 s1.3, 2026-08-24): every PR commit must carry
   # Signed-off-by. Contribution policy is DCO, not CLA; see CONTRIBUTING.md.

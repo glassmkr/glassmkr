@@ -1,0 +1,10 @@
+Hello, my server is slow and I think md0 might be the problem.
+The array [UU_] thing in the docs confused me.
+md is short for multiple devices, right?
+    Number of disks: 4
+mdadm: cannot open /dev/md9: No such file or directory
+  pool: tank
+ state: ONLINE
+[  12.345678] md/raid1:md0: active with 2 out of 2 mirrors
+Oct 02 08:14:51 web-01 kernel: md: md0: resync done.
+{"device":"md0","status":"ok"}

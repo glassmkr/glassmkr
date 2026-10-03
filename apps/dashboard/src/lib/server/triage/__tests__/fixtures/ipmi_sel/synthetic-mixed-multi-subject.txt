@@ -1,0 +1,27 @@
+admin@hv-21:~$ sudo ipmitool sel info
+SEL Information
+Version          : 1.5 (v1.5, v2 compliant)
+Entries          : 942
+Free Space       : 1296 bytes 
+Percent Used     : 92%
+Last Add Time    : 09/30/2026 06:12:40
+Last Del Time    : 01/12/2026 09:00:03
+Overflow         : false
+Supported Cmds   : 'Reserve' 'Get Alloc Info' 
+admin@hv-21:~$ sudo ipmitool sel elist | tail -6
+ 3a9 | 09/29/2026 | 23:58:01 | Memory DIMM_B2 | Correctable ECC | Asserted
+ 3aa | 09/30/2026 | 01:02:44 | Memory DIMM_B2 | Uncorrectable ECC | Asserted
+ 3ab | 09/30/2026 | 05:40:09 | Power Supply PS2 Status | Failure detected | Asserted
+ 3ac | 09/30/2026 | 05:40:09 | Power Supply PS Redundancy | Redundancy Lost | Asserted
+ 3ad | 09/30/2026 | 06:12:40 | Fan FAN3 | Lower Critical going low | Asserted
+ 3ae | 09/30/2026 | 06:12:40 | Fan FAN3 | Lower Non-recoverable going low | Asserted
+admin@hv-21:~$ sudo ipmitool sdr type Fan
+FAN1             | 41h | ok  | 29.1 | 5600 RPM
+FAN2             | 42h | ok  | 29.2 | 5500 RPM
+FAN3             | 43h | lnr | 29.3 | 0 RPM
+FAN4             | 44h | ok  | 29.4 | 5600 RPM
+admin@hv-21:~$ sudo ipmitool sensor | grep -i ps
+PS1 Status       | 0x1        | discrete   | 0x0100| na        | na        | na        | na        | na        | na
+PS2 Status       | na         | discrete   | na    | na        | na        | na        | na        | na        | na
+PSU1 Input Power | 312.000    | Watts      | ok    | na        | na        | na        | na        | na        | na
+PSU2 Input Power | 0.000      | Watts      | cr    | na        | na        | na        | na        | na        | na

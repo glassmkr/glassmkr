@@ -1,0 +1,7 @@
+lorem ipsum dolor sit amet, an error occurred somewhere
+{"not": "a kernel log", "values": [1, 2, 3]}
+| col1 | col2 |
+SELECT * FROM servers WHERE id = 1;
+[abc] [1.x] [ 12 ]
+%%%%%%%%%%%%%%%%%%
+0x00 0x01 0x02 0xff

@@ -53,6 +53,15 @@ const SCAN_ROOTS = [
   // gen-rules.mjs template lands in public output with the source unscanned
   // and the artifact exempted, i.e. caught by nothing.
   "apps/site/scripts",
+  // Paste triage for ChatGPT / Claude connectors. Tool descriptions, server
+  // instructions, parser notes and capture / setup steps are read by the
+  // assistant and shown to its user, so they are user-facing copy even though
+  // they live under lib/server.
+  "apps/dashboard/src/lib/server/triage",
+  "apps/dashboard/src/routes/api/triage",
+  // The assistant plugin package: listing copy, reviewer test cases, and the
+  // validator that enforces the listing rules.
+  "integrations/ai-assistants",
 ];
 
 const ALLOWED_EXTENSIONS = new Set([

@@ -1,0 +1,28 @@
+  pool: rpool
+ state: ONLINE
+  scan: scrub repaired 0B in 00:01:52 with 0 errors on Sun Sep 14 00:25:53 2025
+config:
+
+	NAME                             STATE     READ WRITE CKSUM
+	rpool                            ONLINE       0     0     0
+	  mirror-0                       ONLINE       0     0     0
+	    nvme-FAKE_ROOT_DISK_A-part3  ONLINE       0     0     0
+	    nvme-FAKE_ROOT_DISK_B-part3  ONLINE       0     0     0
+
+errors: No known data errors
+
+  pool: data
+ state: DEGRADED
+status: One or more devices could not be opened.  Sufficient replicas exist for
+	the pool to continue functioning in a degraded state.
+action: Attach the missing device and online it using 'zpool online'.
+  scan: none requested
+config:
+
+	NAME                             STATE     READ WRITE CKSUM
+	data                             DEGRADED     0     0     0
+	  mirror-0                       ONLINE       0     0     0
+	    ata-FAKE_DATA_DISK_0001      ONLINE       0     0     0
+	    ata-FAKE_DATA_DISK_0002      ONLINE       0     0     0
+	  mirror-1                       DEGRADED     0     0     0
+	    ata-FAKE_DATA_DISK_0003      ONLINE       0     0     0

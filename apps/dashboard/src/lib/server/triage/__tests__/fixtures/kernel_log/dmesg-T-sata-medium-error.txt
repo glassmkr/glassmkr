@@ -1,0 +1,17 @@
+[Fri Oct  3 09:41:07 2026] ata3.00: exception Emask 0x0 SAct 0x40000 SErr 0x0 action 0x0
+[Fri Oct  3 09:41:07 2026] ata3.00: irq_stat 0x40000008
+[Fri Oct  3 09:41:07 2026] ata3.00: failed command: READ FPDMA QUEUED
+[Fri Oct  3 09:41:07 2026] ata3.00: cmd 60/08:90:00:a8:e3/00:00:1d:00:00/40 tag 18 ncq dma 4096 in
+                                    res 41/40:00:00:a8:e3/00:00:1d:00:00/40 Emask 0x409 (media error) <F>
+[Fri Oct  3 09:41:07 2026] ata3.00: status: { DRDY ERR }
+[Fri Oct  3 09:41:07 2026] ata3.00: error: { UNC }
+[Fri Oct  3 09:41:07 2026] ata3.00: configured for UDMA/133
+[Fri Oct  3 09:41:07 2026] sd 2:0:0:0: [sdc] tag#18 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=3s
+[Fri Oct  3 09:41:07 2026] sd 2:0:0:0: [sdc] tag#18 Sense Key : Medium Error [current]
+[Fri Oct  3 09:41:07 2026] sd 2:0:0:0: [sdc] tag#18 Add. Sense: Unrecovered read error - auto reallocate failed
+[Fri Oct  3 09:41:07 2026] sd 2:0:0:0: [sdc] tag#18 CDB: Read(16) 88 00 00 00 00 00 1d e3 a8 00 00 00 00 08 00 00
+[Fri Oct  3 09:41:07 2026] I/O error, dev sdc, sector 501459968 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 2
+[Fri Oct  3 09:41:07 2026] ata3: EH complete
+[Fri Oct  3 09:41:09 2026] Buffer I/O error on dev sdc1, logical block 62682240, async page read
+[Fri Oct  3 09:41:12 2026] EXT4-fs error (device sdc1): __ext4_find_entry:1683: inode #2: comm ls: reading directory lblock 0
+[Fri Oct  3 09:41:12 2026] EXT4-fs (sdc1): Remounting filesystem read-only

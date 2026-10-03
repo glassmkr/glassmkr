@@ -1,0 +1,27 @@
+[    0.000000] Linux version 6.8.0-45-generic (buildd@builder-example) (x86_64-linux-gnu-gcc-13 (Ubuntu 13.2.0-23ubuntu4) 13.2.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #45-Ubuntu SMP PREEMPT_DYNAMIC Fri Aug 30 12:02:04 UTC 2024 (Ubuntu 6.8.0-45.45-generic 6.8.12)
+[    0.000000] Command line: BOOT_IMAGE=/vmlinuz-6.8.0-45-generic root=UUID=00000000-1111-2222-3333-444444444444 ro
+[    1.412233] nvme nvme0: pci function 0000:01:00.0
+[    1.420011] nvme nvme1: pci function 0000:02:00.0
+[    1.431877] nvme nvme0: Shutdown timeout set to 8 seconds
+[    1.445102] nvme nvme0: 63/0/0 default/read/poll queues
+[    1.448890]  nvme0n1: p1 p2 p3
+[    1.451200] nvme nvme1: Shutdown timeout set to 10 seconds
+[    1.463410] nvme nvme1: 63/0/0 default/read/poll queues
+[    1.502231] ata1: SATA link up 6.0 Gbps (SStatus 133 SControl 300)
+[    1.503410] ata1.00: ATA-10: ST4000NM0035-1V4107, TN04, max UDMA/133
+[    1.510022] scsi 0:0:0:0: Direct-Access     ATA      ST4000NM0035-1V4 TN04 PQ: 0 ANSI: 5
+[    1.511290] sd 0:0:0:0: [sda] 7814037168 512-byte logical blocks: (4.00 TB/3.64 TiB)
+[    1.511300] sd 0:0:0:0: [sda] Write Protect is off
+[    1.511310] sd 0:0:0:0: [sda] Mode Sense: 00 3a 00 00
+[    1.511330] sd 0:0:0:0: [sda] Write cache: enabled, read cache: enabled, doesn't support DPO or FUA
+[    1.540120]  sda: sda1
+[    1.540540] sd 0:0:0:0: [sda] Attached SCSI disk
+[    3.212101] EXT4-fs (nvme0n1p2): mounted filesystem 3c2b1a00-0000-4000-8000-000000000001 ro with ordered data mode. Quota mode: none.
+[    4.101776] EXT4-fs (nvme0n1p2): re-mounted 3c2b1a00-0000-4000-8000-000000000001 r/w. Quota mode: none.
+[    5.090017] EDAC MC0: Giving out device to module skx_edac controller Skylake Socket#0 IMC#0: DEV 0000:3a:0a.0 (INTERRUPT)
+[    5.090219] EDAC MC1: Giving out device to module skx_edac controller Skylake Socket#0 IMC#1: DEV 0000:3a:0c.0 (INTERRUPT)
+[    5.231004] nvidia: loading out-of-tree module taints kernel.
+[    5.302117] nvidia-nvlink: Nvlink Core is being initialized, major device number 509
+[    5.310045] NVRM: loading NVIDIA UNIX x86_64 Kernel Module  550.90.07  Fri May 31 09:35:42 UTC 2024
+[    6.002010] EXT4-fs (sda1): mounted filesystem 9a8b7c6d-0000-4000-8000-000000000002 r/w with ordered data mode. Quota mode: none.
+[   12.880412] e1000e 0000:00:1f.6 eno1: NIC Link is Up 1000 Mbps Full Duplex, Flow Control: Rx/Tx

@@ -1,0 +1,25 @@
+root@app-03.example.invalid:~# smartctl -a /dev/sda
+smartctl 7.2 2020-12-30 r5155 [x86_64-linux-5.15.0-91-generic] (local build)
+Copyright (C) 2002-20, Bruce Allen, Christian Franke, www.smartmontools.org
+
+=== START OF INFORMATION SECTION ===
+Vendor:               HP
+Product:              LOGICAL VOLUME
+Revision:             7.00
+Compliance:           SPC-3
+User Capacity:        1,200,209,526,784 bytes [1.20 TB]
+Logical block size:   512 bytes
+Rotation Rate:        15000 rpm
+Logical Unit id:      0x600508b1001c00000000000000fake09
+Serial number:        PDNMFAKE0009
+Device type:          disk
+Local Time is:        Thu Oct  2 10:20:31 2026 UTC
+SMART support is:     Unavailable - device lacks SMART capability.
+
+=== START OF READ SMART DATA SECTION ===
+Current Drive Temperature:     0 C
+Drive Trip Temperature:        0 C
+
+Error Counter logging not supported
+
+Device does not support Self Test logging

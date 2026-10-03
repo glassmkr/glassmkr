@@ -37,6 +37,7 @@
         { href: "/docs/api/errors", label: "Error codes", child: true },
         { href: "/docs/automated-onboarding", label: "Automated onboarding" },
         { href: "/docs/mcp", label: "MCP" },
+        { href: "/docs/ai-assistants", label: "ChatGPT and Claude" },
       ],
     },
     {

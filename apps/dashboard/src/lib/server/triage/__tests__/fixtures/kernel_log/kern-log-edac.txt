@@ -1,0 +1,5 @@
+Oct  3 04:12:55 db-example kernel: [123456.789012] mce: [Hardware Error]: Machine check events logged
+Oct  3 04:12:55 db-example kernel: [123456.789345] EDAC MC0: 1 CE memory read error on CPU_SrcID#0_MC#0_Chan#1_DIMM#0 (channel:1 slot:0 page:0x1f2e3d offset:0x0 grain:32 syndrome:0x0 - err_code:0x0000:0x009f ProcessorSocketId:0x0 MemoryControllerId:0x0 PhysicalRankId:0x0 Row:0x7a1 Column:0x3c8 Bank:0x2 BankGroup:0x1)
+Oct  3 04:13:40 db-example kernel: [123501.112233] EDAC MC0: 1 CE memory read error on CPU_SrcID#0_MC#0_Chan#1_DIMM#0 (channel:1 slot:0 page:0x1f2e3d offset:0x40 grain:32 syndrome:0x0 - err_code:0x0000:0x009f ProcessorSocketId:0x0 MemoryControllerId:0x0 PhysicalRankId:0x0 Row:0x7a1 Column:0x3d0 Bank:0x2 BankGroup:0x1)
+Oct  3 05:02:17 db-example kernel: [126418.552100] mce: [Hardware Error]: Machine check events logged
+Oct  3 05:02:17 db-example kernel: [126418.552410] EDAC MC1: 1 UE memory read error on CPU_SrcID#1_MC#0_Chan#0_DIMM#0 (channel:0 slot:0 page:0x8a7b6c offset:0x0 grain:32 - err_code:0x0000:0x009f ProcessorSocketId:0x1 MemoryControllerId:0x0 PhysicalRankId:0x0 Row:0x1d2 Column:0x40 Bank:0x0 BankGroup:0x3)

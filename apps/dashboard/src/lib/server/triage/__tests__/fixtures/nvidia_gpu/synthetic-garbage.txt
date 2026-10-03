@@ -1,0 +1,11 @@
+NAME        MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+nvme0n1     259:0    0   3.5T  0 disk
+└─nvme0n1p1 259:1    0   3.5T  0 part /
+GPU temps looked fine yesterday, Link 1: probably up?
+Driver Version: 550 (I think)
+PCIe Generation Max Current 4 4
+index, size, used
+0, 10, 2
+GPU 0 is the one on the left
+    Product Name                          : (no GPU section above this line)
+random tokens ==== NVSMI ==== 0xDEADBEEF

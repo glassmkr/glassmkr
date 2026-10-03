@@ -1,0 +1,11 @@
+root@web-01.example.test:~# cat /proc/mdstat
+Personalities : [raid1] [raid10]
+md0 : active raid1 sdb1[1] sda1[0]
+      976630336 blocks super 1.2 [2/2] [UU]
+      bitmap: 0/8 pages [0KB], 65536KB chunk
+
+md1 : active raid10 sdf1[3] sde1[2](F) sdd1[1] sdc1[0]
+      1953260544 blocks super 1.2 512K chunks 2 near-copies [4/3] [UU_U]
+
+unused devices: <none>
+root@web-01.example.test:~#

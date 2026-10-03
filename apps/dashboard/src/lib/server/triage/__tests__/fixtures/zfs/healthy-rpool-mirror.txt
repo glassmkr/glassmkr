@@ -1,0 +1,12 @@
+  pool: rpool
+ state: ONLINE
+  scan: scrub repaired 0B in 00:02:11 with 0 errors on Sun Sep 14 00:26:12 2025
+config:
+
+	NAME                                                   STATE     READ WRITE CKSUM
+	rpool                                                  ONLINE       0     0     0
+	  mirror-0                                             ONLINE       0     0     0
+	    ata-SAMSUNG_MZ7LH480HAHQ-00005_S45PNA0FAKE001-part3  ONLINE       0     0     0
+	    ata-SAMSUNG_MZ7LH480HAHQ-00005_S45PNA0FAKE002-part3  ONLINE       0     0     0
+
+errors: No known data errors

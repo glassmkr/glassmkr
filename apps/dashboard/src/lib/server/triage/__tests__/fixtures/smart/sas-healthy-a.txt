@@ -1,0 +1,72 @@
+user@stor-11.example.invalid:~$ sudo smartctl -a /dev/sdb
+smartctl 7.2 2020-12-30 r5155 [x86_64-linux-5.4.0-196-generic] (local build)
+Copyright (C) 2002-20, Bruce Allen, Christian Franke, www.smartmontools.org
+
+=== START OF INFORMATION SECTION ===
+Vendor:               SEAGATE
+Product:              ST4000NM0025
+Revision:             N004
+Compliance:           SPC-4
+User Capacity:        4,000,787,030,016 bytes [4.00 TB]
+Logical block size:   512 bytes
+Formatted with type 2 protection
+8 bytes of protection information per logical block
+LU is fully provisioned
+Rotation Rate:        7200 rpm
+Form Factor:          3.5 inches
+Logical Unit id:      0x5000c500fa000007
+Serial number:        ZC1FAKE7
+Device type:          disk
+Transport protocol:   SAS (SPL-3)
+Local Time is:        Thu Oct  2 09:50:12 2026 UTC
+SMART support is:     Available - device has SMART capability.
+SMART support is:     Enabled
+Temperature Warning:  Enabled
+
+=== START OF READ SMART DATA SECTION ===
+SMART Health Status: OK
+
+Grown defects during certification <not available>
+Total blocks reassigned during format <not available>
+Total new blocks reassigned <not available>
+Power on minutes since format <not available>
+Current Drive Temperature:     31 C
+Drive Trip Temperature:        60 C
+
+Accumulated power on time, hours:minutes 38211:47
+Manufactured in week 07 of year 2018
+Specified cycle count over device lifetime:  10000
+Accumulated start-stop cycles:  61
+Specified load-unload count over device lifetime:  300000
+Accumulated load-unload cycles:  1802
+Elements in grown defect list: 0
+
+Vendor (Seagate Cache) information
+  Blocks sent to initiator = 3214556789
+  Blocks received from initiator = 2864551234
+  Blocks read from cache and sent to initiator = 1234567890
+  Number of read and write commands whose size <= segment size = 123456789
+  Number of read and write commands whose size > segment size = 1234567
+
+Vendor (Seagate/Hitachi) factory information
+  number of hours powered up = 38211.78
+  number of minutes until next internal SMART test = 41
+
+Error counter log:
+           Errors Corrected by           Total   Correction     Gigabytes    Total
+               ECC          rereads/    errors   algorithm      processed    uncorrected
+           fast | delayed   rewrites  corrected  invocations   [10^9 bytes]  errors
+read:   3216574321        0         0  3216574321          0     251346.123           0
+write:         0        0         0         0          0      89123.456           0
+verify: 1234567890        0         0  1234567890          0      42345.678           0
+
+Non-medium error count:        3
+
+SMART Self-test log
+Num  Test              Status                 segment  LifeTime  LBA_first_err [SK ASC ASQ]
+     Description                              number   (hours)
+# 1  Background short  Completed                   -   38200                 - [-   -    -]
+# 2  Background long   Completed                   -   37950                 - [-   -    -]
+
+Long (extended) Self-test duration: 30000 seconds [500.0 minutes]
+

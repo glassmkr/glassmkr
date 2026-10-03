@@ -21,9 +21,9 @@
 <div class="container-narrow">
   <h1>Privacy Policy</h1>
   <div class="legal-content">
-    <p class="last-updated">Last updated: August 24, 2026</p>
+    <p class="last-updated">Last updated: October 3, 2026</p>
 
-    <p>This Privacy Policy explains how Glassmkr ("we", "us", "our") collects, uses, and protects personal data when you use app.glassmkr.com (Dashboard), the Crucible monitoring agent, and related services. This policy is written in accordance with the General Data Protection Regulation (EU) 2016/679 ("GDPR") and the Czech Act No. 110/2019 Sb. on Personal Data Processing.</p>
+    <p>This Privacy Policy explains how Glassmkr ("we", "us", "our") collects, uses, and protects personal data when you use app.glassmkr.com (Dashboard), the Crucible monitoring agent, and related services, including the connectors that let an AI assistant call Glassmkr (section 4). This policy is written in accordance with the General Data Protection Regulation (EU) 2016/679 ("GDPR") and the Czech Act No. 110/2019 Sb. on Personal Data Processing.</p>
 
     <h2>1. Who We Are (Controller)</h2>
 
@@ -60,6 +60,8 @@
 
     <p><strong>Technical logs.</strong> We log API requests (endpoint, timestamp, response status, IP address) for security monitoring and incident response. We do not log request bodies beyond what is necessary for the service to function.</p>
 
+    <p><strong>AI assistant connectors.</strong> If you use one of the MCP connectors that let an AI assistant call Glassmkr, we receive and keep the data described in section 4.</p>
+
     <h2>3. How We Use Your Data</h2>
 
     <div class="table-scroll" tabindex="0" role="region" aria-label="privacy table, scrolls horizontally"><table>
@@ -87,6 +89,14 @@
           <td>Art. 6(1)(b) GDPR: performance of a contract</td>
         </tr>
         <tr>
+          <td>Sending your fleet data to an AI client you authorized through the MCP connector (section 4)</td>
+          <td>Art. 6(1)(b) GDPR: performance of a contract, at your instruction</td>
+        </tr>
+        <tr>
+          <td>Answering calls to the anonymous paste-triage connector, and rate-limiting it (section 4)</td>
+          <td>Art. 6(1)(f) GDPR: legitimate interest in providing the tool you call and keeping it available</td>
+        </tr>
+        <tr>
           <td>Security monitoring, incident detection, and abuse prevention</td>
           <td>Art. 6(1)(f) GDPR: legitimate interest in maintaining service security</td>
         </tr>
@@ -97,15 +107,36 @@
       </tbody>
     </table></div>
 
-    <p><strong>AI processing.</strong> Health snapshots may be analyzed by a self-hosted Gemma 4 model running on our own infrastructure in Amsterdam. This processing happens entirely on our servers. No data is sent to third-party AI providers (OpenAI, Google, Anthropic, or others).</p>
+    <p><strong>AI processing.</strong> Health snapshots may be analyzed by a self-hosted Gemma 4 model running on our own infrastructure in Amsterdam. This processing happens entirely on our servers. Glassmkr's analysis does not send your data to third-party AI providers (OpenAI, Google, Anthropic, or others). If you connect an AI assistant to Glassmkr yourself, section 4 describes what it receives.</p>
 
-    <p><strong>Machine learning processing for trend warnings.</strong> Glassmkr uses machine learning models to generate trend warnings from your server's historical monitoring metrics. These models run on Glassmkr-owned infrastructure in the European Union. We do not transmit your monitoring data to external AI providers (such as OpenAI, Anthropic, or Google Cloud AI services). The models used are: (a) a tree-based classifier trained on Backblaze's publicly released drive failure dataset, which evaluates per-drive SMART attributes to estimate failure risk, and (b) a large language model (Gemma 4) that generates plain-English descriptions of warnings already identified by our deterministic detection rules. Neither model is trained on your private data; the tree classifier is retrained quarterly on Backblaze's updated public dataset only. Drive model identifiers (for example "ST12000NM0007") are used to match against this public failure-rate lookup table; those identifiers are manufacturer-public information, not customer-identifying data.</p>
+    <p><strong>Machine learning processing for trend warnings.</strong> Glassmkr uses machine learning models to generate trend warnings from your server's historical monitoring metrics. These models run on Glassmkr-owned infrastructure in the European Union. These features do not transmit your monitoring data to external AI providers (such as OpenAI, Anthropic, or Google Cloud AI services). The models used are: (a) a tree-based classifier trained on Backblaze's publicly released drive failure dataset, which evaluates per-drive SMART attributes to estimate failure risk, and (b) a large language model (Gemma 4) that generates plain-English descriptions of warnings already identified by our deterministic detection rules. Neither model is trained on your private data; the tree classifier is retrained quarterly on Backblaze's updated public dataset only. Drive model identifiers (for example "ST12000NM0007") are used to match against this public failure-rate lookup table; those identifiers are manufacturer-public information, not customer-identifying data.</p>
 
     <p><strong>Trend warning feedback.</strong> If you mark a trend warning as "valuable" or "false positive", we store that feedback against the warning record and use it in aggregate to calibrate future warnings for your account.</p>
 
     <p>We do not sell your data. We do not use your data for advertising. We do not share your server data with other customers.</p>
 
-    <h2>4. Subprocessors and Third Parties</h2>
+    <h2>4. AI Assistants and MCP Connectors</h2>
+
+    <p>Glassmkr offers two Model Context Protocol (MCP) connectors that let an AI assistant you use, such as ChatGPT (OpenAI) or Claude (Anthropic), call Glassmkr. Neither is used unless you connect it. The assistant provider is not our subprocessor: it is a separate service you chose, and what you type, paste, or receive in that conversation is handled by the provider under its own privacy policy and terms. Glassmkr's own analysis features described in section 3 do not send your data to any third-party AI provider.</p>
+
+    <p><strong>Paste-triage connector (no account).</strong> At <code>https://app.glassmkr.com/api/triage/mcp</code>, anyone can have Glassmkr's alert rules read server command output (for example from smartctl, zpool, mdadm, dmesg, ipmitool or nvidia-smi) that they paste into an assistant. It needs no account and no sign-in. See <a href="/docs/ai-assistants">Use Glassmkr in ChatGPT and Claude</a>.</p>
+    <ul>
+      <li><strong>What we receive:</strong> the command output the assistant sends with each call, an optional hint naming your Linux distribution, and, when the assistant attaches one, an anonymous requester identifier (ChatGPT sends one). Command output can contain hostnames, device serial numbers and similar details of your systems; you can remove them before pasting, as the rules do not need them. Other metadata an assistant attaches, such as a locale or a coarse location hint, is not used or recorded.</li>
+      <li><strong>How it is processed:</strong> the output reaches us over HTTPS through Cloudflare, like all traffic to our services. It is parsed and evaluated in memory, the result is returned to the assistant, and the output is then discarded. We do not store the pasted text, write it to a log, or use it for any other purpose.</li>
+      <li><strong>What we log:</strong> one line per call with the tool called, the output formats detected, the input size, the rule identifiers of any findings, the processing time, whether the call succeeded or was rate limited, and a hashed form of the requester identifier when one was sent. The request itself is also recorded as described under Technical logs in section 2. When you use ChatGPT or claude.ai, the call comes from the provider's servers, so the IP address we see is theirs; a client running on your own machine, such as Claude Code, connects from your address.</li>
+      <li><strong>Rate limiting:</strong> short-lived counters keyed by the source IP address and by the hashed requester identifier. They expire on their own within one day.</li>
+      <li><strong>Retention:</strong> the log lines above are kept as security logs (section 7). Nothing links a call to a Glassmkr account.</li>
+    </ul>
+
+    <p><strong>Authenticated MCP connector (Dashboard accounts).</strong> At <code>https://app.glassmkr.com/mcp</code>, a signed-in Dashboard user can authorize an AI client to read their fleet data and, with the scopes they grant, act on it. See <a href="/docs/mcp">MCP server</a>.</p>
+    <ul>
+      <li><strong>A transfer you start:</strong> by approving a client on the consent screen, you instruct us to send that client what its tool calls request within the scopes you granted, such as server names, health snapshots, alerts, and resource-usage history from your account. Once sent, that data is part of your conversation with the assistant and is handled by its provider under its own policy.</li>
+      <li><strong>What we store:</strong> the client's registered name and redirect addresses; the connection itself (your account, the scopes granted, when it was approved and last used, and whether it was revoked); and its access and refresh tokens, stored only as hashes. Each tool call is written to your account's audit log, as API calls are.</li>
+      <li><strong>How long access lasts:</strong> an access token is valid for 15 minutes and is renewed with a refresh token. A refresh token lapses after 30 days without use, and a connection ends at the latest 90 days after you approved it; after either, the client has to be authorized again. Connection records are deleted with your account.</li>
+      <li><strong>Revoking access:</strong> revoke any connection under Settings, MCP connections in the Dashboard. Revoking it, or resetting your password, stops further transfers immediately. It cannot recall data already sent to the assistant.</li>
+    </ul>
+
+    <h2>5. Subprocessors and Third Parties</h2>
 
     <div class="table-scroll" tabindex="0" role="region" aria-label="privacy table, scrolls horizontally"><table>
       <thead>
@@ -141,18 +172,26 @@
           <td>United States</td>
           <td>EU-US DPF + SCCs</td>
         </tr>
+        <tr>
+          <td>AI assistant you connect (for example ChatGPT by OpenAI or Claude by Anthropic)</td>
+          <td>Receives the data you request through an MCP connector (only if you connect one; see section 4)</td>
+          <td>Set by the provider</td>
+          <td>User-initiated transfer</td>
+        </tr>
       </tbody>
     </table></div>
 
-    <p>Telegram and Slack only receive data when you actively configure them as notification channels. We do not sell data to any third party. We do not use any analytics, tracking, or advertising services.</p>
+    <p>Telegram and Slack only receive data when you actively configure them as notification channels, and an AI assistant only when you connect it. We do not sell data to any third party. We do not use any analytics, tracking, or advertising services.</p>
 
-    <h2>5. International Data Transfers</h2>
+    <h2>6. International Data Transfers</h2>
 
     <p>All primary data (account data, monitoring snapshots, AI analysis results) is stored on dedicated servers in Amsterdam, Netherlands, within the European Union.</p>
 
+    <p>Data you send to an AI assistant through an MCP connector (section 4) is transferred at your instruction to the provider you chose, which may process it outside the European Union under its own terms.</p>
+
     <p>Certain subprocessors are based in the United States. These transfers are covered by the European Commission's adequacy decision for the EU-US Data Privacy Framework (DPF), adopted on 10 July 2023. As an additional safeguard, we maintain Standard Contractual Clauses (SCCs) with each US-based subprocessor.</p>
 
-    <h2>6. Data Retention</h2>
+    <h2>7. Data Retention</h2>
 
     <div class="table-scroll" tabindex="0" role="region" aria-label="privacy table, scrolls horizontally"><table>
       <thead>
@@ -186,12 +225,28 @@
           <td>Security logs</td>
           <td>12 months</td>
         </tr>
+        <tr>
+          <td>Paste-triage connector: pasted command output</td>
+          <td>Not stored; held in memory only while the call is processed</td>
+        </tr>
+        <tr>
+          <td>Paste-triage connector: per-call log lines</td>
+          <td>12 months (kept as security logs)</td>
+        </tr>
+        <tr>
+          <td>Paste-triage connector: rate-limit counters</td>
+          <td>Up to 1 day</td>
+        </tr>
+        <tr>
+          <td>MCP connection records and token hashes</td>
+          <td>Up to the duration of your account (tokens stop working as described in section 4)</td>
+        </tr>
       </tbody>
     </table></div>
 
     <p>Retention periods are enforced automatically. When you delete a server from Dashboard, all associated snapshots, alerts, and analyses are permanently deleted. When you delete your account, all your data is permanently deleted after the 30-day grace period, except billing records retained under legal obligation.</p>
 
-    <h2>7. Your Rights</h2>
+    <h2>8. Your Rights</h2>
 
     <p>Under the GDPR, you have the following rights regarding your personal data:</p>
     <ul>
@@ -214,7 +269,7 @@
       <li><strong>Website:</strong> <a href="https://www.uoou.cz">uoou.cz</a></li>
     </ul>
 
-    <h2>8. Cookies</h2>
+    <h2>9. Cookies</h2>
 
     <div class="table-scroll" tabindex="0" role="region" aria-label="privacy table, scrolls horizontally"><table>
       <thead>
@@ -239,17 +294,17 @@
 
     <p>Under the ePrivacy Directive (2002/58/EC, Art. 5(3)), strictly necessary cookies do not require user consent. Because our only cookie is essential for authentication, no cookie consent banner is required.</p>
 
-    <h2>9. Children</h2>
+    <h2>10. Children</h2>
 
     <p>Glassmkr is a server monitoring service intended for system administrators and IT professionals. Our services are not directed at individuals under 16 years of age. We do not knowingly collect personal data from children. If you believe a child under 16 has provided us with personal data, please contact us at <a href="mailto:privacy@glassmkr.com">privacy@glassmkr.com</a> and we will delete that data promptly.</p>
 
-    <h2>10. Changes to This Policy</h2>
+    <h2>11. Changes to This Policy</h2>
 
     <p>We may update this Privacy Policy from time to time to reflect changes in our practices or legal requirements. The "Last updated" date at the top of this page indicates when the policy was last revised.</p>
 
     <p>For material changes that affect how we process your data or reduce your rights, we will notify you by email at the address associated with your Dashboard account at least 14 days before the changes take effect.</p>
 
-    <h2>11. Contact and Complaints</h2>
+    <h2>12. Contact and Complaints</h2>
 
     <p>For any privacy-related questions, requests, or complaints, contact us at:</p>
     <ul>
