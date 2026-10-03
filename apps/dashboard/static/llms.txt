@@ -1,6 +1,6 @@
 # Dashboard by Glassmkr
 
-> Bare metal monitoring dashboard, AGPL-3.0-only and self-hostable. 70 alert rules, per-core CPU, SMART, IPMI, network diagnostics.
+> Bare metal monitoring dashboard, AGPL-3.0-only and self-hostable. Alert rules, per-core CPU, SMART, IPMI, network diagnostics.
 
 ## Quick Start
 
@@ -54,27 +54,28 @@ Authentication: Bearer token. Account API access: gmk_acct_live_xxx (or legacy f
 - POST /ingest - push snapshot (Bearer gmk_cru_live_xxx or legacy col_xxx, rate limited to 1/min)
 - GET /version - latest Crucible version info
 
-## Alert Rules (70)
+## Alert Rules
 
 The full catalogue, with the firing condition and remediation workflow for
 each rule, is at https://glassmkr.com/docs/rules and as a machine map at
-https://glassmkr.com/docs/rules/llms.txt. The lists below are a sample by
-priority, not the complete set.
+https://glassmkr.com/docs/rules/llms.txt. Every rule is listed below under the
+priority its definition declares.
 
 Priority P0 Critical (data already at risk):
-- mce_uncorrected, gpu_uncorrected_ecc, gpu_xid_critical
+- boot_config_broken, gpu_uncorrected_ecc, gpu_xid_critical, mce_uncorrected
 
 Priority P1 Urgent (act now):
-- raid_degraded, smart_failing, ecc_errors (uncorrectable), psu_redundancy_loss, ipmi_fan_failure, filesystem_readonly
+- accept_backlog_or_syn_flood, bond_slave_down, conntrack_exhaustion, cpu_temperature_high, disk_fill_projection, disk_io_errors, ecc_errors, fd_exhaustion, filesystem_readonly, gpu_driver_unsafe_reboot, gpu_thermal_critical, ipmi_fan_failure, ipmi_sel_critical, lacp_partner_lost, lvm_thinpool_metadata_high, mem_pressure_high, no_firewall, nvlink_link_down, nvme_critical_warning, oom_kills, psu_redundancy_loss, raid_degraded, server_unreachable, service_flapping, smart_failing, softnet_drops, ssh_root_password, systemd_service_failed, systemd_service_oom_killed, unexpected_reboot, zfs_pool_unhealthy, zfs_scrub_errors, zfs_slog_faulted
 
 Priority P2 High (fix within hours):
-- oom_kills, ram_high, disk_space_high, ipmi_sel_critical, disk_io_errors, zfs_pool_unhealthy, inode_high, cpu_high
+- clock_drift, cpu_high, cpu_iowait_high, cpu_pressure_high, disk_space_high, drive_smart_unreadable, gpu_pcie_link_degraded, gpu_power_cap_throttling, inode_high, interface_errors, io_pressure_high, kernel_needs_reboot, kernel_vulnerabilities, link_speed_mismatch, listen_overflow, ntp_not_synced, nvme_wear_high, os_end_of_life, pending_security_updates, ssh_config_unapplied, swap_high, tcp_retrans_high
 
 Priority P3 Medium (fix within days):
-- cpu_iowait_high, nvme_wear_high, disk_latency_high, cpu_temperature_high, ssh_root_password, pending_security_updates, kernel_vulnerabilities, zfs_scrub_errors, load_high
+- bios_firmware_age, boot_config_drift, cmos_battery_low, disk_latency_high, gpu_corrected_ecc_storm, gpu_driver_or_firmware_drift, interface_saturation, ipmi_monitoring_unavailable, ipmi_sel_full, load_high, memory_channels_underpopulated, ram_high, unattended_upgrades_disabled
 
-Priority P4 Low (next maintenance):
-- no_firewall, kernel_needs_reboot, unattended_upgrades_disabled, interface_errors, link_speed_mismatch, interface_saturation, ecc_errors (correctable), clock_drift
+P4 Low is not declared by any rule. It marks a proactive recommendation, or an
+alert whose instance severity is informational, and shows on the dashboard
+without paging: channels receive P0 through P3 unless configured otherwise.
 
 ## Snapshot Payload Structure
 

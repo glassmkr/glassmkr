@@ -188,6 +188,16 @@ jobs:
             sleep 2
           done
           node scripts/check-rendered.mjs http://localhost:4173
+      # The machine files agents read (llms*.txt, Markdown twins, the app's
+      # llms.txt). Reads the site prebuild output the step above just wrote, so
+      # it adds no build. Run directly because launch-integrity, which wraps it,
+      # is deliberately not run here (see above), and with nothing else running
+      # it the app index said "Alert Rules (70)" against a catalogue of 72.
+      - name: Machine-surface check
+        run: |
+          set -euo pipefail
+          node scripts/check-machine-surface.test.mjs
+          node scripts/check-machine-surface.mjs
       - name: Third-party notices regenerate + drift (gate 11)
         run: |
           set -euo pipefail
