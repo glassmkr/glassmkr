@@ -299,6 +299,11 @@ describe("gpu_xid_critical", () => {
     expect(xid79.evidence.gpu_uuid).toBe("GPU-h200-idx6");
     expect(xid79.evidence.gpu_name).toBe("NVIDIA H200 NVL");
 
+    // Every card on the box shares the model name, so the title must keep the
+    // BDF once the GPU resolves, or it no longer says which card failed.
+    expect(xid74.title).toBe("GPU XID 74 on NVIDIA H200 NVL (0000:63:00) (NVLink error)");
+    expect(xid79.title).toBe("GPU XID 79 on NVIDIA H200 NVL (0000:e6:00) (GPU has fallen off the bus)");
+
     // Severity and the event-stacking identity (pci_bdf|xid_code|last_event_iso)
     // are unchanged: evidence.pci_bdf stays the event's own string.
     for (const a of fired) expect(a.severity).toBe("critical");

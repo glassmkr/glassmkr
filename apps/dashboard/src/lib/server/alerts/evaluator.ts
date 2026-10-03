@@ -5337,7 +5337,7 @@ const rules: AlertRule[] = [
         results.push({
           type: "gpu_xid_critical",
           severity: "critical",
-          title: `GPU XID ${first.xid_code} on ${gpu?.name ?? first.pci_bdf} (${xidSummary})`,
+          title: `GPU XID ${first.xid_code} on ${gpu ? `${gpu.name} (${first.pci_bdf})` : first.pci_bdf} (${xidSummary})`,
           message: `NVIDIA XID ${first.xid_code} (${xidSummary}) reported on ${gpu?.name ?? "GPU"} ${first.pci_bdf}. ${events.length} event${events.length > 1 ? "s" : ""} in window. ${first.xid_code === 79 ? "XID 79 means the GPU fell off the PCIe bus; this is the most severe XID and typically requires GPU replacement or reseat." : "Per NVIDIA's XID error table this is a critical hardware-witnessed fault."}`,
           evidence: {
             gpu_uuid: gpu?.uuid ?? "unknown",
