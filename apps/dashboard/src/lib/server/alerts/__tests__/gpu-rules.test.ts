@@ -258,6 +258,73 @@ describe("gpu_xid_critical", () => {
     );
     expect(alertsByType(s, "gpu_xid_critical").length).toBe(0);
   });
+
+  // Real shapes from an 8x H200 NVL box (2026-09-16): nvidia-smi gives
+  // "00000000:63:00.0" / "00000000:E6:00.0", the NVRM Xid line gives
+  // "0000:63:00" / "0000:e6:00". Exact string equality never matched, so every
+  // XID alert named the GPU "unknown".
+  it("names the GPU behind each XID when nvidia-smi and the NVRM line format the BDF differently", () => {
+    const now = new Date().toISOString();
+    const gpus = [
+      gpuBase({ index: 0, uuid: "GPU-h200-idx0", name: "NVIDIA H200 NVL", pci_bdf: "00000000:03:00.0" }),
+      gpuBase({ index: 2, uuid: "GPU-h200-idx2", name: "NVIDIA H200 NVL", pci_bdf: "00000000:63:00.0" }),
+      gpuBase({ index: 3, uuid: "GPU-h200-idx3", name: "NVIDIA H200 NVL", pci_bdf: "00000000:64:00.0" }),
+      gpuBase({ index: 6, uuid: "GPU-h200-idx6", name: "NVIDIA H200 NVL", pci_bdf: "00000000:E6:00.0" }),
+    ];
+    const s = gpuSnapshot(gpus, [
+      {
+        timestamp_iso: now,
+        xid_code: 74,
+        pci_bdf: "0000:63:00",
+        severity: "critical",
+        raw_message: "NVRM: Xid (PCI:0000:63:00): 74, NVLink: fatal error detected on link 4(0x10200000, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0)",
+      },
+      {
+        timestamp_iso: now,
+        xid_code: 79,
+        pci_bdf: "0000:e6:00",
+        severity: "critical",
+        raw_message: "NVRM: Xid (PCI:0000:e6:00): 79, pid='<unknown>', name=<unknown>, GPU has fallen off the bus.",
+      },
+    ]);
+    const fired = alertsByType(s, "gpu_xid_critical");
+    expect(fired.length).toBe(2);
+
+    const xid74 = fired.find((a) => a.evidence.xid_code === 74)!;
+    expect(xid74.evidence.gpu_uuid).toBe("GPU-h200-idx2");
+    expect(xid74.evidence.gpu_name).toBe("NVIDIA H200 NVL");
+    expect(xid74.title).toContain("NVIDIA H200 NVL");
+
+    const xid79 = fired.find((a) => a.evidence.xid_code === 79)!;
+    expect(xid79.evidence.gpu_uuid).toBe("GPU-h200-idx6");
+    expect(xid79.evidence.gpu_name).toBe("NVIDIA H200 NVL");
+
+    // Severity and the event-stacking identity (pci_bdf|xid_code|last_event_iso)
+    // are unchanged: evidence.pci_bdf stays the event's own string.
+    for (const a of fired) expect(a.severity).toBe("critical");
+    expect(xid74.evidence.pci_bdf).toBe("0000:63:00");
+    expect(xid79.evidence.pci_bdf).toBe("0000:e6:00");
+  });
+
+  it("still fires, naming the raw BDF, when no GPU sits on the XID's bus", () => {
+    const s = gpuSnapshot(
+      [gpuBase({ uuid: "GPU-h200-idx2", name: "NVIDIA H200 NVL", pci_bdf: "00000000:63:00.0" })],
+      [
+        {
+          timestamp_iso: new Date().toISOString(),
+          xid_code: 79,
+          pci_bdf: "0000:64:00",
+          severity: "critical",
+          raw_message: "NVRM: Xid (PCI:0000:64:00): 79, GPU has fallen off the bus.",
+        },
+      ],
+    );
+    const fired = alertsByType(s, "gpu_xid_critical");
+    expect(fired.length).toBe(1);
+    expect(fired[0].severity).toBe("critical");
+    expect(fired[0].evidence.gpu_uuid).toBe("unknown");
+    expect(fired[0].title).toContain("0000:64:00");
+  });
 });
 
 // ============================================================================

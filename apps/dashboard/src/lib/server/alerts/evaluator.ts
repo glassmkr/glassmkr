@@ -21,6 +21,7 @@ import { getRuleMetadata } from "./fix-workflow/loader";
 import { OWNERSHIP_REMEDIATION_NOTE } from "$lib/alerts/vendor-facing";
 import { resolveFailedMembers } from "./raid-members";
 import { lookupLifecycle } from "$lib/server/endoflife/cache";
+import { pciBdfMatches } from "$lib/utils/pci-bdf";
 
 // PSI resource block emitted by Crucible v0.10.4+. Per /proc/pressure
 // kernel doc: avgN is the rolling % over N seconds, total is cumulative
@@ -5329,7 +5330,9 @@ const rules: AlertRule[] = [
       }
       for (const [key, events] of grouped) {
         const first = events[0];
-        const gpu = tier1.gpus.find((g) => g.pci_bdf === first.pci_bdf);
+        // The Xid BDF ("0000:3b:00") and nvidia-smi's ("00000000:3B:00.0")
+        // never compare equal as strings; see pci-bdf.ts.
+        const gpu = tier1.gpus.find((g) => pciBdfMatches(g.pci_bdf, first.pci_bdf));
         const xidSummary = xidShortDescription(first.xid_code);
         results.push({
           type: "gpu_xid_critical",

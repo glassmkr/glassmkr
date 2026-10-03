@@ -10,6 +10,7 @@
   import type { Snapshot } from "$lib/server/alerts/evaluator";
   import GpuSubCard from "./GpuSubCard.svelte";
   import GpuXidEventLog from "./GpuXidEventLog.svelte";
+  import { pciBdfMatches } from "$lib/utils/pci-bdf";
 
   interface Props {
     gpu: NonNullable<Snapshot["gpu"]>;
@@ -67,16 +68,16 @@
   });
 
   // Build a bdf -> {index, name} map so the XID event log can show
-  // "GPU 0 (NVIDIA L4)" instead of just the raw BDF.
+  // "GPU 0 (NVIDIA L4)" instead of just the raw BDF. Keyed by each
+  // event's own pci_bdf (what the log looks up); the GPU is resolved
+  // with pciBdfMatches because nvidia-smi's "00000000:01:00.0" and the
+  // dmesg XID line's "0000:01:00" never compare equal as strings.
   let gpuByBdf = $derived(
     Object.fromEntries(
-      (tier1?.gpus ?? []).map((g) => [
-        // Crucible normalises BDFs to "00000000:01:00.0" but the
-        // dmesg XID line carries "0000:01:00" — strip the trailing
-        // ".N" function to match.
-        g.pci_bdf.replace(/\.[^.]+$/, "").replace(/^0+:/, "0:"),
-        { index: g.index, name: g.name },
-      ]),
+      (tier1?.xid_events ?? []).flatMap((e): Array<[string, { index: number; name: string }]> => {
+        const g = tier1?.gpus.find((gpu) => pciBdfMatches(gpu.pci_bdf, e.pci_bdf));
+        return g ? [[e.pci_bdf, { index: g.index, name: g.name }]] : [];
+      }),
     ),
   );
 
