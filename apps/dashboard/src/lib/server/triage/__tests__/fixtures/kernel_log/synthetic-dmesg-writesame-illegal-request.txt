@@ -1,0 +1,6 @@
+[  412.118230] sd 0:2:0:0: [sda] tag#812 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=0s
+[  412.118236] sd 0:2:0:0: [sda] tag#812 Sense Key : Illegal Request [current] 
+[  412.118239] sd 0:2:0:0: [sda] tag#812 Add. Sense: Invalid field in cdb
+[  412.118242] sd 0:2:0:0: [sda] tag#812 CDB: Write same(16) 93 08 00 00 00 00 00 00 08 00 00 00 08 00 00 00
+[  412.118245] critical target error, dev sda, sector 2048 op 0x9:(WRITE_ZEROES) flags 0x800 phys_seg 0 prio class 2
+[  412.118301] sd 0:2:0:0: [sda] Write same(16) failed, disabling write same

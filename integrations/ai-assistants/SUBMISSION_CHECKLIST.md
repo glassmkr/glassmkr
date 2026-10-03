@@ -35,10 +35,9 @@ plugin"]
 - [ ] **B2. Support URL must resolve and offer support.** The manifest's
   `supportURL` is `https://glassmkr.com/docs/ai-assistants`, which returns 404 on
   the live site today. The page exists on this branch
-  (`apps/site/src/routes/docs/ai-assistants/+page.svelte`) but, as of 2026-10-03,
-  has no support contact. Give it one (for example `support@glassmkr.com`,
-  already used on `/docs/troubleshooting`) and deploy it, or change `supportURL`
-  to `https://glassmkr.com/about` (has a Contact section) and rebuild. All four
+  (`apps/site/src/routes/docs/ai-assistants/+page.svelte`) and now has a Support
+  section (`#support`: `support@glassmkr.com` and the GitHub issues link).
+  What is left is deploying the site so the URL resolves. All four
   listing URLs are required for MCP review, must be HTTPS, "must be accessible
   and identify the same publisher as the submission". [submission "Check
   metadata", "Listing metadata"; plugin-guidelines "Support contact details"]
@@ -418,15 +417,14 @@ Same three values on all three tools. Paste per tool and per hint.
 
 | Tool | readOnlyHint: true | destructiveHint: false | openWorldHint: false |
 |---|---|---|---|
-| analyze_server_output | Parses the text passed in the call and evaluates it in memory against Glassmkr's alert rules, then returns the result. It creates, changes, sends and deletes nothing, and runs no commands on any server. The service writes one operational log line per call (tool name, detected formats, byte count, matched rule ids, duration, outcome, and a hash of the client's anonymous user id when one is sent); the pasted text itself is not logged or stored. | The tool has no write path in any mode: it cannot delete, overwrite, revoke or send anything. | It reads only the text in the request and the rule set bundled with the server. It makes no outbound requests and does not reach the public internet or any third-party service. |
+| analyze_server_output | Parses the text passed in the call and evaluates it in memory against Glassmkr's alert rules, then returns the result. It creates, changes, sends and deletes nothing, and runs no commands on any server. The pasted text is not stored. | The tool has no write path in any mode: it cannot delete, overwrite, revoke or send anything. | It reads only the text in the request and the rule set bundled with the server. It makes no outbound requests and does not reach the public internet or any third-party service. |
 | get_capture_command | Returns fixed command text for the requested goal and Linux distribution. It does not run the commands; the user decides whether to run them on their own server. | No write path; it returns text only. | Returns built-in text; no outbound requests. |
 | get_monitoring_setup | Returns install, enrollment and verification steps as text. It does not create accounts, enroll servers or issue keys, and never asks for a key; every step is performed by the user. | No write path; it returns text only. | Returns built-in text and documentation links; it does not fetch them or contact any other service. |
 
-Check before pasting: the log-line wording must match what the server really
-logs (as of 2026-10-03, `logToolCall` in
-`apps/dashboard/src/lib/server/triage/mcp-server.ts` writes `tool`, `formats`,
-`bytes`, `rule_ids`, `duration_ms`, `subject_hash`, `outcome`), and the privacy
-policy (B3) must say the same, including how long those log lines are kept.
+The justifications leave out server-side request logging on purpose: it is the
+same for all three tools, and app-review lists "write logs" among the actions
+that make readOnlyHint false, so naming it here invites a misreading. The
+per-call log line is disclosed in the privacy policy instead (B3).
 
 ### D3. Claude listing copy
 

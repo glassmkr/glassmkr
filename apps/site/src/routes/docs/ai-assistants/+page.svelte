@@ -109,13 +109,13 @@
         <li>"Is this drive failing?" followed by the output of <code>sudo smartctl -a /dev/sda</code>.</li>
         <li>"One of my arrays looks degraded. Which disk do I replace?" with <code>cat /proc/mdstat</code> and <code>sudo mdadm --detail /dev/md0</code>.</li>
         <li>"Is this pool OK to keep running?" with <code>zpool status -v</code>.</li>
-        <li>"Anything in here I should worry about?" with <code>sudo dmesg -T</code> or <code>sudo journalctl -k -b</code>.</li>
+        <li>"Anything in here I should worry about?" with <code>sudo dmesg -T</code> or <code>sudo journalctl -k -b -o short-iso</code>.</li>
         <li>"What do these BMC events mean?" with <code>sudo ipmitool sel elist</code>.</li>
         <li>"Is one of these GPUs unhealthy?" with <code>nvidia-smi -q</code> and <code>nvidia-smi nvlink --status</code>.</li>
         <li>"What should I run to check my NVMe drives?" The assistant asks Glassmkr for the exact capture command, which you run and paste back.</li>
         <li>"How do I keep an eye on this continuously?" The assistant returns the steps to install and enroll Crucible.</li>
       </ul>
-      <p>If the output is very long, paste the part for the device or time window you are asking about. Hostnames and serial numbers only label the findings; the rules do not need them, so you can replace them before pasting.</p>
+      <p>If the output is very long, paste the part for the device or time window you are asking about. To hide hostnames or serial numbers, replace each one with a different placeholder (for example <code>DISK1</code>, <code>DISK2</code>): when the output does not name each device, the serial number is what tells two drives apart, so giving every drive the same placeholder merges them. Leave GPU UUIDs as they are.</p>
     </section>
 
     <section id="limits">
@@ -126,7 +126,7 @@
         <li><strong>Recurrence.</strong> Whether an error came back after it was cleared, or keeps arriving, needs a record over time.</li>
         <li><strong>Absence.</strong> A server that stopped reporting leaves nothing to paste, and telling a planned reboot from an unplanned one needs a record of uptime.</li>
         <li><strong>Unseen devices.</strong> A drive, array or GPU that is not in the output is not checked.</li>
-        <li><strong>Undated events.</strong> Plain <code>dmesg</code> stamps lines with seconds since boot, so the result reports the time of those events as unknown rather than guessing one. <code>dmesg -T</code> and <code>journalctl -k</code> carry dates.</li>
+        <li><strong>Undated events.</strong> Plain <code>dmesg</code> stamps lines with seconds since boot, and plain <code>journalctl -k</code> prints no year, so the result reports the time of those events as unknown rather than guessing one. <code>dmesg -T</code> and <code>journalctl -k -o short-iso</code> carry full dates.</li>
       </ul>
       <p>Each result lists what it could not determine, so the assistant can say so instead of filling the gap.</p>
       <p><strong>Continuous monitoring answers these.</strong> <a href="https://github.com/glassmkr/crucible">Crucible</a>, the open-source agent, collects these signals on a schedule and the dashboard keeps the history the trend, recurrence and absence rules need, then notifies you when one fires. Install it on the hosted dashboard with <a href="/docs/getting-started">Getting started</a>, or run the whole stack yourself with <a href="/docs/self-hosting">Self-hosting</a>. Already running Crucible? The <a href="/docs/mcp">authenticated MCP server</a> gives an assistant your fleet's live health and alerts, with your consent.</p>
@@ -141,6 +141,11 @@
         <li><strong>The conversation is the provider's.</strong> What you type and paste into ChatGPT or Claude, and what the assistant replies, is handled by OpenAI or Anthropic under their own policies, not Glassmkr's.</li>
       </ul>
       <p>The full details, including request metadata and retention, are in the <a href="/privacy">privacy policy</a>.</p>
+    </section>
+
+    <section id="support">
+      <h2><a href="#support" class="anchor-link">#</a>Support</h2>
+      <p>For help with the connector, email <a href="mailto:support@glassmkr.com">support@glassmkr.com</a> or open an issue at <a href="https://github.com/glassmkr/glassmkr/issues">github.com/glassmkr/glassmkr/issues</a>. Leave hostnames, serial numbers and keys out of a public issue.</p>
     </section>
 
     <section id="tools">

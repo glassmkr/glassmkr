@@ -23,6 +23,7 @@ import {
   CAPTURE_GOALS,
   captureCommands,
   captureOutputShape,
+  normalizeDistroHint,
   renderCaptureText,
 } from "./capture.js";
 import {
@@ -80,11 +81,13 @@ function toolMeta(invoking: string, invoked: string): Record<string, unknown> {
   };
 }
 
+// Loose on purpose: an optional hint must never fail the call it rides on.
+// normalizeDistroHint reduces it to one lowercase word, and nothing echoes the
+// raw value back.
 const distroSchema = z
   .string()
-  .max(32)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
-  .optional()
+  .max(64)
+  .nullish()
   .describe("Optional os-release ID of the server, for example ubuntu, debian, rhel, rocky, almalinux or proxmox. Omit it if unknown.");
 
 /** Truncated keyed hash of the client-supplied anonymous subject, or null. */
@@ -188,7 +191,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         return rateLimitedResult(wait);
       }
       try {
-        const analysis = analyzeOutput(output, { distro, formatHint: format, parsers: options.parsers });
+        const analysis = analyzeOutput(output, { distro: normalizeDistroHint(distro), formatHint: format, parsers: options.parsers });
         logToolCall({
           tool: "analyze_server_output",
           formats: analysis.input.formats,
@@ -236,7 +239,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         logToolCall({ tool: "get_capture_command", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "rate_limited" });
         return rateLimitedResult(wait);
       }
-      const result = captureCommands(goal, distro);
+      const result = captureCommands(goal, normalizeDistroHint(distro));
       logToolCall({ tool: "get_capture_command", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "ok" });
       return {
         content: [{ type: "text" as const, text: renderCaptureText(result) }],
@@ -272,7 +275,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         logToolCall({ tool: "get_monitoring_setup", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "rate_limited" });
         return rateLimitedResult(wait);
       }
-      const result = monitoringSetup({ target, distro });
+      const result = monitoringSetup({ target, distro: normalizeDistroHint(distro) });
       logToolCall({ tool: "get_monitoring_setup", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "ok" });
       return {
         content: [{ type: "text" as const, text: renderSetupText(result) }],

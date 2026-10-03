@@ -1370,6 +1370,27 @@ describe("ipmi_sel_full", () => {
     ];
     expect(alertsOf("ipmi_sel_full", s)).toHaveLength(0);
   });
+  it("does not fire on a per-DIMM 'Correctable memory error logging disabled' event", () => {
+    // Event Logging Disabled offset 0x00: one DIMM hit its correctable-error
+    // logging limit. The SEL itself is still recording (sel info: 0% used).
+    const s = healthySnapshot();
+    s.ipmi.sel_entries_count = 4;
+    s.ipmi.sel_percent_used = 0;
+    s.ipmi.sel_overflow = false;
+    s.ipmi.sel_events_recent = [
+      { id: 4, timestamp: new Date().toISOString(), sensor: "Event Logging Disabled #0x07", sensor_type: "other", event: "Correctable memory error logging disabled", direction: "Asserted", severity: "info" },
+      { id: 5, timestamp: new Date().toISOString(), sensor: "Event Logging Disabled #0x07", sensor_type: "other", event: "Correctable machine check error logging disabled", direction: "Asserted", severity: "info" },
+    ];
+    expect(alertsOf("ipmi_sel_full", s)).toHaveLength(0);
+  });
+  it("still fires on 'All event logging disabled' (the whole SEL stopped recording)", () => {
+    const s = healthySnapshot();
+    s.ipmi.sel_events_recent = [
+      { id: 1, timestamp: new Date().toISOString(), sensor: "Event Logging Disabled #0x07", sensor_type: "other", event: "All event logging disabled", direction: "Asserted", severity: "info" },
+    ];
+    const [a] = alertsOf("ipmi_sel_full", s);
+    expect((a.evidence as any).trigger).toBe("log_full_event");
+  });
   it("capability gate: no fire when IPMI is unavailable", () => {
     const s = healthySnapshot();
     s.ipmi.available = false;

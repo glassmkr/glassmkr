@@ -678,3 +678,65 @@ describe("rules_checked: rules fed by the drives in this paste", () => {
     expect(rules(run("synthetic-smartctl-missing.txt").parsed)).toEqual(["drive_smart_unreadable"]);
   });
 });
+
+// Review round 1 (2026-10-03).
+describe("hostile JSON nesting (R1-1)", () => {
+  it("66,000 nested brackets before a health line finish quickly instead of exhausting the heap", () => {
+    const text = "[".repeat(66_000) + "[]".repeat(66_000) + "\nSMART overall-health self-assessment test result: PASSED\n";
+    const t0 = performance.now();
+    const r = smartctlParser.parse(text);
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(r.domain).toBe("smart");
+  });
+
+  it("a real smartctl JSON document still reads", () => {
+    const { results } = run("json-sata-failing.json");
+    expect(results.some((a) => a.type === "smart_failing")).toBe(true);
+  });
+});
+
+describe("serials replaced by one placeholder (R1-11)", () => {
+  const strip = (name: string) =>
+    fixture(name)
+      .split("\n")
+      .filter((l) => !/^root@/.test(l))
+      .join("\n")
+      .replace(/^(Serial Number:\s+)\S+/m, "$1REDACTED");
+
+  it("two drives with data are never merged on serial: the failing one is still reported", () => {
+    const { parsed, results } = runText(strip("ata-hdd-failing-a.txt") + "\n" + strip("ata-hdd-healthy-a.txt"));
+    expect(parsed.subjects).toBe(2);
+    expect(results.some((a) => a.type === "smart_failing")).toBe(true);
+    expect(noteText(parsed)).toMatch(/shares a serial number with another drive/);
+  });
+
+  it("an identity-only read still joins the data read with the same serial", () => {
+    const failing = fixture("ata-hdd-failing-a.txt").split("\n").filter((l) => !/^root@/.test(l));
+    const identity = failing.slice(0, failing.findIndex((l) => /START OF READ SMART DATA SECTION/.test(l))).join("\n");
+    const data = failing.slice(failing.findIndex((l) => /START OF READ SMART DATA SECTION/.test(l))).join("\n");
+    const { parsed } = runText(`${identity}\n\n${identity.replace(/^smartctl .*$/m, "")}\n${data}`);
+    expect(parsed.subjects).toBe(1);
+  });
+});
+
+describe("hypervisor virtual disks (R1-26)", () => {
+  it("QEMU and virtio disks without SMART are skipped with a note, not flagged unreadable", () => {
+    const { parsed, results } = run("synthetic-vps-qemu-and-virtio.txt");
+    expect(unreadableOf(parsed)).toEqual([]);
+    expect(results.some((a) => a.type === "drive_smart_unreadable")).toBe(false);
+    expect(noteText(parsed)).toMatch(/Skipped 2 virtual disks presented by a hypervisor/);
+  });
+
+  it("a QEMU disk that does report SMART is still read as a drive", () => {
+    const { parsed } = runText("Device Model:     QEMU HARDDISK\nSerial Number:    QM00001\nSMART overall-health self-assessment test result: PASSED\n");
+    expect(smartOf(parsed)).toHaveLength(1);
+  });
+});
+
+describe("byte order mark (R1-34)", () => {
+  it("a BOM-prefixed smartctl JSON paste reads like the plain one", () => {
+    const { parsed, results } = runText("\uFEFF" + fixture("json-sata-failing.json"));
+    expect(parsed.subjects).toBe(1);
+    expect(results.some((a) => a.type === "smart_failing")).toBe(true);
+  });
+});

@@ -40,10 +40,13 @@
 //     down.
 // A parser note says which readings were missing and for how many GPUs.
 //
-// Two mappings go beyond a field-for-field copy, both documented where made:
-// "Pending Page Blacklist: Yes" (a flag, not a count) becomes 1, and on GPUs
-// that report Retired Pages as N/A and Remapped Rows instead (Ampere and
-// newer), the remapped-row counts fill the retired-page fields.
+// One mapping goes beyond a field-for-field copy: "Pending Page Blacklist:
+// Yes" (a flag, not a count) becomes 1. Remapped Rows (Ampere and newer, which
+// print Retired Pages as N/A) are NOT copied into the retired-page fields:
+// Crucible never reads them, so the dashboard sees null there, and a GPU that
+// remapped a row successfully is healthy by NVIDIA's own RMA criteria. Copying
+// them turned that GPU into a critical "replace it" (review 2026-10-03, R1-7).
+// The remap counts are reported in a note instead.
 
 import type { Snapshot } from "$lib/server/alerts/evaluator";
 import { safeIdent, safeLabel } from "../sanitize";
@@ -192,7 +195,14 @@ const REASON_BITS: ReadonlyArray<[number, string]> = [
   [0x100, "display_clock_setting"],
 ];
 
-const BANNER_RE = /={3,}\s*NVSMI LOG\s*={3,}/;
+// Matched per line, on lines already under MAX_LINE: unanchored over the whole
+// paste, a 200 KB run of "=" cost 15 s in detect(), which runs on every paste
+// (R1-5).
+const BANNER_LINE_RE = /^={3,}[ \t]*NVSMI LOG[ \t]*={3,}$/;
+/** nvidia-smi lines are short; a longer line is not its output, and no regex here sees it. */
+const MAX_LINE = 4096;
+/** A real host has a few dozen GPUs at most; past this the paste is not one host's output. */
+const MAX_GPUS = 64;
 const GPU_HEADER_RE = /^GPU\s+((?:[0-9A-Fa-f]{4}|[0-9A-Fa-f]{8}):[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7])$/;
 const GPU_HEADER_LINE_RE =
   /^[ \t]*GPU[ \t]+(?:[0-9A-Fa-f]{4}|[0-9A-Fa-f]{8}):[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7][ \t]*\r?$/m;
@@ -201,12 +211,16 @@ const GPU_HEADER_LINE_RE =
 const KV_RE = /^(\S(?:.*?\S)?)\s+:(?:\s+(.*))?$/;
 const PADDED_KV_RE = /\S {2,}:/;
 const TOP_LEVEL_KEYS = new Set(["timestamp", "driver version", "cuda version", "attached gpus"]);
-const NVLINK_GPU_RE = /^\s*GPU\s+(\d{1,3}):\s*(.*?)\s*\(UUID:\s*([^)]*?)\s*\)\s*$/;
-const NVLINK_GPU_LINE_RE = /^[ \t]*GPU[ \t]+\d{1,3}:[^\n]*\(UUID:/m;
-const NVLINK_LINK_RE = /^\s*Link\s+(\d{1,3}):\s*(.+?)\s*$/;
+// No stacked quantifiers over the same characters: the old form,
+// `:\s*(.*?)\s*\(UUID:\s*([^)]*?)\s*\)`, backtracked cubically on a padded
+// line and a 4 KB paste held the event loop for 45 s (R1-2). Groups are
+// trimmed in code.
+const NVLINK_GPU_RE = /^\s*GPU\s+(\d{1,3}):([^(]*)\(UUID:([^)]*)\)\s*$/;
+const NVLINK_GPU_LINE_RE = /^[ \t]*GPU[ \t]+\d{1,3}:[^\r\n]{0,256}\(UUID:/m;
+const NVLINK_LINK_RE = /^\s*Link\s+(\d{1,3}):(.*)$/;
 const NVLINK_LINK_LINE_RE = /^[ \t]*Link[ \t]+\d{1,3}:/m;
 const DRIVER_FAIL_RE = /NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver/i;
-const NO_DEVICES_RE = /^\s*No devices were found\s*$/m;
+const NO_DEVICES_RE = /^[ \t]*No devices were found[ \t]*$/m;
 const CSV_NAME_RE = /^[a-z][a-z0-9_.]*$/;
 
 // ---------------------------------------------------------------------------
@@ -301,28 +315,69 @@ function sortReasons(reasons: Iterable<string>): string[] {
 
 class GpuTable {
   readonly list: RawGpu[] = [];
+  /** GPU records past MAX_GPUS that matched nothing already read. */
+  dropped = 0;
+  // Lookups are indexed: a linear scan per upsert made a paste of thousands of
+  // bare GPU headers quadratic, 4.7 s at 200 KB (R1-13).
+  private readonly at = new Map<RawGpu, number>();
+  private readonly byBdf = new Map<string, RawGpu>();
+  private readonly byUuid = new Map<string, RawGpu[]>();
 
+  /**
+   * The first record in list order with the same PCI bus id, or with the same
+   * UUID and no conflicting bus id. A UUID alone never merges two GPUs on
+   * different buses: a paste where every UUID was replaced by one placeholder
+   * would otherwise collapse every GPU into one (R1-11).
+   */
   find(uuid: string | undefined, bdf: string | undefined): RawGpu | undefined {
-    return this.list.find(
-      (g) =>
-        (uuid !== undefined && g.uuid === uuid) ||
-        (bdf !== undefined && g.bdf !== undefined && bdfKey(g.bdf) === bdfKey(bdf)),
-    );
+    const key = bdf !== undefined ? bdfKey(bdf) : undefined;
+    let best = key !== undefined ? this.byBdf.get(key) : undefined;
+    if (uuid !== undefined) {
+      for (const g of this.byUuid.get(uuid) ?? []) {
+        if (g.bdf !== undefined && key !== undefined && bdfKey(g.bdf) !== key) continue;
+        if (best === undefined || this.at.get(g)! < this.at.get(best)!) best = g;
+        break;
+      }
+    }
+    return best;
+  }
+
+  private index(g: RawGpu): void {
+    if (g.bdf !== undefined) {
+      const key = bdfKey(g.bdf);
+      const cur = this.byBdf.get(key);
+      if (cur === undefined || this.at.get(g)! < this.at.get(cur)!) this.byBdf.set(key, g);
+    }
+    if (g.uuid !== undefined) {
+      const list = this.byUuid.get(g.uuid) ?? [];
+      if (!list.includes(g)) {
+        list.push(g);
+        list.sort((a, b) => this.at.get(a)! - this.at.get(b)!);
+        this.byUuid.set(g.uuid, list);
+      }
+    }
   }
 
   /** Merge into an existing record (first non-missing value wins) or append. */
-  upsert(g: RawGpu): boolean {
+  upsert(g: RawGpu): "merged" | "added" | "dropped" {
     const hit = this.find(g.uuid, g.bdf);
     if (!hit) {
+      if (this.list.length >= MAX_GPUS) {
+        this.dropped++;
+        return "dropped";
+      }
+      this.at.set(g, this.list.length);
       this.list.push(g);
-      return false;
+      this.index(g);
+      return "added";
     }
     const into = hit as Record<string, unknown>;
     for (const [key, value] of Object.entries(g)) {
       if (value === undefined) continue;
       if (into[key] === undefined || (into[key] === null && value !== null)) into[key] = value;
     }
-    return true;
+    this.index(hit);
+    return "merged";
   }
 }
 
@@ -584,8 +639,19 @@ function csvReasonColumn(name: string): { kind: "label"; label: string } | { kin
   return label ? { kind: "label", label } : null;
 }
 
+/**
+ * Header cell without its unit suffix ("memory.total [MiB]"). Done without a
+ * regex: `\s*\[[^\]]*\]$` backtracked quadratically on a cell of spaces or
+ * brackets, and detect() runs it on every comma line of every paste (R1-5).
+ */
 function csvColumnName(cell: string): string {
-  return cell.trim().replace(/\s*\[[^\]]*\]$/, "").toLowerCase();
+  let c = cell.trim();
+  if (c.endsWith("]")) {
+    // The first "[" after the last other "]": the same span the regex took.
+    const open = c.indexOf("[", c.lastIndexOf("]", c.length - 2) + 1);
+    if (open >= 0 && open < c.length - 1) c = c.slice(0, open).trimEnd();
+  }
+  return c.toLowerCase();
 }
 
 function isKnownCsvColumn(name: string): boolean {
@@ -675,8 +741,8 @@ function parseNvLink(lines: string[], table: GpuTable): { gpus: number; unmatche
     if (header) {
       cur = {
         index: Number(header[1]),
-        name: labelValue(header[2]),
-        uuid: uuidValue(header[3]),
+        name: labelValue(header[2].trim()),
+        uuid: uuidValue(header[3].trim()),
         links: [],
         source: "nvlink",
       };
@@ -687,7 +753,7 @@ function parseNvLink(lines: string[], table: GpuTable): { gpus: number; unmatche
     const link = line.match(NVLINK_LINK_RE);
     if (link) {
       const id = Number(link[1]);
-      if (!cur.links!.some((l) => l.link_id === id)) cur.links!.push(classifyLink(id, link[2]));
+      if (!cur.links!.some((l) => l.link_id === id)) cur.links!.push(classifyLink(id, link[2].trim()));
       continue;
     }
     if (line.trim()) cur = null;
@@ -698,8 +764,7 @@ function parseNvLink(lines: string[], table: GpuTable): { gpus: number; unmatche
   const hadOtherGpus = table.list.some((g) => g.source !== "nvlink");
   let unmatched = 0;
   for (const b of withLinks) {
-    const merged = table.upsert(b);
-    if (!merged && hadOtherGpus) unmatched++;
+    if (table.upsert(b) === "added" && hadOtherGpus) unmatched++;
   }
   return { gpus: withLinks.length, unmatched };
 }
@@ -714,9 +779,15 @@ interface BuildCounts {
   reasonsMissing: number;
   pcieSkipped: number;
   eccSkipped: number;
-  remapUsed: number;
+  /** GPUs with a non-zero remapped-row count or a pending remap. */
+  remapGpus: number;
+  remapUncorrectable: number;
+  remapCorrectable: number;
+  remapPending: number;
   remapFailure: number;
   vbiosSkipped: number;
+  /** GPUs whose link width is below the card's max while the generation is not. */
+  widthOnly: number;
 }
 
 function num0(r: Reading): number {
@@ -749,21 +820,27 @@ function buildGpus(raws: RawGpu[], counts: BuildCounts): SnapshotGpu[] {
     const widthOk = typeof r.widthCur === "number" && typeof r.widthMax === "number";
     const loadKnown = r.utilGpu !== undefined && r.powerDraw !== undefined && r.powerLimit !== undefined;
     if (!(genOk || widthOk) || !loadKnown) counts.pcieSkipped++;
+    const genDown = genOk && num0(r.genCur) < num0(r.genMax);
+    if (widthOk && num0(r.widthCur) < num0(r.widthMax) && !genDown) counts.widthOnly++;
 
-    // Ampere and newer print Retired Pages as N/A and report Remapped Rows
-    // instead; use those counts only when no retired-page number is shown.
-    const retiredShown = [r.retiredSbe, r.retiredDbe].some((n) => typeof n === "number");
-    const remapShown = [r.remapCorr, r.remapUnc, r.remapPending].some((n) => typeof n === "number");
-    const useRemap = !retiredShown && remapShown;
-    if (useRemap) counts.remapUsed++;
-    const sbe = useRemap ? r.remapCorr : r.retiredSbe;
-    const dbe = useRemap ? r.remapUnc : r.retiredDbe;
-    const pending = useRemap ? r.remapPending : r.retiredPending;
+    // Remapped rows stay out of the retired-page fields (see the header).
+    const sbe = r.retiredSbe;
+    const dbe = r.retiredDbe;
+    const pending = r.retiredPending;
+    const remapUnc = num0(r.remapUnc);
+    const remapCorr = num0(r.remapCorr);
+    const remapPending = num0(r.remapPending) > 0;
+    if (remapUnc > 0 || remapCorr > 0 || remapPending) {
+      counts.remapGpus++;
+      counts.remapUncorrectable += remapUnc;
+      counts.remapCorrectable += remapCorr;
+      if (remapPending) counts.remapPending++;
+    }
     if (r.remapFailure) counts.remapFailure++;
 
-    const eccNumbers = [r.eccCorrVol, r.eccCorrAgg, r.eccUncVol, r.eccUncAgg, sbe, dbe, pending].some(
-      (n) => typeof n === "number",
-    );
+    const eccNumbers = [
+      r.eccCorrVol, r.eccCorrAgg, r.eccUncVol, r.eccUncAgg, sbe, dbe, pending, r.remapCorr, r.remapUnc, r.remapPending,
+    ].some((n) => typeof n === "number");
     const eccOn = (r.eccMode === true || r.eccMode === undefined) && eccNumbers;
     if (!eccOn) counts.eccSkipped++;
 
@@ -823,8 +900,14 @@ function gpuCount(n: number): string {
   return `${n} GPU${n === 1 ? "" : "s"}`;
 }
 
-function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unmatched: number): ParseNote[] {
+function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unmatched: number, dropped: number): ParseNote[] {
   const notes: ParseNote[] = [{ level: "info", message: `Read ${gpuCount(total)} from nvidia-smi output.` }];
+  if (dropped > 0) {
+    notes.push({
+      level: "warning",
+      message: `${dropped} more GPU entries past the first ${MAX_GPUS} were not read; paste one host's output at a time.`,
+    });
+  }
   const missing: string[] = [];
   if (counts.tempMissing > 0) missing.push(`GPU temperature (${gpuCount(counts.tempMissing)})`);
   if (counts.powerMissing > 0) missing.push(`power draw or limit (${gpuCount(counts.powerMissing)})`);
@@ -852,16 +935,26 @@ function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unma
       message: `PCIe link check skipped for ${gpuCount(counts.pcieSkipped)}: it needs the current and max link generation or width, plus utilization, power draw and power limit.`,
     });
   }
+  if (counts.widthOnly > 0) {
+    notes.push({
+      level: "info",
+      message: `The PCIe link width is below the card's maximum on ${gpuCount(counts.widthOnly)}. nvidia-smi's maximum is the card's, not the slot's, so this output cannot tell a slot wired for fewer lanes from a link that trained down; cat "$(readlink -f /sys/bus/pci/devices/<bus id>)/../max_link_width" shows the slot's width.`,
+    });
+  }
   if (counts.vbiosSkipped > 0) {
     notes.push({
       level: "info",
       message: `VBIOS drift check skipped for ${gpuCount(counts.vbiosSkipped)}: the paste does not show a product name and VBIOS version for every GPU of the model.`,
     });
   }
-  if (counts.remapUsed > 0) {
+  if (counts.remapGpus > 0) {
+    const pending =
+      counts.remapPending > 0
+        ? ` A remap is pending on ${gpuCount(counts.remapPending)}: it takes effect after a GPU reset.`
+        : "";
     notes.push({
       level: "info",
-      message: `Remapped-row counts were used as retired-page counts for ${gpuCount(counts.remapUsed)}, which report Retired Pages as N/A and Remapped Rows instead.`,
+      message: `Remapped rows on ${gpuCount(counts.remapGpus)}: ${counts.remapUncorrectable} uncorrectable and ${counts.remapCorrectable} correctable in total. A successful remap retires the faulty memory row; no rule in this check reads remapped-row counts, so they are listed here rather than as a finding.${pending}`,
     });
   }
   if (counts.remapFailure > 0) {
@@ -891,13 +984,23 @@ function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unma
 
 function hasCsvHeader(text: string): boolean {
   for (const line of text.split("\n")) {
-    if (line.includes(",") && csvHeader(line.replace(/\r$/, ""))) return true;
+    if (line.length <= MAX_LINE && line.includes(",") && csvHeader(line.replace(/\r$/, ""))) return true;
+  }
+  return false;
+}
+
+function hasBanner(text: string): boolean {
+  if (!text.includes("NVSMI LOG")) return false;
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    if (line.length <= MAX_LINE && line.includes("NVSMI LOG") && BANNER_LINE_RE.test(line.trim())) return true;
   }
   return false;
 }
 
 function parseUnsafe(text: string): ParserResult {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  // A dropped line becomes blank rather than vanishing, so a block around it
+  // still ends where it did.
+  const lines = text.replace(/\r\n?/g, "\n").split("\n").map((l) => (l.length > MAX_LINE ? "" : l));
   const table = new GpuTable();
   const query = parseQuery(lines, table);
   const csv = parseCsv(lines, table);
@@ -930,9 +1033,13 @@ function parseUnsafe(text: string): ParserResult {
     reasonsMissing: 0,
     pcieSkipped: 0,
     eccSkipped: 0,
-    remapUsed: 0,
+    remapGpus: 0,
+    remapUncorrectable: 0,
+    remapCorrectable: 0,
+    remapPending: 0,
     remapFailure: 0,
     vbiosSkipped: 0,
+    widthOnly: 0,
   };
   const gpus = buildGpus(table.list, counts);
   const driver = query.driver ?? csv.driver;
@@ -963,7 +1070,7 @@ function parseUnsafe(text: string): ParserResult {
       },
     },
     subjects: gpus.length,
-    notes: buildNotes(gpus.length, counts, nvlink.gpus, nvlink.unmatched),
+    notes: buildNotes(gpus.length, counts, nvlink.gpus, nvlink.unmatched, table.dropped),
     // Link state comes only from `nvidia-smi nvlink --status`, and every other
     // rule reads fields only -q or the CSV query carry. Each half is checked
     // only when its output is in the paste.
@@ -981,7 +1088,7 @@ export const nvidiaSmiParser: TriageParser = {
     try {
       if (typeof text !== "string" || text.length === 0) return false;
       return (
-        BANNER_RE.test(text) ||
+        hasBanner(text) ||
         GPU_HEADER_LINE_RE.test(text) ||
         (NVLINK_GPU_LINE_RE.test(text) && NVLINK_LINK_LINE_RE.test(text)) ||
         DRIVER_FAIL_RE.test(text) ||

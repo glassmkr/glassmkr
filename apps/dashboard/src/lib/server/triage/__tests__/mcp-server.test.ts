@@ -151,6 +151,26 @@ describe("tools/call", () => {
     await expect(client.callTool({ name: "get_monitoring_setup", arguments: { target: "self_hosted", distro: "arch" } })).resolves.toBeTruthy();
   });
 
+  it("reads a free-form distro hint instead of failing the call (R1-23)", async () => {
+    const { client } = await connect();
+    const hint = async (distro: unknown) =>
+      captureOutputSchema.parse(
+        (await client.callTool({ name: "get_capture_command", arguments: { goal: "all_disks", distro } })).structuredContent,
+      ).install_hint?.command;
+    expect(await hint("Ubuntu 24.04")).toBe("sudo apt-get install -y smartmontools");
+    expect(await hint("Debian GNU/Linux 12")).toBe("sudo apt-get install -y smartmontools");
+    expect(await hint("rhel9")).toBe("sudo dnf install -y smartmontools");
+    expect(await hint("Red Hat Enterprise Linux 9")).toBe("sudo dnf install -y smartmontools");
+    for (const distro of ["", null, "  "]) {
+      const result = await client.callTool({ name: "analyze_server_output", arguments: { output: PASTE, distro } });
+      expect(result.isError).toBeFalsy();
+      expect(analysisOutputSchema.parse(result.structuredContent).findings.map((f) => f.rule_id)).toEqual(["smart_failing"]);
+    }
+    const setup = await client.callTool({ name: "get_monitoring_setup", arguments: { distro: "Proxmox VE 8" } });
+    expect(setup.isError).toBeFalsy();
+    expect(setupOutputSchema.parse(setup.structuredContent).distro_family).toBe("apt");
+  });
+
   it("rejects an empty paste through input validation", async () => {
     const { client } = await connect();
     const result = await client.callTool({ name: "analyze_server_output", arguments: { output: "" } });

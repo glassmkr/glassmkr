@@ -239,6 +239,15 @@ const MAJOR_SENSE_KEYS = new Set(["Medium Error", "Hardware Error", "Aborted Com
 // Ported from Crucible src/collect/dmesg-events.ts SCSI_SENSE_HANDLER, widened
 // for the "tag#N" token and trailing "[descriptor]" modern kernels print.
 const SCSI_SENSE_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+(?:tag#\d+\s+)?Sense Key\s*:\s*(.*)$/;
+// Not errors: "No Sense" and "Completed" report success, and the kernel prints
+// them only alongside another status.
+const NON_ERROR_SENSE_KEYS = new Set(["No Sense", "Completed"]);
+// The kernel follows a sense key line with "Add. Sense:" and "CDB:" lines for
+// the same disk (scsi_print_sense, scsi_print_command).
+const SCSI_DETAIL_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+(?:tag#\d+\s+)?(Add\. Sense|CDB):\s*(.{0,160})/;
+const SCSI_DISABLE_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+.{0,80}\bdisabling (?:write same|discard)\b/i;
+/** How many lines after a sense key line to read its Add. Sense and CDB from. */
+const SENSE_DETAIL_LINES = 4;
 
 function senseKeyOf(text: string): string | null {
   const hex = text.match(/^0x([0-9a-fA-F])\b/);
@@ -278,6 +287,19 @@ const XID_WARNING = new Set([8, 14, 22, 25, 32, 38, 39, 42, 44, 46, 60, 67]);
 // Ported from Crucible src/lib/privileged.ts "dmesg-io" grep and
 // src/collect/io-errors.ts device extraction.
 const IO_ERROR_RE = /I\/O error|blk_update_request.*error/i;
+// Kernels from 5.19 print the block-layer error without the
+// "blk_update_request:" prefix (blk_print_req_error), and an NVMe or SCSI
+// media failure reads "critical medium error, dev nvme0n1, ...". Crucible's
+// grep misses these lines too; only the statuses that mean the disk failed
+// the request are taken (R1-18).
+const BLOCK_ERROR_RE = /^(?:critical medium|critical target|device offline) error, dev [A-Za-z0-9_-]{1,32},/;
+// The per-command NVMe line (CONFIG_NVME_VERBOSE_ERRORS) for a media error
+// (status code type 0x2). Counted only for a device with no block-layer line,
+// which reports the same failed command.
+const NVME_MEDIA_RE = /^(nvme\d{1,4}n\d{1,4}): [A-Za-z ]{1,40}\(0x[0-9a-f]{1,2}\) @ LBA \d{1,20}, \d{1,10} blocks, [^()]{1,64} \(sct 0x2 \/ sc 0x[0-9a-f]{1,2}\)/;
+// A drive or controller that does not support discard or write zeroes fails
+// the kernel's probe for it once at setup. That says nothing about the media.
+const PROBE_OP_RE = /\bop 0x[0-9a-f]{1,2}:\((?:DISCARD|WRITE_ZEROES|SECURE_ERASE)\)/;
 const IO_DEV_RE = /\bdev\s+([A-Za-z0-9_-]{1,32})/;
 const IO_ON_DEVICE_RE = /\bon device\s+([A-Za-z0-9_-]{1,32})/;
 // Floppy (fd0 on most VMs), optical and loop devices are not disks; an I/O
@@ -305,7 +327,42 @@ function matchesAnyEvent(message: string): boolean {
     EXT4_RO_RE.test(message) ||
     XID_RE.test(message) ||
     IO_ERROR_RE.test(message) ||
+    BLOCK_ERROR_RE.test(message) ||
+    NVME_MEDIA_RE.test(message) ||
     EDAC_RE.test(message)
+  );
+}
+
+/**
+ * A sense key that is the drive's normal answer to a feature probe, judged
+ * from the Add. Sense and CDB lines that follow it for the same disk:
+ *   - Recovered Error with "ATA pass through information available" is the
+ *     status an ATA pass-through command (smartctl, hdparm, udisks) returns;
+ *   - Illegal Request with "Invalid field in cdb" (or an unsupported opcode)
+ *     on an ATA pass-through, WRITE SAME or UNMAP command, or followed by the
+ *     kernel disabling write same or discard, is a feature the disk lacks.
+ * Neither says anything about the media (R1-17).
+ */
+function isProbeResponse(senseKey: string, device: string, following: string[]): boolean {
+  if (senseKey !== "Recovered Error" && senseKey !== "Illegal Request") return false;
+  let addSense = "";
+  let cdb = "";
+  let disabled = false;
+  for (const msg of following) {
+    const detail = msg.match(SCSI_DETAIL_RE);
+    if (detail && detail[1] === device) {
+      if (detail[2] === "CDB") cdb ||= detail[3];
+      else addSense ||= detail[3];
+      continue;
+    }
+    const off = msg.match(SCSI_DISABLE_RE);
+    if (off && off[1] === device) disabled = true;
+  }
+  if (senseKey === "Recovered Error") return /^ATA pass through information available\b/i.test(addSense);
+  if (disabled) return true;
+  return (
+    /^(?:Invalid field in cdb|Invalid command operation code)\b/i.test(addSense) &&
+    /^(?:ATA command pass through|Write same|Unmap)\b/i.test(cdb)
   );
 }
 
@@ -357,10 +414,18 @@ export const kernelLogParser: TriageParser = {
     let nonKernelMatches = 0;
     let nonDiskIoLines = 0;
     let unknownSenseLines = 0;
+    let probeSenseLines = 0;
+    let probeIoLines = 0;
+    const nvmeMediaByDevice = new Map<string, number>();
 
     try {
-      for (const raw of splitLines(typeof text === "string" ? text : "")) {
-        const trimmed = raw.slice(0, MAX_LINE).trimEnd();
+      const rawLines = splitLines(typeof text === "string" ? text : "");
+      const messageAt = (i: number): string => {
+        const t = rawLines[i].slice(0, MAX_LINE).trimEnd();
+        return t ? classify(t).message : "";
+      };
+      for (let li = 0; li < rawLines.length; li++) {
+        const trimmed = rawLines[li].slice(0, MAX_LINE).trimEnd();
         if (!trimmed || PROMPT_RE.test(trimmed)) continue;
         const line = classify(trimmed);
         const msg = line.message;
@@ -381,11 +446,18 @@ export const kernelLogParser: TriageParser = {
         const scsi = msg.match(SCSI_SENSE_RE);
         if (scsi) {
           const senseKey = senseKeyOf(scsi[2]);
-          if (senseKey) {
+          const device = safeIdent(scsi[1]);
+          const following: string[] = [];
+          if (senseKey === "Recovered Error" || senseKey === "Illegal Request") {
+            for (let j = li + 1; j < rawLines.length && j <= li + SENSE_DETAIL_LINES; j++) following.push(messageAt(j));
+          }
+          if (senseKey && (NON_ERROR_SENSE_KEYS.has(senseKey) || isProbeResponse(senseKey, scsi[1], following))) {
+            probeSenseLines++;
+          } else if (senseKey) {
             ev = {
               event_type: "scsi_sense",
               severity: MAJOR_SENSE_KEYS.has(senseKey) ? "critical" : "warning",
-              details: { device: safeIdent(scsi[1]), sense_key: senseKey },
+              details: { device, sense_key: senseKey },
             };
           } else {
             unknownSenseLines++;
@@ -437,10 +509,19 @@ export const kernelLogParser: TriageParser = {
           matched = true;
         }
 
-        if (IO_ERROR_RE.test(msg)) {
+        const nvmeMedia = msg.match(NVME_MEDIA_RE);
+        if (nvmeMedia) {
+          const name = safeIdent(nvmeMedia[1], 32);
+          nvmeMediaByDevice.set(name, (nvmeMediaByDevice.get(name) ?? 0) + 1);
+          matched = true;
+        }
+
+        if (IO_ERROR_RE.test(msg) || BLOCK_ERROR_RE.test(msg)) {
           const dev = msg.match(IO_DEV_RE)?.[1] ?? msg.match(IO_ON_DEVICE_RE)?.[1] ?? null;
           if (dev !== null && NON_DISK_RE.test(dev)) {
             nonDiskIoLines++;
+          } else if (PROBE_OP_RE.test(msg)) {
+            probeIoLines++;
           } else {
             ioCount++;
             if (dev !== null) {
@@ -481,6 +562,13 @@ export const kernelLogParser: TriageParser = {
           if (line.timeKind === "unknown") unknownTimeLines++;
           else if (line.timeKind === "local") localTimeLines++;
         }
+      }
+      // The verbose NVMe line and the block-layer line report the same failed
+      // command; the per-command lines count only where no block-layer line did.
+      for (const [name, n] of nvmeMediaByDevice) {
+        if (ioDevices.has(name)) continue;
+        ioCount += n;
+        ioDevices.add(name);
       }
     } catch {
       // Never throw on hostile input; report what was read so far.
@@ -565,6 +653,18 @@ export const kernelLogParser: TriageParser = {
       notes.push({
         level: "info",
         message: `${plural(unknownSenseLines, "SCSI sense line carries", "SCSI sense lines carry")} no standard sense key and ${unknownSenseLines === 1 ? "was" : "were"} not counted.`,
+      });
+    }
+    if (probeSenseLines > 0) {
+      notes.push({
+        level: "info",
+        message: `${plural(probeSenseLines, "SCSI sense report was", "SCSI sense reports were")} not counted: "No Sense", or a drive's normal answer to a feature probe (ATA pass-through status, or an unsupported WRITE SAME, UNMAP or pass-through command). None of these is a media error.`,
+      });
+    }
+    if (probeIoLines > 0) {
+      notes.push({
+        level: "info",
+        message: `${plural(probeIoLines, "block I/O error on a discard or write-zeroes request was", "block I/O errors on discard or write-zeroes requests were")} not counted: a disk or controller that lacks the feature fails the kernel's probe for it.`,
       });
     }
     if (edacLines > 0) {

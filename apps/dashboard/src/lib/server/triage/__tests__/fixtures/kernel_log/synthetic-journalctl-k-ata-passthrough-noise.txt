@@ -1,0 +1,27 @@
+$ journalctl -k -b --no-pager
+Oct 03 06:00:12 gpu-07 kernel: Linux version 6.8.0-45-generic (buildd@lcy02-amd64-115) (x86_64-linux-gnu-gcc-13 (Ubuntu 13.2.0-23ubuntu4) 13.2.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #45-Ubuntu SMP PREEMPT_DYNAMIC Fri Aug 30 12:02:04 UTC 2024 (Ubuntu 6.8.0-45.45-generic 6.8.12)
+Oct 03 06:00:12 gpu-07 kernel: Command line: BOOT_IMAGE=/vmlinuz-6.8.0-45-generic root=UUID=0a1b2c3d-0000-4000-8000-000000000001 ro
+Oct 03 06:00:12 gpu-07 kernel: nvme nvme0: pci function 0000:c1:00.0
+Oct 03 06:00:12 gpu-07 kernel: nvme nvme0: Shutdown timeout set to 8 seconds
+Oct 03 06:00:12 gpu-07 kernel: nvme nvme0: 128/0/0 default/read/poll queues
+Oct 03 06:00:12 gpu-07 kernel:  nvme0n1: p1 p2
+Oct 03 06:00:12 gpu-07 kernel: ata1: SATA link up 6.0 Gbps (SStatus 133 SControl 300)
+Oct 03 06:00:12 gpu-07 kernel: ata1.00: ATA-11: Samsung SSD 870 EVO 1TB, SVT02B6Q, max UDMA/133
+Oct 03 06:00:12 gpu-07 kernel: sd 1:0:0:0: [sda] Write cache: enabled, read cache: enabled, doesn't support DPO or FUA
+Oct 03 06:00:13 gpu-07 kernel: EXT4-fs (nvme0n1p2): mounted filesystem 0a1b2c3d-0000-4000-8000-000000000001 ro with ordered data mode. Quota mode: none.
+Oct 03 06:00:14 gpu-07 kernel: EXT4-fs (nvme0n1p2): re-mounted 0a1b2c3d-0000-4000-8000-000000000001 r/w. Quota mode: none.
+Oct 03 06:00:15 gpu-07 kernel: NVRM: loading NVIDIA UNIX x86_64 Kernel Module  550.90.07  Fri May 31 09:35:42 UTC 2024
+Oct 03 06:00:16 gpu-07 kernel: nvidia-uvm: Loaded the UVM driver, major device number 506.
+Oct 03 06:00:20 gpu-07 kernel: EDAC amd64: F19h_M10h detected (node 0).
+Oct 03 06:00:20 gpu-07 kernel: EDAC MC0: Giving out device to module amd64_edac controller F19h_M10h: DEV 0000:00:18.3 (INTERRUPT)
+Oct 03 06:00:21 gpu-07 kernel: Bluetooth: Core ver 2.22
+Oct 03 06:01:44 gpu-07 kernel: loop7: detected capacity change from 0 to 8
+Oct 03 06:05:12 gpu-07 kernel: nvme nvme0: I/O tag 381 (217d) opcode 0x2 (I/O Cmd) QID 41 timeout, completion polled
+Oct 03 08:41:09 gpu-07 kernel: NVRM: GPU at PCI:0000:41:00: GPU-6b8f1c2e-1234-5678-9abc-def012345678
+Oct 03 08:41:09 gpu-07 kernel: NVRM: Xid (PCI:0000:41:00): 31, pid=88123, name=python3, Ch 00000018, intr 10000000. MMU Fault: ENGINE GRAPHICS GPCCLIENT_T1_0 faulted @ 0x7f12_34560000. Fault is of type FAULT_PDE ACCESS_TYPE_VIRT_READ
+Oct 03 08:52:31 gpu-07 kernel: NVRM: Xid (PCI:0000:41:00): 13, pid=88555, name=python3, Graphics SM Warp Exception on (GPC 0, TPC 1, SM 0): Out Of Range Address
+Oct 03 08:52:31 gpu-07 kernel: NVRM: Xid (PCI:0000:41:00): 43, pid=88555, name=python3, Ch 00000020
+Oct 03 09:10:02 gpu-07 kernel: sd 1:0:0:0: [sda] tag#7 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=0s
+Oct 03 09:10:02 gpu-07 kernel: sd 1:0:0:0: [sda] tag#7 Sense Key : Recovered Error [current] [descriptor]
+Oct 03 09:10:02 gpu-07 kernel: sd 1:0:0:0: [sda] tag#7 Add. Sense: ATA pass through information available
+Oct 03 09:10:02 gpu-07 kernel: sd 1:0:0:0: [sda] tag#7 CDB: ATA command pass through(16) 85 06 2c 00 da 00 00 00 00 00 4f 00 c2 00 b0 00

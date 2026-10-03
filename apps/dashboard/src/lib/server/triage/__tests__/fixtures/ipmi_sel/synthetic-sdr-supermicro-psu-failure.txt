@@ -1,0 +1,3 @@
+[root@node5 ~]# ipmitool sdr type "Power Supply"
+PS1 Status       | C8h | ok  | 10.1 | Presence detected
+PS2 Status       | C9h | ok  | 10.2 | Presence detected, Failure detected

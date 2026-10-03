@@ -58,6 +58,9 @@ function tier1(slice: Partial<Snapshot>) {
 }
 
 const ALL_FIXTURES = [
+  "synthetic-journalctl-k-ata-passthrough-noise.txt",
+  "synthetic-dmesg-T-nvme-media-error-6x.txt",
+  "synthetic-dmesg-writesame-illegal-request.txt",
   "dmesg-healthy-boot.txt",
   "dmesg-T-sata-medium-error.txt",
   "dmesg-iso-nvme-reset.txt",
@@ -575,5 +578,63 @@ describe("allowlisted rules on every fixture", () => {
     expect(errors).toEqual([]);
     for (const a of alerts) expect(kernelLogParser.rules).toContain(a.type);
     for (const n of r.notes) expect(n.message).not.toMatch(/\u2014/);
+  });
+});
+
+// Review round 1 (2026-10-03).
+describe("benign SCSI sense noise (R1-17)", () => {
+  it("the ATA pass-through status a smartctl or udisks query causes is not a disk error", () => {
+    const r = kernelLogParser.parse(fixture("synthetic-journalctl-k-ata-passthrough-noise.txt"));
+    expect(r.snapshot.dmesg_events?.events.filter((e) => e.event_type === "scsi_sense")).toEqual([]);
+    expect(types(evaluate(r.snapshot).alerts)).not.toContain("disk_io_errors");
+    expect(r.notes.map((n) => n.message).join("\n")).toMatch(/1 SCSI sense report was not counted/);
+  });
+
+  it("the WRITE SAME probe on a RAID virtual disk is not a disk error", () => {
+    const r = kernelLogParser.parse(fixture("synthetic-dmesg-writesame-illegal-request.txt"));
+    expect(types(evaluate(r.snapshot).alerts)).toEqual([]);
+    expect(r.snapshot.io_errors).toBeUndefined();
+  });
+
+  it("No Sense is not an error; a Medium Error next to the same probe text still is", () => {
+    const noSense = "[ 1.000000] sd 2:0:0:0: [sdc] tag#0 Sense Key : No Sense [current]\n";
+    expect(types(evaluate(kernelLogParser.parse(noSense).snapshot).alerts)).toEqual([]);
+    const medium =
+      "[ 1.000000] sd 2:0:0:0: [sdc] tag#0 Sense Key : Medium Error [current]\n" +
+      "[ 1.000001] sd 2:0:0:0: [sdc] tag#0 Add. Sense: ATA pass through information available\n";
+    const alerts = evaluate(kernelLogParser.parse(medium).snapshot).alerts;
+    expect(alerts.map((a) => `${a.type}:${a.severity}`)).toEqual(["disk_io_errors:critical"]);
+  });
+
+  it("an Illegal Request on a normal read is still reported", () => {
+    const text =
+      "[ 1.000000] sd 2:0:0:0: [sdc] tag#0 Sense Key : Illegal Request [current]\n" +
+      "[ 1.000001] sd 2:0:0:0: [sdc] tag#0 Add. Sense: Logical block address out of range\n" +
+      "[ 1.000002] sd 2:0:0:0: [sdc] tag#0 CDB: Read(10) 28 00 00 00 00 00 00 00 08 00\n";
+    expect(types(evaluate(kernelLogParser.parse(text).snapshot).alerts)).toEqual(["disk_io_errors"]);
+  });
+});
+
+describe("5.19+ block-layer and NVMe media errors (R1-18)", () => {
+  it("critical medium error lines without the blk_update_request prefix fire disk_io_errors on the NVMe drive", () => {
+    const r = kernelLogParser.parse(fixture("synthetic-dmesg-T-nvme-media-error-6x.txt"));
+    expect(r.snapshot.io_errors).toEqual({ count: 3, devices: ["nvme0n1"] });
+    const alert = evaluate(r.snapshot).alerts.find((a) => a.type === "disk_io_errors");
+    expect(alert?.severity).toBe("critical");
+  });
+
+  it("the verbose NVMe line alone still counts when no block-layer line is in the paste", () => {
+    const text = fixture("synthetic-dmesg-T-nvme-media-error-6x.txt")
+      .split("\n")
+      .filter((l) => !/critical medium error/.test(l))
+      .join("\n");
+    expect(kernelLogParser.parse(text).snapshot.io_errors).toEqual({ count: 3, devices: ["nvme0n1"] });
+  });
+
+  it("a block error on a discard or write-zeroes probe is not counted", () => {
+    const text = "[ 1.000000] critical target error, dev sda, sector 2048 op 0x9:(WRITE_ZEROES) flags 0x800 phys_seg 0 prio class 2\n";
+    const r = kernelLogParser.parse(text);
+    expect(r.snapshot.io_errors).toBeUndefined();
+    expect(r.notes.map((n) => n.message).join("\n")).toMatch(/discard or write-zeroes/);
   });
 });

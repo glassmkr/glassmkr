@@ -8,8 +8,8 @@
 // Stateless Streamable HTTP with JSON responses: a fresh McpServer and
 // transport per POST, no sessions, no auth, no cookies, no database. GET and
 // DELETE (SSE stream and session close) do not apply to a stateless server and
-// answer 405. Abuse control is three token buckets: per source IP and global
-// here, per anonymous end user inside the tool handlers. The request body is
+// answer 405. Abuse control is token buckets: per source IP, per IPv6 /64 and
+// global here, per anonymous end user inside the tool handlers. The request body is
 // never logged; see $lib/server/triage/mcp-server.ts for the one log line per
 // tool call.
 //
@@ -18,6 +18,7 @@
 // internet-facing self-hosted dashboard never gains an unauthenticated
 // endpoint its operator did not opt into.
 
+import { isIPv6 } from "node:net";
 import type { RequestHandler } from "./$types";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { take, type RateLimitConfig } from "$lib/server/auth/rate-limit.js";
@@ -27,15 +28,36 @@ import { createTriageMcpServer } from "$lib/server/triage/mcp-server.js";
 import { SELF_HOSTED } from "$lib/server/self-hosted";
 
 const MAX_POST_BODY_BYTES = 256 * 1024;
-const MAX_BATCH_ITEMS = 10;
 const ALLOW_METHODS = "POST, OPTIONS";
 
 // Generous per IP: a connector platform calls from a small pool of egress IPs
 // shared by many users, and the per-user bucket lives in the tool handler.
 const TIER_TRIAGE_IP: RateLimitConfig = { namespace: "triage:ip", capacity: 60, refillPerSecond: 1 };
+// An IPv6 host usually holds a whole /64, so per-address buckets gave one host
+// 2^64 fresh buckets and it could hold the global bucket below at zero for
+// every ChatGPT and Claude user (R1-15). One /64 now gets at most a fifth of
+// the global refill. It is a second bucket, not a re-key of the per-IP one: a
+// connector platform calling from many addresses in one /64 keeps more than a
+// single address's allowance.
+const TIER_TRIAGE_NET64: RateLimitConfig = { namespace: "triage:net64", capacity: 120, refillPerSecond: 4 };
 // Ceiling for the whole endpoint, so a flood from many IPs cannot monopolise
 // the evaluator on a single-process dashboard.
 const TIER_TRIAGE_GLOBAL: RateLimitConfig = { namespace: "triage:global", capacity: 600, refillPerSecond: 20 };
+
+/** "2001:db8:1:2::/64" for an IPv6 address, null for anything else (IPv4-mapped included). */
+function ipv6Net64(ip: string): string | null {
+  const addr = ip.trim().split("%")[0].toLowerCase();
+  if (!isIPv6(addr) || /^::ffff:\d/.test(addr)) return null;
+  const halves = addr.split("::");
+  // An embedded IPv4 tail is two groups; only the first four groups matter here.
+  const groups = (part: string | undefined) =>
+    part ? part.split(":").flatMap((g) => (g.includes(".") ? ["0", "0"] : [g])) : [];
+  const head = groups(halves[0]);
+  const tail = groups(halves[1]);
+  const all = halves.length > 1 ? [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail] : head;
+  if (all.length !== 8) return null;
+  return `${all.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(":")}::/64`;
+}
 
 function isTriageEnabled(): boolean {
   const flag = process.env.MCP_TRIAGE_ENABLED;
@@ -100,10 +122,12 @@ function gate(event: Parameters<RequestHandler>[0]): Response | null {
 }
 
 async function routeLimited(event: Parameters<RequestHandler>[0]): Promise<Response | null> {
-  for (const [tier, id] of [
-    [TIER_TRIAGE_IP, getSourceIp(event)],
-    [TIER_TRIAGE_GLOBAL, "all"],
-  ] as const) {
+  const ip = getSourceIp(event);
+  const net64 = ipv6Net64(ip);
+  const tiers: Array<readonly [RateLimitConfig, string]> = [[TIER_TRIAGE_IP, ip]];
+  if (net64) tiers.push([TIER_TRIAGE_NET64, net64]);
+  tiers.push([TIER_TRIAGE_GLOBAL, "all"]);
+  for (const [tier, id] of tiers) {
     const result = await take(tier, id);
     if (!result.allowed) {
       const wait = Math.max(1, result.retryAfterSeconds);
@@ -117,6 +141,10 @@ async function routeLimited(event: Parameters<RequestHandler>[0]): Promise<Respo
 }
 
 class BodyTooLarge extends Error {}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
 
 /** Read at most MAX_POST_BODY_BYTES; anything longer is refused without buffering it all. */
 async function readCappedBody(request: Request): Promise<string> {
@@ -169,8 +197,18 @@ export const POST: RequestHandler = async (event) => {
     }
     return withHeaders(jsonRpcHttpError(400, -32700, "Parse error: invalid JSON"), origin);
   }
-  if (Array.isArray(parsedBody) && parsedBody.length > MAX_BATCH_ITEMS) {
-    return withHeaders(jsonRpcHttpError(400, -32600, `Batch too large: at most ${MAX_BATCH_ITEMS} messages`), origin);
+  // MCP 2025-06-18 removed JSON-RPC batching, and ChatGPT and Claude never
+  // send one. A batch that also cancels its own request left the transport
+  // waiting forever for a response the SDK never sends, so the POST hung
+  // until the proxy timed out (R1-14).
+  if (Array.isArray(parsedBody)) {
+    return withHeaders(jsonRpcHttpError(400, -32600, "Batch requests are not supported"), origin);
+  }
+  // CallToolRequest.params.arguments is optional in MCP, but the SDK validates
+  // a missing one as a non-object, so a client calling the no-argument tool
+  // without it got an error instead of the result (R1-33).
+  if (isPlainObject(parsedBody) && parsedBody.method === "tools/call" && isPlainObject(parsedBody.params) && parsedBody.params.arguments === undefined) {
+    parsedBody.params.arguments = {};
   }
 
   const server = createTriageMcpServer();

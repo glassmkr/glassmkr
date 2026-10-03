@@ -171,7 +171,8 @@ describe("JSON-RPC over POST: initialize -> tools/list -> tools/call", () => {
       const sc = res.result.structuredContent as Record<string, unknown>;
       const schema = advertised.get(name);
       expect(schema.additionalProperties).toBe(false);
-      expect(Object.keys(sc).sort()).toEqual([...schema.required].sort());
+      for (const key of schema.required) expect(sc).toHaveProperty(key);
+      for (const key of Object.keys(sc)) expect(Object.keys(schema.properties)).toContain(key);
       const verdict = ajv.getValidator(schema)(sc);
       expect(verdict.valid, `${name}: ${verdict.errorMessage ?? ""}`).toBe(true);
     }
@@ -209,11 +210,51 @@ describe("HTTP guards", () => {
     expect(await res.json()).toEqual({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error: invalid JSON" }, id: null });
   });
 
-  it("400s an oversized batch", async () => {
-    const batch = Array.from({ length: 11 }, (_, i) => ({ jsonrpc: "2.0", id: i, method: "tools/list" }));
-    const res = await post(JSON.stringify(batch));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error.code).toBe(-32600);
+  it("400s any JSON-RPC batch (R1-14: a batch that cancels its own request hung the POST)", async () => {
+    for (const batch of [
+      [{ jsonrpc: "2.0", id: 1, method: "tools/list" }],
+      [
+        { jsonrpc: "2.0", id: 7, method: "ping" },
+        { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 7 } },
+      ],
+    ]) {
+      const res = await post(JSON.stringify(batch));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ jsonrpc: "2.0", error: { code: -32600, message: "Batch requests are not supported" }, id: null });
+    }
+  });
+
+  it("adds a per-/64 bucket for IPv6 callers and keeps the full address for the per-IP one (R1-15)", async () => {
+    await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": "2001:db8:1:2::abcd" });
+    await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": "2001:0db8:0001:0002:ffff:0:0:1" });
+    await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": "::ffff:198.51.100.9" });
+    expect(takeMock.mock.calls.map((c) => [c[0].namespace, c[1]])).toEqual([
+      ["triage:ip", "2001:db8:1:2::abcd"],
+      ["triage:net64", "2001:db8:1:2::/64"],
+      ["triage:global", "all"],
+      ["triage:ip", "2001:0db8:0001:0002:ffff:0:0:1"],
+      ["triage:net64", "2001:db8:1:2::/64"],
+      ["triage:global", "all"],
+      ["triage:ip", "::ffff:198.51.100.9"],
+      ["triage:global", "all"],
+    ]);
+  });
+
+  it("a 429 from the /64 bucket stops the request before the global bucket", async () => {
+    takeMock
+      .mockResolvedValueOnce({ allowed: true, remaining: 5, retryAfterSeconds: 0, degraded: false })
+      .mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfterSeconds: 2, degraded: false });
+    const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }), { "X-Forwarded-For": "2001:db8:9::1" });
+    expect(res.status).toBe(429);
+    expect(takeMock.mock.calls.map((c) => c[0].namespace)).toEqual(["triage:ip", "triage:net64"]);
+  });
+
+  it("calls a tool whose every input is optional when the client omits arguments (R1-33)", async () => {
+    const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_monitoring_setup" } }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.isError).toBeFalsy();
+    expect(body.result.structuredContent.target).toBe("hosted");
   });
 
   it("415s a non-JSON content type", async () => {
@@ -352,7 +393,7 @@ describe("zod sanity", () => {
     const parsed = z.object({ a: z.string() }).strict().safeParse({ a: "x", b: 1 });
     expect(parsed.success).toBe(false);
     const sample = analysisOutputSchema.safeParse({
-      input: { formats: [], bytes: 0, lines: 0, sha256_prefix: "000000000000", subjects: 0 },
+      input: { formats: [], bytes: 0, lines: 0, subjects: 0 },
       findings: [], checked_no_signal: [], not_determinable: [], next_capture: [], notes: [],
       continuous_monitoring: { docs_url: "https://glassmkr.com/docs/getting-started?ref=mcp-triage", source_url: "https://github.com/glassmkr/crucible" },
       generated_at: "2026-10-03T00:00:00Z",

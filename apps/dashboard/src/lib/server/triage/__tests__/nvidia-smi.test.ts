@@ -184,10 +184,11 @@ describe("healthy: 2x H100 SXM, driver 560 layout", () => {
       ecc_errors_corrected_aggregate: 0,
       ecc_errors_uncorrected_volatile: 0,
       ecc_errors_uncorrected_aggregate: 0,
-      // Retired Pages N/A -> Remapped Rows 0 / 0 / No
-      retired_pages_single_bit: 0,
-      retired_pages_double_bit: 0,
-      retired_pages_pending: 0,
+      // Retired Pages N/A stays null, as from the live agent; Remapped Rows
+      // (0 / 0 / No) are never copied into these fields
+      retired_pages_single_bit: null,
+      retired_pages_double_bit: null,
+      retired_pages_pending: null,
       thermal_slowdown_active: false,
       thermal_violation_total_ms: null,
       power_violation_total_ms: null,
@@ -242,11 +243,15 @@ describe("failing: A100 SXM, driver 535 layout", () => {
       ecc_errors_corrected_aggregate: 120,
       ecc_errors_uncorrected_volatile: 2,
       ecc_errors_uncorrected_aggregate: 2,
-      retired_pages_single_bit: 0,
-      retired_pages_double_bit: 1,
-      retired_pages_pending: 1,
+      // Retired Pages N/A; the remapped row (Uncorrectable 1, Pending Yes)
+      // is a note, not a retired page
+      retired_pages_single_bit: null,
+      retired_pages_double_bit: null,
+      retired_pages_pending: null,
     });
-    expect(result.notes.map((n) => n.message).join("\n")).toMatch(/Remapped-row counts were used/);
+    expect(result.notes.map((n) => n.message)).toContain(
+      "Remapped rows on 1 GPU: 1 uncorrectable and 0 correctable in total. A successful remap retires the faulty memory row; no rule in this check reads remapped-row counts, so they are listed here rather than as a finding. A remap is pending on 1 GPU: it takes effect after a GPU reset.",
+    );
   });
 
   it("fires uncorrected ECC (critical), thermal (critical) and PCIe (warning)", () => {
@@ -636,5 +641,64 @@ describe("rules_checked: which half of the GPU rules this paste can feed", () =>
     const r = nvidiaSmiParser.parse(nvlinkOnly);
     expect(r.formats).toEqual(["nvidia_smi_nvlink_status"]);
     expect(rules(r)).toEqual(["nvlink_link_down"]);
+  });
+});
+
+// Review round 1 (2026-10-03).
+describe("remapped rows stay out of the retired-page fields (R1-7)", () => {
+  // A100 after an Xid 48 + 63 and a GPU reset: volatile 0, aggregate 1,
+  // Remapped Rows 2 / 1 / Pending No / Failure No.
+  const result = nvidiaSmiParser.parse(fixture("synthetic-a100-remapped-row-q.txt"));
+
+  it("leaves retired_pages_* null, as the live agent sends them", () => {
+    expect(gpus(result)[0]).toMatchObject({
+      retired_pages_single_bit: null,
+      retired_pages_double_bit: null,
+      retired_pages_pending: null,
+      ecc_errors_uncorrected_volatile: 0,
+      ecc_errors_uncorrected_aggregate: 1,
+    });
+  });
+
+  it("reports historical uncorrected ECC at info, never the critical replace path, and no corrected-ECC storm", () => {
+    const alerts = evaluate(result);
+    expect(alerts.find((a) => a.type === "gpu_uncorrected_ecc")?.severity).toBe("info");
+    expect(ruleIds(alerts)).not.toContain("gpu_corrected_ecc_storm");
+  });
+
+  it("lists the remap counts in a note", () => {
+    expect(result.notes.map((n) => n.message).join("\n")).toMatch(/^Remapped rows on 1 GPU: 1 uncorrectable and 2 correctable in total\./m);
+  });
+});
+
+describe("GPU identity across outputs (R1-11, R1-13)", () => {
+  it("a UUID placeholder shared by every GPU does not merge GPUs on different buses", () => {
+    const text = fixture("synthetic-mixed-h100x4-q-nvlink.txt").replace(
+      /GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g,
+      "GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    );
+    expect(text.match(/GPU-xxxxxxxx/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    const original = nvidiaSmiParser.parse(fixture("synthetic-mixed-h100x4-q-nvlink.txt"));
+    const redacted = nvidiaSmiParser.parse(text);
+    expect(original.subjects).toBe(4);
+    expect(redacted.subjects).toBe(4);
+    expect(ruleIds(evaluate(original)).length).toBeGreaterThanOrEqual(3);
+    expect(ruleIds(evaluate(redacted)).filter((r) => r !== "nvlink_link_down")).toEqual(
+      ruleIds(evaluate(original)).filter((r) => r !== "nvlink_link_down"),
+    );
+  });
+
+  it("reads at most 64 GPUs and says how many more there were", () => {
+    const blocks = Array.from({ length: 70 }, (_, i) => `GPU 00000000:${i.toString(16).padStart(2, "0")}:00.0\n    Product Name                          : NVIDIA L4`);
+    const r = nvidiaSmiParser.parse(`==============NVSMI LOG==============\n\n${blocks.join("\n")}\n`);
+    expect(r.subjects).toBe(64);
+    expect(r.notes.map((n) => n.message)).toContain("6 more GPU entries past the first 64 were not read; paste one host's output at a time.");
+  });
+});
+
+describe("PCIe width below the card's maximum (R1-19)", () => {
+  it("notes that nvidia-smi cannot see the slot's electrical width", () => {
+    const r = nvidiaSmiParser.parse(fixture("synthetic-l4-x8-slot-csv.txt"));
+    expect(r.notes.map((n) => n.message).join("\n")).toMatch(/cannot tell a slot wired for fewer lanes from a link that trained down/);
   });
 });

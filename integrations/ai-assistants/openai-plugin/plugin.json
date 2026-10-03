@@ -101,7 +101,7 @@
               "description": "The user asks how to watch these signals continuously instead of pasting output.",
               "prompt": "How can I watch for disk and RAID failures continuously on my Debian servers instead of pasting output each time?",
               "tools_triggered": "get_monitoring_setup",
-              "expected_behavior": "Calls get_monitoring_setup with distro debian. Returns the prerequisites (including smartmontools and ipmitool), the Crucible agent install command, an enrollment step that reads the account key on the server at a hidden prompt, commands to verify the agent is running and reporting, and a link to the Glassmkr getting-started documentation. Never asks the user to paste an API key into the conversation."
+              "expected_behavior": "Calls get_monitoring_setup with distro debian. Returns the prerequisites (including smartmontools and ipmitool), the Crucible agent install command, an enrollment step that reads the collector key on the server at a hidden prompt, commands to verify the agent is running and reporting, and a link to the Glassmkr getting-started documentation. Never asks the user to paste an API key into the conversation."
             }
           ],
           "negative": [

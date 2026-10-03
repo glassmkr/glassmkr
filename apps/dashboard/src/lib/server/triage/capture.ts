@@ -34,6 +34,20 @@ export type DistroFamily = "apt" | "dnf" | "other" | "unspecified";
 const APT_IDS = new Set(["debian", "ubuntu", "proxmox", "pve"]);
 const DNF_IDS = new Set(["rhel", "rocky", "almalinux", "centos", "fedora"]);
 
+/**
+ * The leading word of a distro hint, lowercased: "Ubuntu 24.04" and
+ * "ubuntu-24.04" read as ubuntu, "rhel9" as rhel, "Debian GNU/Linux 12" as
+ * debian, "Red Hat Enterprise Linux 9" as rhel. The hint is optional and a
+ * model fills it with whatever the user said; a strict pattern made a value
+ * like "Ubuntu 24.04" fail the whole call, paste analysis included (R1-23).
+ * Empty or null means unspecified.
+ */
+export function normalizeDistroHint(raw: string | null | undefined): string | undefined {
+  const text = (raw ?? "").trim().toLowerCase();
+  if (/^red\s*hat\b/.test(text)) return "rhel";
+  return /^[a-z]+/.exec(text)?.[0] || undefined;
+}
+
 export function distroFamily(distro?: string | null): DistroFamily {
   const id = (distro ?? "").trim().toLowerCase();
   if (!id) return "unspecified";
@@ -152,8 +166,10 @@ const GOALS: Record<CaptureGoal, GoalSpec> = {
         needs_root: true,
       },
       {
-        command: "sudo journalctl -k -b -1 --no-pager",
-        purpose: "The kernel log of the previous boot, for events that led up to a crash or reboot. Needs a persistent journal; it prints nothing useful without one.",
+        // short-iso: the default journalctl format prints no year, so every
+        // event in the previous boot's log came back undated (R1-21).
+        command: "sudo journalctl -k -b -1 --no-pager -o short-iso",
+        purpose: "The kernel log of the previous boot, with full dates, for events that led up to a crash or reboot. Needs a persistent journal; it prints nothing useful without one.",
         needs_root: true,
       },
     ],
@@ -206,8 +222,12 @@ const GOALS: Record<CaptureGoal, GoalSpec> = {
   },
 };
 
+// Serials tell drives apart in output that names no device (smartctl text
+// without a prompt per disk), and nvidia-smi UUIDs tie a GPU's sections
+// together. One placeholder for every serial merged a failing drive into a
+// healthy one (R1-11), so each gets its own.
 const PASTE_BASE =
-  "Paste the complete output back into this conversation as printed. Serial numbers and hostnames may be replaced with placeholders; keep device names and the table layout unchanged.";
+  "Paste the complete output back into this conversation as printed. To hide serial numbers or hostnames, replace each one with a different placeholder (DISK1, DISK2, ...); keep device names, GPU UUIDs and the table layout unchanged.";
 
 function installHint(
   pkg: ToolPackage | null,

@@ -57,7 +57,11 @@ const X_NO_POOLS = /^[ \t]*no pools available[ \t]*$/;
 // READ / WRITE / CKSUM cells: plain integers or zfs_nicenum values ("1.2K").
 const COUNTER = /^\d+(?:\.\d+)?[KMGTPE]?$/;
 const REPAIRED = /^\d+(?:\.\d+)?[BKMGTPEZ]?$/;
-const SCRUB_RESULT = /\bscrub repaired (\S+) in .* with (\d+) errors?\b/;
+// Anchored to the start of the scan text: unanchored, `.*` re-ran from every
+// "scrub repaired" in a long line and the scan went quadratic (R1-36).
+const SCRUB_RESULT = /^scrub repaired (\S+) in .* with (\d+) errors?\b/;
+/** zpool status lines are short (a -v file path is at most PATH_MAX); a longer line is skipped. */
+const MAX_LINE = 4096;
 
 // Whole-text sniffs for detect().
 const DETECT_POOL = /^[ \t]*pool:[ \t]*\S/m;
@@ -179,7 +183,7 @@ function readScan(b: Block, rest: string): void {
   }
   b.scan = "scrub";
   if (/\bin progress\b|\bpaused\b/.test(rest)) b.scrubInProgress = true;
-  const m = SCRUB_RESULT.exec(rest);
+  const m = SCRUB_RESULT.exec(rest.trim());
   if (m && REPAIRED.test(m[1])) {
     b.scrubRepaired = m[1];
     b.scrubErrors = Number.parseInt(m[2], 10);
@@ -449,6 +453,7 @@ function parse(text: string): ParserResult {
     .split("\n");
 
   for (const line of lines) {
+    if (line.length > MAX_LINE) continue;
     // `zpool status -v` file list: 8-space indented paths or dataset:<0xN>
     // entries, ended by a blank line. Read before POOL_LINE because the entry
     // for a pool literally named "pool" is "pool:<0x1>"; a real pool header is

@@ -201,7 +201,8 @@ describe("analyzeOutput: mixed paste", () => {
     expect(a.input.subjects).toBe(3);
     expect(a.input.bytes).toBe(Buffer.byteLength(text));
     expect(a.input.lines).toBe(2);
-    expect(a.input.sha256_prefix).toMatch(/^[0-9a-f]{12}$/);
+    // No content hash: nothing reads it, and it reads like a tracking id (R1-22).
+    expect(a.input).not.toHaveProperty("sha256_prefix");
 
     const smart = a.findings.find((f) => f.rule_id === "smart_failing")!;
     expect(smart.severity).toBe("critical");
@@ -393,6 +394,15 @@ describe("analyzeOutput: robustness", () => {
     const a = valid(analyzeOutput("FAKE-ZFS FAKE-SMART", { parsers: [explodes, smartFake] }));
     expect(a.notes).toContain("The zfs reader failed on this input and was skipped.");
     expect(a.findings.map((f) => f.rule_id)).toContain("smart_failing");
+  });
+
+  it("strips control and bidirectional characters from parser notes (R1-34)", () => {
+    const noisy = fake("zfs", ["zfs_pool_unhealthy"], "FAKE-ZFS", {
+      formats: [], subjects: 0, snapshot: {},
+      notes: [{ level: "info", message: "abc\u202Edef\u2066x\u0007y" }],
+    });
+    const a = valid(analyzeOutput("FAKE-ZFS", { parsers: [noisy] }));
+    expect(a.notes).toContain("abc def x y");
   });
 
   it("caps the number of findings and says so", () => {

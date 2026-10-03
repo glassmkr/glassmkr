@@ -12,7 +12,6 @@
 // dropped, so a line like "ignore previous instructions" inside a matched log
 // entry never reaches the model.
 
-import crypto from "node:crypto";
 import { z } from "zod";
 import {
   evaluateAlerts,
@@ -21,7 +20,12 @@ import {
   type Snapshot,
 } from "$lib/server/alerts/evaluator.js";
 import { getRuleMetadata, listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader.js";
-import { resolveFix, type ResolvedFix, type ServerLocator } from "$lib/server/alerts/fix-workflow/resolve.js";
+import {
+  interpolateEvidence,
+  resolveFix,
+  type ResolvedFix,
+  type ServerLocator,
+} from "$lib/server/alerts/fix-workflow/resolve.js";
 import { TRIAGE_PARSERS } from "./registry.js";
 import { safeIdent, safeLabel } from "./sanitize.js";
 import {
@@ -47,9 +51,13 @@ export const TRIAGE_COLLECTOR_VERSION = "1.2.4";
 /**
  * SEL events in a paste count regardless of age. The evaluator defaults to a
  * 30-day window measured from the server clock, which would silently drop a
- * real event from an older paste. Ten years keeps everything a BMC holds.
+ * real event from an older paste. Ten years was not enough: a BMC whose clock
+ * was never set dates its events 01/01/2000 (or 1970), and a failed PSU logged
+ * that way came back as "no matching signal" (R1-9). A hundred years covers
+ * every date ipmitool prints; the answer reports how old the events are
+ * instead (selTiming below).
  */
-const SEL_WINDOW_DAYS = 3650;
+const SEL_WINDOW_DAYS = 36_500;
 
 const MAX_FINDINGS = 30;
 const MAX_OBSERVED_KEYS = 24;
@@ -142,6 +150,43 @@ const RULE_KIND: Record<string, SubjectKind> = {
 
 const SEVERITY_RANK: Record<AlertResult["severity"], number> = { critical: 0, warning: 1, info: 2 };
 
+// Triage wording for rules whose YAML summary speaks for the live dashboard: a
+// time window, boot grace, "acknowledge this advisory", a branch a paste never
+// feeds, or a prediction. The YAML stays the dashboard's source; a paste answer
+// is read by someone with one paste and no dashboard (R1-29, R1-10).
+const TRIAGE_SUMMARY: Record<string, string> = {
+  ipmi_sel_critical:
+    "The pasted BMC System Event Log contains one or more critical-severity asserted events, pointing at DIMM, PSU, fan, voltage or temperature hardware. This check counts events of any age: the dates are under observed, and an event that is old or was later deasserted records a past fault, not necessarily a current one.",
+  ecc_errors:
+    "The memory controller or the BMC reported one or more uncorrectable ECC errors in this output. An uncorrectable error is a hardware fault in memory; check when it happened (the dates in the paste), then identify the DIMM and plan its replacement.",
+  zfs_scrub_errors:
+    "The pool's most recent scrub found checksum or repair errors, or the pool has never been scrubbed. Errors suggest failing disks or silent corruption (warning); a never-run scrub is a maintenance gap reported at info (a just-created pool simply needs its first scrub).",
+  gpu_thermal_critical:
+    "GPU die temperature at or above the HW slowdown threshold, or nvidia-smi reports a hardware thermal slowdown. A software thermal slowdown at the card's thermal target (normal load behavior) does not fire. Sustained operation at thermal limits accelerates wear and reduces throughput.",
+  gpu_corrected_ecc_storm:
+    "The GPU's corrected-ECC counter is high, or single-bit retired pages are non-zero. Corrected errors were repaired by the GPU; one paste shows the counters, not how fast they are rising, so compare with a reading taken later.",
+  drive_smart_unreadable:
+    "One or more fixed disks are present but their SMART health cannot be read, so a failure on them would go unseen. This is NOT a drive fault: it is a coverage gap. The usual cause is that smartmontools (the `smartctl` binary) is not installed, or a disk sits behind a RAID/HBA controller that needs a specific `smartctl -d` device type (`smartctl --scan-open` finds it). Some virtual or enclosure devices genuinely expose no SMART.",
+};
+
+// Quick checks that tell the reader to open the dashboard, or describe it.
+const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: string }> = {
+  gpu_corrected_ecc_storm: {
+    command: "nvidia-smi --query-gpu=index,uuid,ecc.errors.corrected.aggregate.total,ecc.errors.corrected.volatile.total --format=csv",
+    explanation: "Per-GPU corrected ECC counters, lifetime and since the last driver reload. Run it again later and compare: a counter that keeps climbing is the storm signal.",
+  },
+  gpu_driver_or_firmware_drift: {
+    command: "nvidia-smi --query-gpu=index,uuid,name,driver_version,vbios_version --format=csv",
+    explanation: "Per-GPU driver and VBIOS version. GPUs of the same model on one host are expected to run the same VBIOS.",
+  },
+};
+
+// Evidence that misleads in a paste answer: ipmi_sel_critical's
+// total_events_in_sel counts only critical asserted rows, not the SEL.
+const TRIAGE_DROP_OBSERVED: Record<string, readonly string[]> = {
+  ipmi_sel_critical: ["total_events_in_sel"],
+};
+
 // ---------------------------------------------------------------------------
 // Output contract (also the MCP tool's outputSchema)
 // ---------------------------------------------------------------------------
@@ -153,7 +198,6 @@ export const analysisOutputShape = {
     formats: z.array(z.enum(TRIAGE_FORMATS)),
     bytes: z.number().int().nonnegative(),
     lines: z.number().int().nonnegative(),
-    sha256_prefix: z.string().regex(/^[0-9a-f]{12}$/),
     subjects: z.number().int().nonnegative(),
   }).strict(),
   findings: z.array(
@@ -180,10 +224,11 @@ export const analysisOutputShape = {
   not_determinable: z.array(z.object({ signal: z.string(), reason: z.string() }).strict()),
   next_capture: z.array(z.object({ goal: z.string(), command: z.string(), why: z.string() }).strict()),
   notes: z.array(z.string()),
+  // Only when the paste held something the rules read (R1-22).
   continuous_monitoring: z.object({
     docs_url: z.literal("https://glassmkr.com/docs/getting-started?ref=mcp-triage"),
     source_url: z.literal("https://github.com/glassmkr/crucible"),
-  }).strict(),
+  }).strict().optional(),
 };
 
 export const analysisOutputSchema = z.object(analysisOutputShape).strict();
@@ -445,19 +490,82 @@ function pickString(observed: Observed, keys: readonly string[]): { key: string;
   return null;
 }
 
-function buildFix(fix: ResolvedFix | null): Finding["fix"] {
+// Shell placeholders some fix commands leave for the operator (smart_failing's
+// ${DEVICE}, disk_io_errors' ${DEVICES}). resolveFix keeps them for the
+// dashboard, which prints "substitute the device" beside each command; an
+// answer here carries the commands alone, and run as printed with DEVICE unset
+// smart_failing's RAID check says "not a RAID member" (R1-20).
+const DEVICE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const DEVICE_PLACEHOLDER = "<device>";
+
+/** Kernel names of the devices a finding is about, for the shell placeholders. */
+function fixDevices(evidence: Observed): string[] {
+  const out: string[] = [];
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return;
+    for (const part of value.split(",")) {
+      const name = part.trim().replace(/^\/dev\//, "");
+      if (DEVICE_NAME.test(name) && !UNKNOWN_DEVICE.test(name) && !out.includes(name)) out.push(name);
+    }
+  };
+  if (typeof evidence.device === "string") {
+    if (!PASSTHROUGH_DEVICE.test(evidence.device)) add(evidence.device);
+  } else if (evidence.devices !== undefined) add(evidence.devices);
+  else add(evidence.controller);
+  return out;
+}
+
+function fillDevices(command: string, devices: string[]): string {
+  return command
+    .replace(/\$\{DEVICE\}/g, devices.length === 1 ? devices[0] : DEVICE_PLACEHOLDER)
+    .replace(/\$\{DEVICES\}/g, devices.length > 0 ? devices.join(" ") : DEVICE_PLACEHOLDER);
+}
+
+/** The quick check's explanation with its {{key}} tokens filled; a token with no value is left out. */
+function explanation(description: string, evidence: Observed): string {
+  const has = (key: string) => ["string", "number", "boolean"].includes(typeof evidence[key]);
+  const text = description
+    .replace(/\s*\(\{\{(\w+)\}\}\)/g, (full: string, key: string) => (has(key) ? full : ""))
+    .replace(/\{\{(\w+)\}\}/g, (full: string, key: string) => (has(key) ? full : ""));
+  return interpolateEvidence(text, evidence);
+}
+
+function buildFix(ruleId: string, fix: ResolvedFix | null, evidence: Observed): Finding["fix"] {
   if (!fix) return null;
+  const devices = fixDevices(evidence);
+  const cmd = (c: string) => fillDevices(c, devices);
   const steps: NonNullable<NonNullable<Finding["fix"]>["steps"]> = [];
   for (const p of fix.prerequisites) steps.push({ title: `Before you start: ${p}` });
-  if (fix.safe_mode) steps.push({ title: "Confirm the current state (read-only)", command: fix.safe_mode.command });
-  steps.push({ title: "Remediation", command: fix.command });
-  if (fix.validation) steps.push({ title: "Confirm the fix worked", command: fix.validation.command });
-  const out: NonNullable<Finding["fix"]> = {
-    quick_check: { command: fix.quick_check.command, explanation: fix.quick_check.description },
-    steps,
+  if (fix.safe_mode) steps.push({ title: "Confirm the current state (read-only)", command: cmd(fix.safe_mode.command) });
+  steps.push({ title: "Remediation", command: cmd(fix.command) });
+  if (fix.validation) steps.push({ title: "Confirm the fix worked", command: cmd(fix.validation.command) });
+  const override = TRIAGE_QUICK_CHECK[ruleId];
+  const quick = override ?? {
+    command: cmd(fix.quick_check.command),
+    explanation: explanation(fix.quick_check.description, evidence),
   };
+  if ([quick.command, ...steps.map((s) => s.command ?? "")].some((c) => c.includes(DEVICE_PLACEHOLDER))) {
+    steps.unshift({ title: `Replace ${DEVICE_PLACEHOLDER} in the commands below with the affected disk's kernel name, for example sda or nvme0n1` });
+  }
+  const out: NonNullable<Finding["fix"]> = { quick_check: quick, steps };
   if (fix.verdict_prior) out.verdict_prior = fix.verdict_prior;
   return out;
+}
+
+function triageSummary(ruleId: string): string {
+  return TRIAGE_SUMMARY[ruleId] ?? (getRuleMetadata(ruleId)?.summary ?? "").trim();
+}
+
+const NO_LOCATOR: ServerLocator = { os_id: null, os_id_like: null, os_version_id: null, dmi_vendor: null };
+
+/**
+ * A rule's summary and quick check as a paste answer shows them when nothing
+ * from the paste fills them in. For the test that keeps dashboard-only wording
+ * out of triage answers.
+ */
+export function triageRuleCopy(ruleId: string): { summary: string; quick_check: { command: string; explanation: string } | null } {
+  const fix = buildFix(ruleId, resolveFix(ruleId, {}, NO_LOCATOR), {});
+  return { summary: triageSummary(ruleId), quick_check: fix?.quick_check ?? null };
 }
 
 function shapeFinding(
@@ -488,23 +596,52 @@ function shapeFinding(
   }
 
   const observed: Observed = {};
-  for (const [k, v] of Object.entries(safeEvidence)) if (!used.has(k)) observed[k] = v;
+  const dropped = TRIAGE_DROP_OBSERVED[alert.type] ?? [];
+  for (const [k, v] of Object.entries(safeEvidence)) if (!used.has(k) && !dropped.includes(k)) observed[k] = v;
 
   let fix: Finding["fix"] = null;
   try {
     // The sanitized evidence, not the raw one: resolveFix interpolates
     // {{key}} tokens into commands, and only re-sanitized values may land there.
-    fix = buildFix(resolveFix(alert.type, fixEvidence(safeEvidence), locator));
+    const fixEv = fixEvidence(safeEvidence);
+    fix = buildFix(alert.type, resolveFix(alert.type, fixEv, locator), fixEv);
   } catch {
     fix = null;
   }
 
+  let severity = alert.severity;
+  let summary = triageSummary(alert.type);
+  // A recoverable sense key (Recovered Error, Not Ready, Unit Attention): the
+  // evaluator itself calls these common and says to escalate only on repeats,
+  // but that text is in the message this answer drops, and the YAML summary
+  // says "investigate immediately to prevent data loss" (R1-17).
+  if (alert.type === "disk_io_errors" && observed.scope === "scsi_sense" && severity !== "critical") {
+    observed.severity_basis = "recoverable_sense_key";
+    summary =
+      "The kernel reported a recoverable SCSI sense key on this drive (for example Recovered Error, Not Ready or Unit Attention). These are common and recoverable on their own; cross-check SMART for the drive, and treat them as a fault only if they keep repeating.";
+  }
+  // nvidia-smi's width maximum is the card's, never the slot's, and a paste has
+  // no slot width (the agent reads it from sysfs). Narrower than the card with
+  // the generation intact is exactly what a GPU in a slot wired for fewer lanes
+  // shows, which the dashboard does not flag (R1-19).
+  if (alert.type === "gpu_pcie_link_degraded" && observed.pcie_slot_max_width === null) {
+    const genCur = observed.pcie_link_gen_current;
+    const genMax = observed.pcie_link_gen_max;
+    const genDown = typeof genCur === "number" && typeof genMax === "number" && genMax > 0 && genCur < genMax;
+    if (!genDown) {
+      severity = "info";
+      observed.width_ceiling_basis = "card_max_slot_unknown";
+      summary =
+        "The GPU's PCIe link is narrower than the card's maximum width at the same generation. nvidia-smi does not show the slot's electrical width, so this output cannot tell a slot wired for fewer lanes (expected, not a fault) from a link that trained down; check the slot's width before re-seating anything.";
+    }
+  }
+
   return {
     rule_id: alert.type,
-    severity: alert.severity,
+    severity,
     title: meta?.title ?? alert.type,
     subject,
-    summary: (meta?.summary ?? "").trim(),
+    summary,
     observed,
     fix,
   };
@@ -538,6 +675,81 @@ function dedupeFindings(findings: Finding[]): Finding[] {
 // Event timing
 // ---------------------------------------------------------------------------
 
+interface SelRow {
+  id?: unknown;
+  timestamp?: unknown;
+  sensor?: unknown;
+  event?: unknown;
+  direction?: unknown;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** An event this much older than the newest SEL row in the paste is historical. */
+const SEL_HISTORICAL_DAYS = 30;
+
+function selTime(row: SelRow): number | null {
+  if (typeof row.timestamp !== "string" || row.timestamp === "") return null;
+  const t = Date.parse(row.timestamp);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * When the critical SEL events ipmi_sel_critical counted happened, as scalars
+ * the answer can carry. The rule keeps each event's age inside an array of
+ * objects that the sanitizer drops, so without this an event from years ago,
+ * long since deasserted, read like a current fault (R1-10). Every date is the
+ * paste's own; "historical" is judged against the newest row in the paste,
+ * never against the clock.
+ */
+function selTiming(alert: AlertResult, sel: SelRow[]): { evidence: Record<string, unknown>; historical: boolean } {
+  const raw = alert.evidence?.critical_events;
+  const critical: SelRow[] = Array.isArray(raw) ? raw.filter((e): e is SelRow => isPlainObject(e)) : [];
+  const times = critical.map(selTime);
+  const dated = times.filter((t): t is number => t !== null).sort((a, b) => a - b);
+  // Deassertions per sensor + event, reduced to what "a later one exists"
+  // needs, so a SEL of thousands of rows stays linear: the latest dated one,
+  // and the highest record id among undated ones and among all of them.
+  const deasserts = new Map<string, { time: number; undatedId: number; anyId: number }>();
+  let newestRow: number | null = null;
+  for (const d of sel) {
+    const t = selTime(d);
+    if (t !== null && (newestRow === null || t > newestRow)) newestRow = t;
+    if (d.direction !== "Deasserted") continue;
+    const key = `${String(d.sensor)}\u0000${String(d.event)}`;
+    const id = typeof d.id === "number" ? d.id : -1;
+    const k = deasserts.get(key) ?? { time: -Infinity, undatedId: -1, anyId: -1 };
+    if (t !== null) k.time = Math.max(k.time, t);
+    else k.undatedId = Math.max(k.undatedId, id);
+    k.anyId = Math.max(k.anyId, id);
+    deasserts.set(key, k);
+  }
+  const deasserted = critical.map((e, i) => {
+    const k = deasserts.get(`${String(e.sensor)}\u0000${String(e.event)}`);
+    if (!k) return false;
+    const id = typeof e.id === "number" ? e.id : Infinity;
+    const t = times[i];
+    return t !== null ? k.time >= t || k.undatedId > id : k.anyId > id;
+  });
+  const evidence: Record<string, unknown> = {
+    critical_events_counted: critical.length,
+    critical_events_later_deasserted: deasserted.filter(Boolean).length,
+  };
+  const iso = (t: number) => new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
+  if (dated.length > 0) {
+    evidence.oldest_critical_event = iso(dated[0]);
+    evidence.newest_critical_event = iso(dated[dated.length - 1]);
+  }
+  if (dated.length < critical.length) evidence.critical_events_undated = critical.length - dated.length;
+  const historical =
+    critical.length > 0 &&
+    critical.every((_, i) => {
+      const t = times[i];
+      const old = t !== null && newestRow !== null && newestRow - t > SEL_HISTORICAL_DAYS * DAY_MS;
+      return old || deasserted[i];
+    });
+  return { evidence, historical };
+}
+
 function hasUnknownTimes(snapshot: Record<string, unknown>): boolean {
   const unknown = (ts: unknown) => typeof ts !== "string" || ts === "" || Number.isNaN(Date.parse(ts));
   const dmesg = snapshot.dmesg_events as { events?: Array<{ timestamp_iso?: unknown }> } | undefined;
@@ -560,7 +772,7 @@ function countLines(text: string): number {
 // Parser notes are built from constants and counts by contract; this only
 // strips control and bidi characters and bounds the length as a backstop.
 function cleanNote(message: string): string {
-  return message.replace(/[\u0000-\u001f\u007f‪-‮⁦-⁩]/g, " ").trim().slice(0, MAX_NOTE_LENGTH);
+  return message.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, MAX_NOTE_LENGTH);
 }
 
 function safeDetect(parser: TriageParser, text: string): boolean {
@@ -658,7 +870,15 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     os_version_id: null,
     dmi_vendor: null,
   };
-  const shaped = alerts.map((a) => shapeFinding(a, ruleDomain.get(a.type), locator));
+  const selRows = ((merged.ipmi as { sel_events_recent?: unknown } | undefined)?.sel_events_recent ?? []) as SelRow[];
+  let selHistorical = false;
+  const timed = alerts.map((a) => {
+    if (a.type !== "ipmi_sel_critical") return a;
+    const timing = selTiming(a, Array.isArray(selRows) ? selRows : []);
+    selHistorical ||= timing.historical;
+    return { ...a, evidence: { ...(a.evidence ?? {}), ...timing.evidence } };
+  });
+  const shaped = timed.map((a) => shapeFinding(a, ruleDomain.get(a.type), locator));
   const ordered = dedupeFindings(shaped)
     .map((f, i) => ({ f, i }))
     .sort((a, b) => SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] || a.i - b.i)
@@ -685,6 +905,12 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
       }
     }
   }
+  if (selHistorical) {
+    not_determinable.push({
+      signal: "Whether the SEL fault is still present",
+      reason: `Every critical SEL event counted here is dated more than ${SEL_HISTORICAL_DAYS} days before the newest entry in the paste, or was later deasserted. The log records past events; the current state needs the sensor readings (ipmitool sdr elist or ipmitool sensor).`,
+    });
+  }
   if (hasUnknownTimes(merged)) {
     not_determinable.push({
       signal: "event_timing",
@@ -692,12 +918,11 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     });
   }
 
-  return {
+  const result: TriageAnalysis = {
     input: {
       formats,
       bytes: Buffer.byteLength(text, "utf8"),
       lines: countLines(text),
-      sha256_prefix: crypto.createHash("sha256").update(text, "utf8").digest("hex").slice(0, 12),
       subjects,
     },
     findings,
@@ -711,8 +936,9 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
       findings,
     ),
     notes,
-    continuous_monitoring: { ...CONTINUOUS_MONITORING },
   };
+  if (subjects > 0) result.continuous_monitoring = { ...CONTINUOUS_MONITORING };
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -776,7 +1002,23 @@ function nextCapture(
 // Content text
 // ---------------------------------------------------------------------------
 
-/** The short model-visible text block that accompanies structuredContent. */
+// The text block has to stand on its own: clients on MCP 2025-03-26 or older,
+// and any client that forwards only `content`, never see structuredContent.
+// It used to say "run one of the commands in next_capture" without the
+// commands, and named no failed member or quick check (R1-24).
+const TEXT_QUICK_CHECKS = 8;
+const TEXT_OBSERVED_KEYS = 12;
+
+function captureLines(analysis: TriageAnalysis): string[] {
+  const lines: string[] = [];
+  for (const c of analysis.next_capture) {
+    lines.push(`- ${c.goal}: ${c.why}`);
+    for (const cmd of c.command.split("\n")) lines.push(`    ${cmd}`);
+  }
+  return lines;
+}
+
+/** The model-visible text block that accompanies structuredContent. */
 export function renderAnalysisText(analysis: TriageAnalysis): string {
   const lines: string[] = [];
   // Keyed on subjects, not formats: a recognised format with nothing readable
@@ -788,7 +1030,10 @@ export function renderAnalysisText(analysis: TriageAnalysis): string {
     } else {
       lines.push(`Recognised ${analysis.input.formats.join(", ")}, but it held nothing the rules can read (for example a one-line summary or a cut-off paste), so no rule was checked.`);
     }
-    lines.push("Run one of the commands in next_capture on the server and paste the output.");
+    if (analysis.next_capture.length > 0) {
+      lines.push("Run one of these on the server and paste the output:");
+      lines.push(...captureLines(analysis));
+    }
     return lines.join("\n");
   }
   const read = analysis.input.formats.length > 0 ? analysis.input.formats.join(", ") : "the pasted output";
@@ -799,9 +1044,21 @@ export function renderAnalysisText(analysis: TriageAnalysis): string {
     lines.push("No rule matched: no matching signal in this output. That is not a health verdict; it covers only what this paste shows.");
   } else {
     lines.push(`${analysis.findings.length} finding(s): ${counts.critical} critical, ${counts.warning} warning, ${counts.info} info.`);
+    const shown = new Set<string>();
     for (const f of analysis.findings) {
       const who = [f.subject.kind, f.subject.id, f.subject.serial ? `S/N ${f.subject.serial}` : ""].filter(Boolean).join(" ");
       lines.push(`- [${f.severity}] ${f.title} (${who})`);
+      const facts = Object.entries(f.observed)
+        .filter(([, v]) => v !== null && v !== "")
+        .slice(0, TEXT_OBSERVED_KEYS)
+        .map(([k, v]) => `${k}=${v}`);
+      if (facts.length > 0) lines.push(`  observed: ${facts.join(", ")}`);
+      const qc = f.fix?.quick_check?.command.trimEnd();
+      if (qc && !shown.has(qc) && shown.size < TEXT_QUICK_CHECKS) {
+        shown.add(qc);
+        lines.push("  quick check:");
+        for (const l of qc.split("\n")) lines.push(`    ${l}`);
+      }
     }
   }
   if (analysis.checked_no_signal.length > 0) {
@@ -809,6 +1066,12 @@ export function renderAnalysisText(analysis: TriageAnalysis): string {
   }
   if (analysis.not_determinable.some((n) => n.signal === "event_timing")) {
     lines.push("Times unknown: some events have relative or missing timestamps, so their age cannot be judged from this paste.");
+  }
+  const sel = analysis.not_determinable.find((n) => n.signal === "Whether the SEL fault is still present");
+  if (sel) lines.push(sel.reason);
+  if (analysis.next_capture.length > 0) {
+    lines.push("To check more, run on the server and paste the output:");
+    lines.push(...captureLines(analysis));
   }
   return lines.join("\n");
 }

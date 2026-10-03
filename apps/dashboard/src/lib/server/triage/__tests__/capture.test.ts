@@ -32,7 +32,7 @@ describe("captureCommands", () => {
     for (const goal of CAPTURE_GOALS) expect(captureCommandText(goal)).not.toMatch(/\/dev\/[a-z]+\[/);
     expect(text("raid_md")).toBe("cat /proc/mdstat\nfor md in $(awk '/^md/{print $1}' /proc/mdstat); do sudo mdadm --detail /dev/$md; done");
     expect(text("zfs")).toBe("sudo zpool status -v");
-    expect(text("kernel_errors")).toBe("sudo dmesg -T\nsudo journalctl -k -b -1 --no-pager");
+    expect(text("kernel_errors")).toBe("sudo dmesg -T\nsudo journalctl -k -b -1 --no-pager -o short-iso");
     // A level filter drops what the rules read: SCSI sense (info), ext4
     // read-only remount (crit), EDAC uncorrected (emerg).
     expect(text("kernel_errors")).not.toContain("--level");
@@ -69,6 +69,13 @@ describe("captureCommands", () => {
 
   it("asks for the paste unchanged", () => {
     expect(captureCommands("zfs").paste_instructions).toContain("Paste the complete output back");
+  });
+
+  it("asks for a different placeholder per redacted serial, never one shared placeholder (R1-11)", () => {
+    const text = captureCommands("all_disks").paste_instructions;
+    expect(text).toContain("replace each one with a different placeholder");
+    expect(text).toContain("GPU UUIDs");
+    expect(text).not.toMatch(/may be replaced with placeholders/);
   });
 });
 

@@ -152,6 +152,8 @@ interface Counters {
   grownDefectDrives: number;
   grownDefectTotal: number;
   vdSuppressed: number;
+  hypervisorDisk: number;
+  sharedSerial: number;
   budgetHit: boolean;
 }
 
@@ -224,15 +226,21 @@ const VIRTUAL_MEDIA_RE =
   /\bVirtual[ _]?(?:HDisk|CDROM|CD\/DVD|Floppy|FDD|HDD|Media|Disk\d)|\bAMI\b.{0,24}\bVirtual\b|\bATEN\b.{0,24}\bVirtual\b|File-Stor Gadget|\biDRAC\b|\bVirtual_(?:CDROM|HDisk)/i;
 const BMC_USB_VENDORS = new Set(["0x046b", "0x0557", "0x0624"]);
 
+// Disks a hypervisor presents to a guest: QEMU/KVM, VMware, Hyper-V,
+// VirtualBox, Xen. virtio-blk (/dev/vd*) and Xen (/dev/xvd*) disks are never
+// probed by the agent, which lists only sd*, nvme* and hd* devices.
+const HYPERVISOR_DISK_RE = /\bQEMU\b|\bVMware\b|\bMsft\b|\bVBOX\b|\bVirtualBox\b|\bXen\b|\bVirtIO\b/i;
+const HYPERVISOR_PATH_RE = /^\/dev\/x?vd[a-z]+$/;
+
 const SMARTCTL_JSON_KEY_RE =
   /"(?:json_format_version|smartctl|model_name|serial_number|smart_status|ata_smart_attributes|nvme_smart_health_information_log)"\s*:/;
 
 const DETECT_RE = new RegExp(
   [
-    "^smartctl\\s+\\d+\\.\\d+",
+    "^smartctl[ \\t]+\\d+\\.\\d+",
     "=== START OF (?:INFORMATION|READ SMART DATA|SMART DATA) SECTION ===",
     "SMART overall-health self-assessment test result",
-    "^\\s*SMART Health Status:",
+    "^[ \\t]*SMART Health Status:",
     "SMART/Health Information \\(NVMe Log",
     "Vendor Specific SMART Attributes with Thresholds",
     '"json_format_version"\\s*:',
@@ -449,10 +457,22 @@ function applyMessage(d: DeviceRead, line: string): boolean {
 // ---------------------------------------------------------------------------
 // JSON
 
+/** One open bracket; `up` is the bracket it sits in. Immutable, so a cut can keep a pointer. */
+interface Frame {
+  c: "{" | "[";
+  up: Frame | null;
+  depth: number;
+}
+
 interface JsonCut {
   end: number;
-  stack: string;
+  /** Innermost bracket still open at the cut. */
+  top: Frame;
 }
+
+// smartctl's JSON nests fewer than ten levels. A deeper value is not its
+// output, and stopping there bounds the scan.
+const MAX_JSON_DEPTH = 64;
 
 type ScanResult =
   | { kind: "balanced"; end: number; cost: number }
@@ -468,10 +488,15 @@ type ScanResult =
  * still open there.
  */
 function scanJson(text: string, start: number, limit: number): ScanResult {
-  let stack = "";
+  // The open brackets are a linked list, not a string: a string stack copied
+  // into every cut held one copy per comma or close, and 198 KB of nested
+  // brackets needed over 4 GB and killed the process (review round 1, R1-1).
+  let top: Frame | null = null;
   let inString = false;
   let escaped = false;
   const cuts: JsonCut[] = [];
+  const stop = (i: number): ScanResult =>
+    cuts.length > 0 ? { kind: "truncated", cuts, cost: i - start } : { kind: "invalid", cost: i - start };
   for (let i = start; i < limit; i++) {
     const c = text[i];
     if (inString) {
@@ -482,23 +507,23 @@ function scanJson(text: string, start: number, limit: number): ScanResult {
       continue;
     }
     if (c === '"') inString = true;
-    else if (c === "{" || c === "[") stack += c;
-    else if (c === "}" || c === "]") {
-      const open = stack[stack.length - 1];
-      if ((c === "}" && open !== "{") || (c === "]" && open !== "[")) {
-        return cuts.length > 0 ? { kind: "truncated", cuts, cost: i - start } : { kind: "invalid", cost: i - start };
-      }
-      stack = stack.slice(0, -1);
-      if (stack === "") return { kind: "balanced", end: i + 1, cost: i - start };
-      cuts.push({ end: i + 1, stack });
-    } else if (c === ",") cuts.push({ end: i, stack });
+    else if (c === "{" || c === "[") {
+      const depth: number = (top?.depth ?? 0) + 1;
+      if (depth > MAX_JSON_DEPTH) return stop(i);
+      top = { c, up: top, depth };
+    } else if (c === "}" || c === "]") {
+      if (top === null || (c === "}" && top.c !== "{") || (c === "]" && top.c !== "[")) return stop(i);
+      top = top.up;
+      if (top === null) return { kind: "balanced", end: i + 1, cost: i - start };
+      cuts.push({ end: i + 1, top });
+    } else if (c === "," && top !== null) cuts.push({ end: i, top });
   }
   return { kind: "truncated", cuts, cost: limit - start };
 }
 
 function closeAt(text: string, start: number, cut: JsonCut): unknown {
   let closers = "";
-  for (let k = cut.stack.length - 1; k >= 0; k--) closers += cut.stack[k] === "{" ? "}" : "]";
+  for (let f: Frame | null = cut.top; f !== null; f = f.up) closers += f.c === "{" ? "}" : "]";
   try {
     return JSON.parse(text.slice(start, cut.end) + closers);
   } catch {
@@ -783,7 +808,11 @@ const SELF_TEST_STATUSES: ReadonlyArray<[string, number]> = [
   ["Self-test routine in progress", 0xf],
 ];
 
+/** A self-test log row is under 120 characters; the row regex is quadratic in a longer one (R1-36). */
+const MAX_SELF_TEST_LINE = 256;
+
 function parseSelfTestRow(line: string): SelfTestRow | null {
+  if (line.length > MAX_SELF_TEST_LINE) return null;
   const m = SELF_TEST_ROW_RE.exec(line);
   if (!m) return null;
   const middle = m[2];
@@ -1145,6 +1174,13 @@ function hasSurface(d: DeviceRead): boolean {
   return d.healthSeen || d.nvmeSeen || d.attrs.size > 0;
 }
 
+/** A guest's virtual disk with no SMART: the physical disks are on the host. */
+function isHypervisorDisk(d: DeviceRead): boolean {
+  if (d.path && HYPERVISOR_PATH_RE.test(d.path)) return true;
+  const ident = [d.model, d.family, d.vendor, d.product].filter(Boolean).join(" ");
+  return ident !== "" && HYPERVISOR_DISK_RE.test(ident);
+}
+
 function isVirtualMedia(d: DeviceRead): boolean {
   if (d.capacityBytes === 0) return true;
   if (d.usbVendor && BMC_USB_VENDORS.has(d.usbVendor)) return true;
@@ -1272,6 +1308,7 @@ function classify(d: DeviceRead, c: Counters): Outcome {
     return { kind: "skip" };
   }
   if (isVirtualMedia(d)) c.virtualMedia++;
+  else if (isHypervisorDisk(d)) c.hypervisorDisk++;
   else if (d.optical) c.optical++;
   else if (d.usbBridge) c.usbBridge++;
   else if (d.permissionDenied) c.permission++;
@@ -1303,6 +1340,12 @@ function buildNotes(c: Counters, subjects: number): ParseNote[] {
   }
   if (c.virtualMedia > 0) {
     info(`Skipped ${c.virtualMedia} BMC virtual media ${plural(c.virtualMedia, "device", "devices")}: virtual drives presented by the server's management controller are not disks and never report SMART.`);
+  }
+  if (c.hypervisorDisk > 0) {
+    info(`Skipped ${c.hypervisorDisk} virtual ${plural(c.hypervisorDisk, "disk", "disks")} presented by a hypervisor: ${plural(c.hypervisorDisk, "it has", "they have")} no SMART. Check the physical disks on the host instead.`);
+  }
+  if (c.sharedSerial > 0) {
+    info(`${c.sharedSerial} ${plural(c.sharedSerial, "drive shares", "drives share")} a serial number with another drive in the paste (for example the same redaction placeholder) and ${plural(c.sharedSerial, "was", "were")} counted as a separate drive.`);
   }
   if (c.usbBridge > 0) {
     info(`Skipped ${c.usbBridge} ${plural(c.usbBridge, "device", "devices")} behind a USB bridge smartctl did not recognize; that is not a drive failure. To read SMART through the bridge, retry with smartctl -d sat.`);
@@ -1347,7 +1390,7 @@ function emptyResult(note: string): ParserResult {
 }
 
 function parseSmartctl(input: string): ParserResult {
-  const text = input.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const text = input.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   const counters: Counters = {
     virtualMedia: 0,
     usbBridge: 0,
@@ -1366,6 +1409,8 @@ function parseSmartctl(input: string): ParserResult {
     grownDefectDrives: 0,
     grownDefectTotal: 0,
     vdSuppressed: 0,
+    hypervisorDisk: 0,
+    sharedSerial: 0,
     budgetHit: false,
   };
   const formats: TriageFormat[] = [];
@@ -1389,15 +1434,25 @@ function parseSmartctl(input: string): ParserResult {
   reads.sort((a, b) => a.offset - b.offset);
 
   // Merge repeated reads of one device: same path (and passthrough selector),
-  // or the same serial when no path is known.
+  // or the same serial when no path is known. A serial alone only joins an
+  // identity-only read (`-i`) to a data read: two reads that each carry SMART
+  // data are two drives. Pastes with every serial replaced by one placeholder
+  // otherwise merged a failing drive into a healthy one and reported nothing
+  // (R1-11).
   const byKey = new Map<string, number>();
   const merged: DeviceRead[] = [];
   for (const d of reads) {
     const serial = serialOf(d);
     const key = d.path ? `path:${d.path}|${d.passthroughType ?? ""}` : serial ? `serial:${serial}` : null;
-    const at = key ? byKey.get(key) : undefined;
+    let at = key ? byKey.get(key) : undefined;
+    if (at !== undefined && !d.path && hasSurface(merged[at]) && hasSurface(d)) {
+      counters.sharedSerial++;
+      at = undefined;
+    }
     if (at !== undefined) {
       merged[at] = mergeReads(merged[at], d);
+    } else if (key && byKey.has(key)) {
+      merged.push(d);
     } else {
       if (key) byKey.set(key, merged.length);
       merged.push(d);

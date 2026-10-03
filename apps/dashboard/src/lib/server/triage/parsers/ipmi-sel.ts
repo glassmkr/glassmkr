@@ -19,11 +19,16 @@
 //   - ECC counts only asserted rows; a deassertion is not another error.
 //   - Fan status also maps the extended threshold codes (lcr, lnr, ucr, unr,
 //     lnc, unc) that `sdr type` and `sdr elist` print in place of cr / nr / nc.
+//   - The live collector reads power supplies from `ipmitool sensor` only. An
+//     sdr power supply row prints "ok" for every readable discrete state, so
+//     its state text ("Failure detected", "Power Supply AC lost") sets the
+//     status instead, and Dell's "PS Redundancy" row fills
+//     psu_redundancy_state the way Crucible's classifier does.
 // Assert / deassert pairing stays in the evaluator, exactly as for a live
 // agent: every row keeps its own direction, and both halves of a pair are
 // sanitized identically so ipmi_sel_critical can still match them.
 
-import type { Snapshot } from "$lib/server/alerts/evaluator";
+import { isSelLogFullEventText, type Snapshot } from "$lib/server/alerts/evaluator";
 import { safeIdent, safeLabel } from "../sanitize";
 import type { ParseNote, ParserResult, TriageFormat, TriageParser } from "../types";
 
@@ -74,14 +79,47 @@ const HEX_VALUE = /^0x[0-9a-f]+$/i;
 /** Start of a SEL row that did not parse in full: a paste cut off mid-line. */
 const PARTIAL_SEL = /^\s*[0-9a-f]{1,8}\s*\|\s*(?:\d{1,4}[/.-]\d|pre-?init)/i;
 
+// Sensor type strings ipmitool prints at the start of the SEL sensor column
+// (sensor_type_desc in ipmitool), longest first so "Platform Security
+// Violation" wins over "Platform Security". Only the SDR name after the type
+// comes from the BMC, and that is at most 16 bytes; capping it there keeps a
+// hand-edited sensor column from carrying a sentence into the answer (R1-25).
+const SEL_SENSOR_TYPES = [
+  "reserved", "Temperature", "Voltage", "Current", "Fan", "Physical Security",
+  "Platform Security Violation", "Platform Security", "Processor", "Power Supply", "Power Unit",
+  "Cooling Device", "Other", "Memory", "Drive Slot / Bay", "Drive Slot (Bay)", "POST Memory Resize",
+  "System Firmwares", "System Firmware Progress", "Event Logging Disabled", "Watchdog1", "Watchdog 1",
+  "System Event", "Critical Interrupt", "Button", "Module / Board", "Microcontroller",
+  "Add-in Card", "Chassis", "Chip Set", "Other FRU", "Cable / Interconnect", "Terminator",
+  "System Boot Initiated", "Boot Error", "OS Boot", "OS Critical Stop", "Slot / Connector",
+  "System ACPI Power State", "Watchdog2", "Watchdog 2", "Platform Alert", "Entity Presence",
+  "Monitor ASIC", "LAN", "Management Subsys Health", "Battery", "Session Audit",
+  "Version Change", "FRU State", "OEM reserved", "Unknown",
+].sort((a, b) => b.length - a.length);
+
+// `ipmitool sdr` prints "ok" in the status column of every readable discrete
+// sensor (lib/ipmi_sdr.c) and puts the state in the reading text, so a failed
+// supply reads "ok | Presence detected, Failure detected". psu_redundancy_loss
+// trusts a literal "ok", so for those rows the state text decides (R1-8).
+const PSU_FAULT_TEXT = /failure detected|ac lost|input lost|out-of-range|configuration error|config error/i;
+const PSU_PREDICTIVE_TEXT = /predictive failure/i;
+/** Dell's aggregate redundancy sensor, the one Crucible maps (isPsuRedundancySensor). */
+const PS_REDUNDANCY_NAME = /^ps\s+redundancy$/i;
+
 // detect() sniffs. A SEL row needs id | date | time | sensor | event.
+// Whitespace is [ \t], never \s: under the m flag \s also crosses line
+// breaks, so a leading ^\s* re-scanned every following blank line from every
+// line start and a paste of 130,000 newlines held the event loop for 40 s
+// (review round 1, R1-3).
 const SEL_ROW_SNIFF =
-  /^\s*[0-9a-f]{1,8}\s*\|\s*(?:\d{1,2}[/.]\d{1,2}[/.]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}|pre-?init|s-init|unspecified)\s*\|[^|\n]*\|[^|\n]*\|/im;
-const OEM_ROW_SNIFF = /^\s*[0-9a-f]{1,8}\s*\|\s*OEM record [0-9a-f]{2}\s*\|/im;
-const SEL_INFO_HEADER = /^\s*SEL Information\s*$/m;
-const ENTRIES_LINE = /^\s*Entries\s*:\s*(\d{1,9})\s*$/m;
-const PERCENT_LINE = /^\s*Percent Used\s*:\s*(\S+)/m;
-const OVERFLOW_LINE = /^\s*Overflow\s*:\s*(true|false|yes|no)\b/im;
+  /^[ \t]*[0-9a-f]{1,8}[ \t]*\|[ \t]*(?:\d{1,2}[/.]\d{1,2}[/.]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}|pre-?init|s-init|unspecified)[ \t]*\|[^|\r\n]*\|[^|\r\n]*\|/im;
+const OEM_ROW_SNIFF = /^[ \t]*[0-9a-f]{1,8}[ \t]*\|[ \t]*OEM record [0-9a-f]{2}[ \t]*\|/im;
+const SEL_INFO_HEADER = /^[ \t]*SEL Information[ \t]*$/m;
+const ENTRIES_LINE = /^[ \t]*Entries[ \t]*:[ \t]*(\d{1,9})[ \t]*$/m;
+const PERCENT_LINE = /^[ \t]*Percent Used[ \t]*:[ \t]*(\S+)/m;
+const OVERFLOW_LINE = /^[ \t]*Overflow[ \t]*:[ \t]*(true|false|yes|no)\b/im;
+/** ipmitool rows are well under this; a longer line is not one, and no column regex sees it. */
+const MAX_LINE = 512;
 
 interface RawSelRow {
   id: number;
@@ -234,7 +272,9 @@ function isPsuRow(row: RawSensorRow): boolean {
 // status column directly and accepting extended threshold codes.
 function fanFrom(row: RawSensorRow): FanStatus {
   const source = row.layout === "sensor" ? `${row.reading} ${row.unit}` : row.reading;
-  const rpmMatch = /(\d+(?:\.\d+)?)\s*RPM$/i.exec(source);
+  // Anchored: unanchored, the engine retried at every digit of a long reading
+  // and the scan went quadratic (R1-4).
+  const rpmMatch = /^(\d+(?:\.\d+)?)\s*RPM$/i.exec(source.trim());
   const rpm = rpmMatch ? Math.round(Number(rpmMatch[1])) : 0;
   const noReading = /no reading/i.test(row.reading) || /^na$/i.test(row.reading);
   let status: string;
@@ -249,7 +289,10 @@ function fanFrom(row: RawSensorRow): FanStatus {
 
 function psuFrom(row: RawSensorRow): SensorReading {
   const name = safeLabel(row.name, NAME_MAX);
-  const status = safeIdent(row.status, 16);
+  let status = safeIdent(row.status, 16);
+  if (row.layout === "sdr" && row.code === "ok" && !READING.test(row.reading) && PSU_FAULT_TEXT.test(row.reading)) {
+    status = "cr";
+  }
   if (row.layout === "sensor") {
     const out: SensorReading = {
       name,
@@ -266,6 +309,31 @@ function psuFrom(row: RawSensorRow): SensorReading {
   return reading
     ? { name, value: Number(reading[1]), unit: safeLabel(reading[2] ?? "", 24), status }
     : { name, value: safeLabel(row.reading, 40), unit: "", status };
+}
+
+/**
+ * Crucible's classifyPsuRedundancyState, read from the sdr state text only.
+ * A bare "ok" is not mapped: in sdr output that status is printed for every
+ * readable discrete sensor and says nothing about redundancy.
+ */
+function psuRedundancyFrom(reading: string): IpmiSlice["psu_redundancy_state"] | null {
+  const lower = reading.toLowerCase();
+  if (lower.includes("fully redundant") || lower.includes("fully-redundant")) return "fully_redundant";
+  if (lower.includes("lost")) return "redundancy_lost";
+  if (lower.includes("degraded")) return "redundancy_degraded";
+  return null;
+}
+
+/** The SEL sensor column as "<type> <name>", the name capped at the SDR id length. */
+function selSensorLabel(sensorText: string): string {
+  for (const type of SEL_SENSOR_TYPES) {
+    if (!sensorText.startsWith(type)) continue;
+    const rest = sensorText.slice(type.length);
+    if (rest !== "" && !rest.startsWith(" ")) continue;
+    const name = safeLabel(rest, NAME_MAX);
+    return safeLabel(name ? `${type} ${name}` : type, SEL_SENSOR_MAX);
+  }
+  return safeLabel(sensorText, NAME_MAX);
 }
 
 // Ported verbatim from crucible src/collect/ipmi.ts classifySensor.
@@ -447,7 +515,7 @@ function detectIpmi(text: string): boolean {
   if (ENTRIES_LINE.test(text) && (PERCENT_LINE.test(text) || OVERFLOW_LINE.test(text))) return true;
   if (!text.includes("|")) return false;
   for (const line of text.split(/\r\n|\r|\n/)) {
-    if (!line.includes("|")) continue;
+    if (line.length > MAX_LINE || !line.includes("|")) continue;
     const row = readSensorRow(splitColumns(line));
     if (row && (isFanRow(row) || isPsuRow(row))) return true;
   }
@@ -466,8 +534,14 @@ function parseIpmi(text: string): ParserResult {
   let sawListCommand = false;
   let sdrUsed = false;
   let sensorUsed = false;
+  let psuRedundancy: IpmiSlice["psu_redundancy_state"] | null = null;
+  let psuPredictive = 0;
+  // PSU rows whose state can be read: a sensor-table row, or an sdr row with
+  // a number or state text. Plain `sdr list` prints a hex code there.
+  let psuStateRows = 0;
 
   for (const line of lines) {
+    if (line.length > MAX_LINE) continue;
     if (line.includes("|")) {
       const cols = splitColumns(line);
       const sel = readSelRow(cols);
@@ -476,6 +550,14 @@ function parseIpmi(text: string): ParserResult {
         continue;
       }
       const sensor = readSensorRow(cols);
+      if (sensor && sensor.layout === "sdr" && PS_REDUNDANCY_NAME.test(sensor.name)) {
+        const state = psuRedundancyFrom(sensor.reading);
+        if (state && psuRedundancy === null) {
+          psuRedundancy = state;
+          sdrUsed = true;
+        }
+        continue;
+      }
       if (sensor) {
         let used = false;
         if (isFanRow(sensor)) {
@@ -492,6 +574,8 @@ function parseIpmi(text: string): ParserResult {
             psuNames.add(psu.name);
             psus.push(psu);
             used = true;
+            if (sensor.layout === "sensor" || !HEX_VALUE.test(sensor.reading)) psuStateRows++;
+            if (psu.status === "ok" && PSU_PREDICTIVE_TEXT.test(sensor.reading)) psuPredictive++;
           }
         }
         if (used && sensor.layout === "sdr") sdrUsed = true;
@@ -544,7 +628,7 @@ function parseIpmi(text: string): ParserResult {
       event: {
         id: row.id,
         timestamp: time.iso,
-        sensor: safeLabel(sensorText, SEL_SENSOR_MAX),
+        sensor: selSensorLabel(sensorText),
         sensor_type: sensorType,
         event: safeLabel(eventText, SEL_EVENT_MAX),
         direction: row.direction,
@@ -565,7 +649,7 @@ function parseIpmi(text: string): ParserResult {
     notes.push({ level: "warning", message: `${partialRows} line(s) looked like SEL rows but were cut off or incomplete, so they were skipped.` });
   }
 
-  const subjects = events.length + fans.length + psus.length + (selInfoUsable ? 1 : 0);
+  const subjects = events.length + fans.length + psus.length + (psuRedundancy ? 1 : 0) + (selInfoUsable ? 1 : 0);
   if (subjects === 0) {
     notes.push({ level: "warning", message: "No ipmitool SEL rows, sel info fields, fan rows or power supply rows were recognised." });
     return emptyResult(notes);
@@ -594,6 +678,7 @@ function parseIpmi(text: string): ParserResult {
   };
   if (selInfo?.percent_used != null) ipmi.sel_percent_used = selInfo.percent_used;
   if (selInfo?.overflow != null) ipmi.sel_overflow = selInfo.overflow;
+  if (psuRedundancy) ipmi.psu_redundancy_state = psuRedundancy;
   if (events.length > 0) {
     ipmi.sel_events_recent = kept;
     ipmi.ecc_errors_from_sel = eccFromSel(parsed);
@@ -633,23 +718,40 @@ function parseIpmi(text: string): ParserResult {
   if ((sdrUsed && !SDR_FORMAT) || (sensorUsed && !SENSOR_FORMAT)) {
     notes.push({ level: "info", message: "Fan or power supply rows were read from ipmitool sdr or sensor output." });
   }
+  if (psuPredictive > 0) {
+    notes.push({
+      level: "warning",
+      message: `${psuPredictive} power supply row(s) report Predictive Failure. No rule in this check fires on that state, so it is listed here rather than as a finding.`,
+    });
+  }
+  // Every PSU row printed only a hex state code: the rule would read the
+  // constant "ok" beside it as healthy, so it is not run on them.
+  const psuReadable = psuStateRows > 0 || psuRedundancy !== null;
+  if (psus.length > 0 && !psuReadable) {
+    notes.push({
+      level: "info",
+      message: "The power supply rows show only a hex state code, so their state could not be read and the power supply check did not run. ipmitool sdr elist prints the state as text.",
+    });
+  }
   const missing: string[] = [];
   if (events.length === 0) missing.push("SEL event rows (ipmitool sel elist)");
   if (!selInfoUsable) missing.push("SEL fullness (ipmitool sel info)");
   if (fans.length === 0) missing.push("fan rows (ipmitool sdr type Fan)");
-  if (psus.length === 0) missing.push("power supply rows (ipmitool sensor)");
+  if (psus.length === 0 && psuRedundancy === null) missing.push("power supply rows (ipmitool sensor)");
   if (missing.length > 0) {
     notes.push({ level: "info", message: `Not in this output, so not checked: ${missing.join("; ")}.` });
   }
 
   // Only the rules whose input is in this paste; the "Not in this output"
-  // note above names the rest. ipmi_sel_full also reads a "Log full" SEL row,
-  // so SEL rows alone feed it.
+  // note above names the rest. Without sel info, ipmi_sel_full can only fire
+  // on an asserted "Log full" row; SEL rows without one say nothing about how
+  // full the log is, so the rule is not reported as checked on them (R1-28).
   const rules_checked: string[] = [];
   if (events.length > 0) rules_checked.push("ecc_errors", "ipmi_sel_critical");
-  if (events.length > 0 || selInfoUsable) rules_checked.push("ipmi_sel_full");
+  const logFullRow = events.some((e) => e.direction === "Asserted" && isSelLogFullEventText(e.event));
+  if (selInfoUsable || logFullRow) rules_checked.push("ipmi_sel_full");
   if (fans.length > 0) rules_checked.push("ipmi_fan_failure");
-  if (psus.length > 0) rules_checked.push("psu_redundancy_loss");
+  if (psuReadable && (psus.length > 0 || psuRedundancy !== null)) rules_checked.push("psu_redundancy_loss");
 
   return { domain: "ipmi_sel", formats, snapshot: { ipmi }, subjects, notes, rules_checked };
 }

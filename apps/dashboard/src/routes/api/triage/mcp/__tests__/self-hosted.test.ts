@@ -9,13 +9,13 @@ vi.mock("$lib/server/auth/rate-limit.js", () => ({
 
 import { POST } from "../+server.js";
 
-function listTools(): Promise<Response> {
+async function listTools(): Promise<Response> {
   const request = new Request("https://app.glassmkr.com/api/triage/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   });
-  return POST({
+  return await POST({
     request,
     url: new URL(request.url),
     route: { id: "/api/triage/mcp" },

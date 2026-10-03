@@ -1,0 +1,4 @@
+root@node7:~# ipmitool sdr list
+PS1 Status       | 0x01              | ok
+PS2 Status       | 0x0b              | ok
+FAN1             | 5400 RPM          | ok

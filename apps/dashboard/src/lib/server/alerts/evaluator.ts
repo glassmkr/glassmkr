@@ -649,6 +649,21 @@ export interface ServerConfig {
  * The shape-normalisation belongs at Crucible (filed for PR B); this
  * helper is the receive-side tolerance.
  */
+/**
+ * SEL event text meaning the whole log stopped recording: "Log full",
+ * "Log area full", "All event logging disabled". The per-device offsets of
+ * the same Event Logging Disabled sensor ("Correctable memory error logging
+ * disabled", "Correctable machine check error logging disabled") only say
+ * that one DIMM or CPU hit its correctable-error logging limit; the SEL is
+ * still recording, so they are not a full log (review 2026-10-03: a DIMM
+ * that hit its limit was reported as "SEL full" next to `sel info` showing
+ * 0% used). Shared with the paste-triage SEL parser.
+ */
+export function isSelLogFullEventText(event: string): boolean {
+  if (/correctable (?:memory|machine check) error logging disabled/i.test(event)) return false;
+  return /log( area)? full|logging disabled/i.test(event);
+}
+
 function parseSelTimestamp(raw: string | undefined | null): number | null {
   if (!raw) return null;
   // Standard ISO first.
@@ -2969,7 +2984,7 @@ const rules: AlertRule[] = [
       // record emitted after clearing a SEL.
       const events = snap.ipmi.sel_events_recent ?? [];
       const logFullEvent = events.find(
-        (e) => /log( area)? full|logging disabled/i.test(e.event) && e.direction === "Asserted",
+        (e) => isSelLogFullEventText(e.event) && e.direction === "Asserted",
       );
 
       // (b) Near-full heuristic on the absolute entry count. BMC SEL capacity
