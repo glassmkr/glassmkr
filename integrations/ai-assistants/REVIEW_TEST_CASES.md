@@ -15,11 +15,11 @@ portal: to change one, edit both places and upload a new ZIP.
 `scripts/validate-openai-plugin.mjs` fails if a prompt in the manifest is not a
 verbatim code block in this file.
 
-**Status: every case is TO VERIFY in ChatGPT developer mode.** They were written
-from the spec and the rule code before the endpoint was deployed. The cases that
-paste output have also been run locally through the MCP route handler with the
-final parsers (noted per case); that checks the tool result, not the model's
-reply. Before zipping:
+**Status: production protocol and direct tool results verified 2026-10-04. ChatGPT and Claude account-only verification remains pending.** Direct calls checked the supported paste cases, capture/setup results, unsupported-input fallback, starter prompts and extra golden inputs. They do not verify model tool selection, argument choice or how an assistant presents a result. Full request/response evidence is retained with the dated shipping handoff.
+
+Production checks returned serverInfo `glassmkr-triage`, protocol `2025-11-25`, no session header and `Cache-Control: no-store`. The three tools advertise read-only, non-destructive, idempotent, closed-world behavior and `noauth`. The degraded-RAID call also returned HTTP 200 with `User-Agent: Python-urllib/3.11`. The AI-assistant docs, Markdown twin, site/app llms files and linked documentation returned HTTP 200, including the ChatGPT Work-tab instructions.
+
+Before submitting:
 
 1. Deploy, then run each prompt in ChatGPT developer mode (see
    `SUBMISSION_CHECKLIST.md`, step A3) and in the MCP Inspector
@@ -29,7 +29,7 @@ reply. Before zipping:
 3. If they differ, decide whether the code or the case is wrong. Fix the code if
    the case states the rule's real semantics; otherwise update the
    `expected_behavior` here AND in `plugin.json`, then rerun the validator.
-4. Change the status line of each case to "verified <date>".
+4. After account-only verification, change each ChatGPT status to "verified in ChatGPT <date>". Keep route-level and assistant results distinct.
 
 Reviewers reject a case when the actual output does not match, or when the
 reply carries "extraneous information that is irrelevant to the request"
@@ -44,7 +44,7 @@ All serials, hostnames and PIDs are fake.
 
 ### P1. Failing SATA drive, smartctl -a text
 
-Status: TO VERIFY in ChatGPT. Route-level check passed 2026-10-03 (local: a real Request through the MCP route handler, all six parsers, the evaluator and resolveFix; not yet in ChatGPT): one `smart_failing`, critical, /dev/sda, serial ZC1REVIEW1, reallocated_sectors 24, health PASSED.
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: one `smart_failing`, critical, /dev/sda, serial ZC1REVIEW1, reallocated_sectors 24, health PASSED; quick check instructs matching the drive serial before acting; fix steps name /dev/sda.
 
 | Field | Value |
 |---|---|
@@ -91,7 +91,7 @@ ID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_
 
 ### P2. Degraded mdadm RAID 1, /proc/mdstat
 
-Status: TO VERIFY in ChatGPT. Route-level check passed 2026-10-03 (local: a real Request through the MCP route handler, all six parsers, the evaluator and resolveFix; not yet in ChatGPT): one `raid_degraded`, critical, md0, `observed.failed_disks` sdb1.
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: one `raid_degraded`, critical, md0, `observed.failed_disks` sdb1; array commands and member placeholders match the case.
 
 | Field | Value |
 |---|---|
@@ -125,7 +125,7 @@ unused devices: <none>
 
 ### P3. NVIDIA Xid 79 in dmesg
 
-Status: TO VERIFY in ChatGPT. Route-level check passed 2026-10-03 (local: a real Request through the MCP route handler, all six parsers, the evaluator and resolveFix; not yet in ChatGPT): one `gpu_xid_critical`, critical, subject id 0000:3b:00, xid_code 79; the second line added no finding; the content text carries the "Times unknown" caveat.
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: one `gpu_xid_critical`, critical, PCI 0000:3b:00, xid_code 79; content carries the "Times unknown" caveat, with no invented timestamp.
 
 | Field | Value |
 |---|---|
@@ -157,7 +157,7 @@ Our training job died overnight. Is this a GPU hardware problem?
 
 ### P4. What to run for a ZFS pool (capture command)
 
-Status: TO VERIFY
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: `get_capture_command` with zfs/ubuntu returned `sudo zpool status -v`, read-only capture and paste-back instructions.
 
 | Field | Value |
 |---|---|
@@ -182,7 +182,7 @@ I think a disk in my ZFS pool is dying. What should I run on the server so you c
 
 ### P5. Continuous monitoring setup
 
-Status: TO VERIFY
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: both hosted/debian and self_hosted/debian returned hidden key entry, installation, enrollment, verification commands and reachable documentation. This probes setup instructions, not a self-hosted dashboard deployment.
 
 | Field | Value |
 |---|---|
@@ -216,7 +216,7 @@ How can I watch for disk and RAID failures continuously on my Debian servers ins
 
 ### N1. Unrelated creative request
 
-Status: TO VERIFY
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: forced `analyze_server_output` on this prompt returned no supported format, subjects, findings or checked rules and six capture goals. The expected no-tool-call model behavior remains unverified.
 
 | Field | Value |
 |---|---|
@@ -232,7 +232,7 @@ Write me a short poem about autumn.
 
 ### N2. Unrelated factual request
 
-Status: TO VERIFY
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: forced `analyze_server_output` on this prompt returned no supported format, subjects, findings or checked rules and six capture goals. The expected no-tool-call model behavior remains unverified.
 
 | Field | Value |
 |---|---|
@@ -248,7 +248,7 @@ What will the weather be in Prague tomorrow?
 
 ### N3. Unsupported platform: Windows Event Viewer
 
-Status: TO VERIFY in ChatGPT. Route-level check passed 2026-10-03 (local: a real Request through the MCP route handler, all six parsers, the evaluator and resolveFix; not yet in ChatGPT): formats [], findings [], checked_no_signal [], not an error, next_capture lists six capture goals.
+Status: TO VERIFY in ChatGPT developer mode. Route-level result verified on production 2026-10-04: formats [], subjects 0, findings [], checked_no_signal [], no tool error and six next_capture goals.
 
 | Field | Value |
 |---|---|
@@ -283,9 +283,9 @@ submitting.
 
 | # | Prompt | Expected tool | Status |
 |---|---|---|---|
-| S1 | `[90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus. Is this GPU failing?` | `analyze_server_output`: one `gpu_xid_critical` (critical), times unknown | TO VERIFY in ChatGPT. Checked 2026-10-04 in plugin-drift.test.ts: the line is read as `dmesg` and yields one critical `gpu_xid_critical`, times unknown. The log line has to come first: with the question in front of it on the same line, nothing is recognised. |
-| S2 | `Which commands should I run so you can check every disk in my Linux server for SMART errors?` | `get_capture_command` with `goal: all_disks` | TO VERIFY |
-| S3 | `How do I monitor SMART, RAID, ZFS and GPU errors on my Linux servers continuously?` | `get_monitoring_setup` | TO VERIFY |
+| S1 | `[90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus. Is this GPU failing?` | `analyze_server_output`: one `gpu_xid_critical` (critical), times unknown | TO VERIFY in ChatGPT. Direct tool result verified on production 2026-10-04: one critical gpu_xid_critical, times unknown. The log line has to come first: with the question in front of it on the same line, nothing is recognised. |
+| S2 | `Which commands should I run so you can check every disk in my Linux server for SMART errors?` | `get_capture_command` with `goal: all_disks` | TO VERIFY in ChatGPT. Direct call with all_disks/debian verified on production 2026-10-04; exact SMART loop and install hint. |
+| S3 | `How do I monitor SMART, RAID, ZFS and GPU errors on my Linux servers continuously?` | `get_monitoring_setup` | TO VERIFY in ChatGPT. Direct call with hosted/unspecified distro verified on production 2026-10-04; hidden key prompt, installation, verification and docs. |
 
 ---
 
@@ -296,7 +296,7 @@ direct, indirect and negative prompts; aim for precision on negatives first).
 Not part of the review package.
 
 **G1. Degraded ZFS mirror** (expected: `zfs_pool_unhealthy`, critical, because a
-two-way mirror has no remaining redundancy. Route-level check 2026-10-03:
+two-way mirror has no remaining redundancy. Route-level result verified on production 2026-10-04:
 `zfs_pool_unhealthy`, critical, pool tank, `observed.vdev_name` mirror-0,
 `vdev_redundancy_class` mirror_2way.)
 
@@ -324,7 +324,7 @@ errors: No known data errors
 `ipmi_sel_critical` for `Memory #0x02` Uncorrectable ECC; the Power Supply
 assert that deasserted one second later is treated as a transient by the
 assert/deassert pairing and not reported by that rule; `ecc_errors` may also fire
-from the SEL ECC counts. Route-level check 2026-10-03: read as `ipmitool_sel_list`;
+from the SEL ECC counts. Route-level result verified on production 2026-10-04: read as `ipmitool_sel_list`;
 `ipmi_sel_critical` (affected component Memory #0x02, 1 transient pair excluded)
 and `ecc_errors` (1 uncorrectable), both critical; the Power Supply pair did not
 count.)
@@ -340,6 +340,10 @@ count.)
 `formats: []`, `findings: []`, not an error, and `next_capture` lists the
 commands to run. The reply must not say the disks are fine.)
 
+Direct tool result verified on production 2026-10-04: no supported format,
+subjects, findings or checked rules, with six capture goals. ChatGPT reply
+verification remains pending.
+
 ```
 NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
 sda      8:0    0   3.6T  0 disk
@@ -350,6 +354,8 @@ sdb      8:16   0   3.6T  0 disk
 the fix steps from an earlier finding but must not say it ran them; Glassmkr
 tools are read-only.)
 
+Direct fallback probe verified on production 2026-10-04: no supported format, subjects, findings or checked rules, with six capture goals. Verification of assistant execution claims in ChatGPT remains pending.
+
 ```
 Replace the failed disk in md0 for me: remove sdb1 and add the new drive.
 ```
@@ -357,6 +363,8 @@ Replace the failed disk in md0 for me: remove sdb1 and add the new drive.
 **G5. Concept question** (either outcome is acceptable: the model may answer
 from its own knowledge without a tool. Use it to check the tool does not fire
 on every SMART mention.)
+
+Direct fallback probe verified on production 2026-10-04: no supported format, subjects, findings or checked rules, with six capture goals. Model tool selection in ChatGPT remains pending.
 
 ```
 What does Reallocated_Sector_Ct mean in smartctl output?
