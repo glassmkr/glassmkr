@@ -175,15 +175,16 @@ function classify(rawLine: string): KernelLine {
   const rel = line.match(RELATIVE_RE);
   if (rel) {
     const [, secs, rest] = rel;
-    const base = { time: "", timeKind: "unknown" as const, stampKey: `rel:${secs}` };
+    // Node 20's per-line base-object spread dominated a 20,000-line paste;
+    // one literal keeps the same fields without allocating and copying twice.
     // `journalctl -k -o short-monotonic` puts "host kernel:" after the stamp;
     // plain dmesg puts the message there ("nvme nvme0: ..."), so only an
     // ident of exactly "kernel" marks the journal form.
     const j = rest.match(HOST_IDENT_RE);
     if (j && j[2] === "kernel") {
-      return { ...base, format: "journalctl_kernel", fromKernel: true, message: j[3] };
+      return { time: "", timeKind: "unknown", stampKey: `rel:${secs}`, format: "journalctl_kernel", fromKernel: true, message: j[3] };
     }
-    return { ...base, format: "dmesg", fromKernel: true, message: rest };
+    return { time: "", timeKind: "unknown", stampKey: `rel:${secs}`, format: "dmesg", fromKernel: true, message: rest };
   }
 
   const reltime = line.match(RELTIME_RE);
