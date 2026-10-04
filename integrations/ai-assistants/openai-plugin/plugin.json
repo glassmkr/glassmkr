@@ -1,0 +1,134 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "glassmkr",
+  "version": "1.0.0",
+  "description": "Checks pasted Linux server hardware output (smartctl, zpool status, /proc/mdstat, mdadm --detail, dmesg, journalctl -k, ipmitool sel, nvidia-smi -q, nvidia-smi nvlink --status) against Glassmkr's open-source alert rules and returns findings, fix steps, and the commands to capture more.",
+  "author": {
+    "name": "Simon Rybisar",
+    "email": "hello@glassmkr.com",
+    "url": "https://glassmkr.com"
+  },
+  "homepage": "https://glassmkr.com",
+  "repository": "https://github.com/glassmkr/glassmkr",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "smartctl",
+    "SMART",
+    "NVMe",
+    "hard drive",
+    "SSD",
+    "disk failure",
+    "drive failure",
+    "zpool",
+    "ZFS",
+    "mdadm",
+    "mdstat",
+    "RAID",
+    "software RAID",
+    "dmesg",
+    "journalctl",
+    "kernel log",
+    "ipmitool",
+    "IPMI",
+    "SEL",
+    "BMC",
+    "nvidia-smi",
+    "Xid",
+    "NVLink",
+    "GPU",
+    "bare metal",
+    "server hardware",
+    "hardware failure",
+    "Linux server",
+    "homelab",
+    "sysadmin"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Glassmkr",
+        "shortDescription": "Server hardware fault triage",
+        "longDescription": "Glassmkr reads Linux server hardware output that you paste into the conversation and checks it against Glassmkr's open-source alert rules, the same rule code that runs in the Glassmkr monitoring dashboard. Each matched rule comes back with its severity, the device or array it matched (by serial number when the output includes one), the values that triggered it, and the rule's fix steps.\n\nSupported output:\n- smartctl -a, -x and -H -A, and smartctl --json, for SATA, SAS and NVMe drives\n- zpool status, including -v and -x\n- /proc/mdstat and mdadm --detail\n- dmesg, journalctl -k, and kernel lines from syslog or kern.log: SCSI sense errors, NVMe controller resets, ext4 read-only remounts, NVIDIA Xid events\n- ipmitool sel elist, sel list and sel info\n- nvidia-smi -q and nvidia-smi nvlink --status\n\nEvery result also lists the rules that ran and found no matching signal in this output, the signals one paste cannot determine (such as trends that need history, or event times when a log uses boot-relative timestamps), and the exact command to run next. When nothing in the paste is recognized, Glassmkr says so and suggests a command whose output it can read.\n\nTwo more tools return the capture commands for a goal (all disks, one disk, NVMe, mdadm RAID, ZFS, kernel errors, GPUs, NVLink, BMC event log) and the steps to run the open-source Crucible agent so the same rules check a server continuously.\n\nBuilt for people who run Linux servers, bare-metal hosts, GPU nodes and homelabs and want a rule-based answer to \"is this hardware failing?\"\n\nLimitations: Glassmkr only reads the text passed to it. It does not connect to your servers, run commands, or change anything. A finding describes what the pasted output shows; it is not a prediction of when a part will fail, and a rule with no match means no matching signal in this output, not that the hardware is healthy. Windows event logs and hardware RAID controller utilities are not supported. Pasted text is not stored.",
+        "developerName": "Simon Rybisar",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Analyze pasted smartctl, ZFS, mdadm, kernel log, IPMI SEL and nvidia-smi -q output",
+          "Return capture commands for disks, RAID, ZFS, GPUs and the BMC event log",
+          "Explain how to set up continuous monitoring with the Crucible agent"
+        ],
+        "websiteURL": "https://glassmkr.com",
+        "supportURL": "https://glassmkr.com/docs/ai-assistants",
+        "privacyPolicyURL": "https://glassmkr.com/privacy",
+        "termsOfServiceURL": "https://glassmkr.com/terms",
+        "defaultPrompt": [
+          "[90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus. Is this GPU failing?",
+          "Which commands should I run so you can check every disk in my Linux server for SMART errors?",
+          "How do I monitor SMART, RAID, ZFS and GPU errors on my Linux servers continuously?"
+        ],
+        "brandColor": "#FF6B35",
+        "brandColorDark": "#FF6B35",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Failing SATA drive in smartctl -a text output: the overall health line says PASSED but the reallocated sector count is non-zero.",
+              "prompt": "Is this drive failing?\n\nroot@web-01:~# smartctl -a /dev/sda\nsmartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.8.0-45-generic] (local build)\n=== START OF INFORMATION SECTION ===\nDevice Model:     ST4000NM0035-1V4107\nSerial Number:    ZC1REVIEW1\nFirmware Version: TN04\nUser Capacity:    4,000,787,030,016 bytes [4.00 TB]\n\n=== START OF READ SMART DATA SECTION ===\nSMART overall-health self-assessment test result: PASSED\n\nSMART Attributes Data Structure revision number: 10\nVendor Specific SMART Attributes with Thresholds:\nID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_FAILED RAW_VALUE\n  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       24\n  9 Power_On_Hours          0x0032   053   053   000    Old_age   Always       -       41234\n194 Temperature_Celsius     0x0022   038   045   000    Old_age   Always       -       38\n197 Current_Pending_Sector  0x0012   100   100   000    Old_age   Always       -       8\n198 Offline_Uncorrectable   0x0010   100   100   000    Old_age   Offline      -       8",
+              "tools_triggered": "analyze_server_output",
+              "expected_behavior": "Calls analyze_server_output with the pasted text. Reports one critical smart_failing finding for /dev/sda, serial ZC1REVIEW1, triggered by 24 reallocated sectors, and explains that the reallocated count fired the rule even though the health line says PASSED. Includes the rule's quick check, which says to match the drive's serial before acting, and its fix steps (prerequisites, a read-only check of /dev/sda, then remediation). Does not predict when the drive will fail."
+            },
+            {
+              "description": "Degraded mdadm RAID 1 array in /proc/mdstat: one member is marked (F) and the status shows [U_].",
+              "prompt": "Is my RAID OK? This is /proc/mdstat from the server:\n\nPersonalities : [raid1] [linear] [multipath] [raid0] [raid6] [raid5] [raid4] [raid10]\nmd0 : active raid1 sdb1[1](F) sda1[0]\n      976630336 blocks super 1.2 [2/1] [U_]\n      bitmap: 2/8 pages [8KB], 65536KB chunk\n\nunused devices: <none>",
+              "tools_triggered": "analyze_server_output",
+              "expected_behavior": "Calls analyze_server_output. Reports one critical raid_degraded finding for md0 (raid1) that names sdb1 as the failed member, with fix steps that check that member's SMART health and kernel log before choosing between re-adding and replacing it. Does not describe the array as OK."
+            },
+            {
+              "description": "NVIDIA Xid 79 in dmesg output with boot-relative timestamps.",
+              "prompt": "Our training job died overnight. Is this a GPU hardware problem?\n\n[90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus.\n[90211.554402] NVRM: GPU 0000:3b:00.0: GPU has fallen off the bus.",
+              "tools_triggered": "analyze_server_output",
+              "expected_behavior": "Calls analyze_server_output. Reports a critical gpu_xid_critical finding for the GPU at PCI 0000:3b:00 with Xid 79 (GPU fell off the bus) and fix steps. States that the event time is unknown because the log uses boot-relative timestamps. Does not state a root cause the log does not show."
+            },
+            {
+              "description": "The user has no output yet and asks what to run for a ZFS pool on Ubuntu.",
+              "prompt": "I think a disk in my ZFS pool is dying. What should I run on the server so you can check it? It runs Ubuntu 24.04.",
+              "tools_triggered": "get_capture_command",
+              "expected_behavior": "Calls get_capture_command with goal zfs and distro ubuntu (it may also request all_disks). Returns the exact commands to run, including sudo zpool status -v (and a smartctl loop over the disks if all_disks was requested), and asks the user to paste the output back. Does not ask for credentials and does not claim to have run anything."
+            },
+            {
+              "description": "The user asks how to watch these signals continuously instead of pasting output.",
+              "prompt": "How can I watch for disk and RAID failures continuously on my Debian servers instead of pasting output each time?",
+              "tools_triggered": "get_monitoring_setup",
+              "expected_behavior": "Calls get_monitoring_setup with distro debian. Returns the prerequisites (including smartmontools and ipmitool), the Crucible agent install command, an enrollment step that reads the collector key on the server at a hidden prompt, commands to verify the agent is running and reporting, and a link to the Glassmkr getting-started documentation. Never asks the user to paste an API key into the conversation."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unrelated creative writing request. Glassmkr only analyzes server hardware output, so no Glassmkr tool should run and the assistant answers on its own.",
+              "prompt": "Write me a short poem about autumn.",
+              "expected_behavior": "No Glassmkr tool is called."
+            },
+            {
+              "description": "Unrelated weather question. Glassmkr has no weather data, so no Glassmkr tool should run.",
+              "prompt": "What will the weather be in Prague tomorrow?",
+              "expected_behavior": "No Glassmkr tool is called."
+            },
+            {
+              "description": "Windows Event Viewer output is outside Glassmkr's supported formats (Linux command output only), so Glassmkr must not give a hardware verdict on it.",
+              "prompt": "Is this disk failing? This is from the Windows Event Viewer System log:\n\nLog Name:      System\nSource:        disk\nEvent ID:      7\nLevel:         Error\nDescription:   The device, \\Device\\Harddisk1\\DR1, has a bad block.",
+              "expected_behavior": "Preferably no Glassmkr tool is called and the assistant answers on its own. If analyze_server_output is called, it recognizes no supported format, returns no findings and no verdict, and suggests Linux capture commands instead. The reply must not describe the disk as healthy."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "This plugin does not sell products or process payments."
+      },
+      "publication": {
+        "countries": [],
+        "release_notes": "Initial release: analyze pasted smartctl, zpool status, /proc/mdstat and mdadm --detail, kernel log, ipmitool SEL and nvidia-smi -q output with Glassmkr's alert rules; capture commands for each goal; monitoring setup steps for the Crucible agent."
+      }
+    }
+  }
+}

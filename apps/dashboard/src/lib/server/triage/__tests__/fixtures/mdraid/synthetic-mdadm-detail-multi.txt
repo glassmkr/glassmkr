@@ -1,0 +1,53 @@
+root@db-07.example.test:~# mdadm --detail /dev/md0
+/dev/md0:
+           Version : 1.2
+        Raid Level : raid1
+        Array Size : 1046528 (1022.00 MiB 1071.64 MB)
+      Raid Devices : 2
+     Total Devices : 2
+       Persistence : Superblock is persistent
+
+             State : clean
+    Active Devices : 2
+   Working Devices : 2
+    Failed Devices : 0
+     Spare Devices : 0
+
+Consistency Policy : resync
+
+              Name : db-07.example.test:0  (local to host db-07.example.test)
+              UUID : 11111111:22222222:33333333:44444444
+            Events : 77
+
+    Number   Major   Minor   RaidDevice State
+       0     259        1        0      active sync   /dev/nvme0n1p1
+       1     259        5        1      active sync   /dev/nvme1n1p1
+root@db-07.example.test:~# mdadm --detail /dev/md1
+/dev/md1:
+           Version : 1.2
+        Raid Level : raid1
+        Array Size : 467898368 (446.22 GiB 479.13 GB)
+      Raid Devices : 2
+     Total Devices : 2
+       Persistence : Superblock is persistent
+
+     Intent Bitmap : Internal
+
+             State : active, degraded
+    Active Devices : 1
+   Working Devices : 1
+    Failed Devices : 1
+     Spare Devices : 0
+
+Consistency Policy : bitmap
+
+              Name : db-07.example.test:1  (local to host db-07.example.test)
+              UUID : 55555555:66666666:77777777:88888888
+            Events : 1203344
+
+    Number   Major   Minor   RaidDevice State
+       -       0        0        0      removed
+       1     259        6        1      active sync   /dev/nvme1n1p2
+
+       0     259        2        -      faulty   /dev/nvme0n1p2
+root@db-07.example.test:~#

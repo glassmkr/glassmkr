@@ -99,6 +99,21 @@ is no known reason it would not work behind your own TLS, but nobody has run it
 end to end on a self-hosted hostname yet. If you try it, the maintainer would
 genuinely like to hear how it went.
 
+The anonymous paste-triage endpoint (`/api/triage/mcp`, which ChatGPT and
+Claude users add by URL) is off on a self-hosted dashboard. It needs
+no account, so turning it on exposes an unauthenticated endpoint; set
+`MCP_TRIAGE_ENABLED=1` only if you want that. It reuses the same
+`MCP_PUBLIC_ORIGIN` host check. Its rate limits live in Redis: the stock
+compose stack runs without Redis (`REDIS_DISABLED=1`), and then every request
+is let through unthrottled. Point `REDIS_URL` at a Redis and set
+`REDIS_DISABLED=0` before you enable the endpoint on an internet-facing
+instance.
+
+The compose file passes `MCP_TRIAGE_ENABLED` and `MCP_PUBLIC_ORIGIN` from
+`.env` to the dashboard container. The other `MCP_*` settings above are not in
+its environment list yet: add them to the `dashboard` service's `environment:`
+in a `docker-compose.override.yml`.
+
 ### Closing registration
 
 A fresh instance accepts signups, because the first thing you do is register

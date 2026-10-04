@@ -1,0 +1,29 @@
+Personalities : [raid1] [raid6] [raid5] [raid4] [raid10]
+md127 : inactive sdk[1](S) sdj[0](S)
+      10402 blocks super external:imsm
+
+md126 : active raid1 sdj[1] sdk[0]
+      976759808 blocks super external:/md127/0 [2/2] [UU]
+
+md5 : active raid1 sdi1[2](S) sdh1[1] sdg1[0]
+      976630336 blocks super 1.2 [2/2] [UU]
+
+md4 : active raid1 nvme1n1p3[1](W)(F) nvme0n1p3[0]
+      937560064 blocks super 1.2 [2/1] [U_]
+      bitmap: 4/7 pages [16KB], 65536KB chunk
+
+md3 : active raid10 sdf2[3] sde2[2] sdd2[1] sdc2[0]
+      1953260544 blocks super 1.2 512K chunks 2 near-copies [4/4] [UUUU]
+      [=======>.............]  check = 37.5% (732472832/1953260544) finish=98.3min speed=206966K/sec
+
+md2 : inactive sdm1[1](S) sdl1[0](S)
+      3906764800 blocks super 1.2
+
+md1 : active raid6 sde1[4](F) sdd1[3] sdc1[2] sdb1[1]
+      5860147200 blocks super 1.2 level 6, 512k chunk, algorithm 2 [5/3] [_UUU_]
+      bitmap: 6/15 pages [24KB], 65536KB chunk
+
+md0 : active (auto-read-only) raid1 sdb2[1] sda2[0]
+      523200 blocks super 1.2 [2/2] [UU]
+
+unused devices: <none>

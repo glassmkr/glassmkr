@@ -1,0 +1,4 @@
+$ nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv
+index, name, memory.used [MiB], memory.total [MiB]
+0, NVIDIA A100-SXM4-80GB, 0 MiB, 81920 MiB
+1, NVIDIA A100-SXM4-80GB, 0 MiB, 81920 MiB

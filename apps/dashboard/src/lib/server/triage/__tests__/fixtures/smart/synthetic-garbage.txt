@@ -1,0 +1,15 @@
+Hi, my server is slow since yesterday, can you check if the disks are OK?
+{"foo": 1, "bar": [1, 2, 3]}
+[ 1234.567890] random text in brackets
+{ this is not json at all
+  "model_name": maybe
+[[[[[[[[[[{{{{{{{{{{
+}}}}]]]]
+ID# but not an attribute table
+  5 Reallocated something without the right columns
+SMART is a word that appears here, and so does PASSED.
+/dev/sda
+root@ but no host
+-----BEGIN CERTIFICATE-----
+MIIBszCCAVmgAwIBAgIUJ8c3sTAkZ1uYfq0x0nYQ0P1N2kUwCgYIKoZIzj0EAwIw
+-----END CERTIFICATE-----

@@ -1,0 +1,18 @@
+   1 | 01/05/2026 | 08:00:01 | Event Logging Disabled #0x07 | Log area reset/cleared | Asserted
+   2 | 08/14/2026 | 13:22:41 | Memory #0x02 | Correctable ECC (@DIMMA1(CPU1)) | Asserted
+   3 | 08/14/2026 | 13:22:42 | Memory #0x02 | Correctable ECC (@DIMMA1(CPU1)) | Asserted
+   4 | 08/14/2026 | 13:22:43 | Event Logging Disabled #0x07 | Correctable memory error logging disabled | Asserted
+SEL Information
+Version          : 1.5 (v1.5, v2 compliant)
+Entries          : 4
+Free Space       : 10176 bytes
+Percent Used     : 0%
+Last Add Time    : 08/14/2026 13:22:43
+Last Del Time    : 01/05/2026 08:00:01
+Overflow         : false
+Supported Cmds   : 'Reserve' 'Get Alloc Info'
+# of Alloc Units : 512
+Alloc Unit Size  : 20
+# Free Units     : 508
+Largest Free Blk : 508
+Max Record Size  : 20

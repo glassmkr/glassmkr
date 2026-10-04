@@ -1,0 +1,20 @@
+[    4.812230] scsi 7:0:1:0: Direct-Access     DGC      VRAID            5100 PQ: 0 ANSI: 6
+[    4.812455] scsi 7:0:1:0: alua: supports implicit TPGS
+[    4.812461] scsi 7:0:1:0: alua: device naa.600601601a6046001d2b5f6a7c2be911 port group 2 rel port 6
+[    4.813001] sd 7:0:1:0: [sdq] 2147483648 512-byte logical blocks: (1.10 TB/1.00 TiB)
+[    4.813210] sd 7:0:1:0: [sdq] Write Protect is off
+[    4.813502] sd 7:0:1:0: [sdq] Write cache: disabled, read cache: enabled, supports DPO and FUA
+[    4.814100] sd 7:0:1:0: alua: port group 02 state S non-preferred supports tolUsNA
+[    4.821000] sd 7:0:1:0: [sdq] tag#12 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=0s
+[    4.821003] sd 7:0:1:0: [sdq] tag#12 Sense Key : Not Ready [current]
+[    4.821006] sd 7:0:1:0: [sdq] tag#12 Add. Sense: Logical unit not accessible, target port in standby state
+[    4.821009] sd 7:0:1:0: [sdq] tag#12 CDB: Read(10) 28 00 00 00 00 00 00 00 08 00
+[    4.821012] blk_update_request: I/O error, dev sdq, sector 0 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0
+[    4.821020] Buffer I/O error on dev sdq, logical block 0, async page read
+[    4.822000] sd 7:0:1:0: [sdq] tag#13 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=0s
+[    4.822003] sd 7:0:1:0: [sdq] tag#13 Sense Key : Not Ready [current]
+[    4.822006] sd 7:0:1:0: [sdq] tag#13 Add. Sense: Logical unit not accessible, target port in standby state
+[    4.822009] sd 7:0:1:0: [sdq] tag#13 CDB: Read(10) 28 00 00 00 00 00 00 00 08 00
+[    4.822012] blk_update_request: I/O error, dev sdq, sector 0 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0
+[    4.822020] Buffer I/O error on dev sdq, logical block 0, async page read
+[    4.830000] sd 7:0:1:0: [sdq] Attached SCSI disk

@@ -1,0 +1,7 @@
+root@web-05.example.invalid:~# smartctl -a /dev/sda
+-bash: smartctl: command not found
+root@web-05.example.invalid:~# for d in /dev/sdb /dev/nvme0n1; do sudo smartctl -H $d; done
+sudo: smartctl: command not found
+sudo: smartctl: command not found
+root@web-05.example.invalid:~# smartctl -H /dev/sd?
+-bash: smartctl: command not found

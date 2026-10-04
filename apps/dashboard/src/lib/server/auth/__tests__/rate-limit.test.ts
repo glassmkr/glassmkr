@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  charge,
   take,
   resetRateLimitScriptCacheForTests,
   TIER_PER_IP,
@@ -38,7 +39,26 @@ class FakeRedis {
   async evalsha(sha: string, _numkeys: number, key: string, ...args: string[]): Promise<unknown> {
     if (this.shouldFail) throw this.shouldFail;
     if (!this.scripts.has(sha)) throw new Error("NOSCRIPT");
+    if (this.scripts.get(sha)!.includes("local cost")) {
+      return this.runChargeScript(key, Number(args[0]), Number(args[1]), Number(args[2]), Number(args[3]));
+    }
     return this.runTakeScript(key, Number(args[0]), Number(args[1]), Number(args[2]));
+  }
+
+  /** Re-implements the charge Lua script: an unconditional debit that may go below zero. */
+  private runChargeScript(key: string, capacity: number, refill: number, now: number, cost: number): number {
+    const state = this.hashes.get(key);
+    let tokens = state ? Number(state.get("tokens")) : NaN;
+    let ts = state ? Number(state.get("ts")) : NaN;
+    if (Number.isNaN(tokens)) {
+      tokens = capacity;
+      ts = now;
+    }
+    const elapsedS = (now - ts) / 1000;
+    if (elapsedS > 0) tokens = Math.min(capacity, tokens + elapsedS * refill);
+    tokens -= cost;
+    this.hashes.set(key, new Map([["tokens", String(tokens)], ["ts", String(now)]]));
+    return Number(tokens.toFixed(4));
   }
 
   /** Re-implements the take Lua script in JS so behaviour is verifiable. */
@@ -163,6 +183,45 @@ describe("take: degraded-open on Redis failure", () => {
     const r = await take(cfg, "x");
     expect(r.degraded).toBe(true);
     expect(r.allowed).toBe(true);
+  });
+});
+
+// The triage endpoint learns a call's cost only after it runs, and charges it
+// then (R6-2); a bucket that could not go below zero let an expensive call
+// pay one token whatever it cost.
+describe("charge: after-the-fact debit", () => {
+  it("takes the bucket below zero, and take() refuses until the refill covers the debt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const cfg: RateLimitConfig = { namespace: "charge", capacity: 10, refillPerSecond: 10 };
+    expect((await take(cfg, "x")).allowed).toBe(true); // 9 left
+    await charge(cfg, "x", 19); // -10
+    const blocked = await take(cfg, "x");
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.remaining).toBe(0);
+    expect(blocked.retryAfterSeconds).toBe(2); // 11 tokens at 10/s
+    vi.setSystemTime(1_000); // 0 tokens
+    expect((await take(cfg, "x")).allowed).toBe(false);
+    vi.setSystemTime(2_100); // 1 token
+    expect((await take(cfg, "x")).allowed).toBe(true);
+  });
+
+  it("is a no-op for zero or negative tokens", async () => {
+    const cfg: RateLimitConfig = { namespace: "charge0", capacity: 1, refillPerSecond: 0.001 };
+    await charge(cfg, "x", 0);
+    await charge(cfg, "x", -3);
+    await charge(cfg, "x", Number.NaN);
+    expect(fake.scripts.size).toBe(0);
+    expect((await take(cfg, "x")).allowed).toBe(true);
+  });
+
+  it("never throws: skipped on a Redis error and without Redis", async () => {
+    const cfg: RateLimitConfig = { namespace: "chargedown", capacity: 1, refillPerSecond: 1 };
+    fake.shouldFail = new Error("Connection refused");
+    await expect(charge(cfg, "x", 5)).resolves.toBeUndefined();
+    fake.shouldFail = null;
+    setRedisForTests(null);
+    await expect(charge(cfg, "x", 5)).resolves.toBeUndefined();
   });
 });
 

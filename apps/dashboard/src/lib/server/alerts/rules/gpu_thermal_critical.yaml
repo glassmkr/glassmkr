@@ -6,8 +6,11 @@
 # model-correct slowdown temp) OR GPU die temp >= 92C. It does NOT fire on
 # sw_thermal_slowdown / thermal_slowdown_active alone: that is the driver
 # holding the card at its thermal *target* under load (normal, not a fault;
-# round-5 A6000 false alarm at 84C). boot_grace_seconds=300 absorbs the
-# post-boot warm-up window where thermal sensors stabilise.
+# round-5 A6000 false alarm at 84C). Nor on an hw_slowdown that an active
+# hw_power_brake explains: HW Slowdown is NVML's umbrella reason, and a power
+# brake under it is a power event (gpu_power_cap_throttling).
+# boot_grace_seconds=300 absorbs the post-boot warm-up window where thermal
+# sensors stabilise.
 #
 # Data-center GPUs hit HW slowdown at model-specific temps: L4 ~87C, A100/
 # H100 ~92C, A6000 95C. hw_thermal_slowdown is the model-correct signal; the

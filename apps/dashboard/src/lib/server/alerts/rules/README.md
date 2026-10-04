@@ -27,8 +27,11 @@ undoes what the fix did; it does not return the machine to a state you imagined.
 `smart_failing` and `nvme_wear_high` hardcoded `/dev/md126`. It is a name
 firmware-RAID hosts commonly DO have for an unrelated array, so someone
 uncommenting the line could fail a disk out of the wrong one. Derive the array
-from the device (`lsblk -no PKNAME,TYPE`), and do not assume the RAID member is
-the whole disk either: on many hosts it is a partition.
+from the device, and do not assume the RAID member is the whole disk either: on
+many hosts it is a partition. Read both from the raid row of `lsblk -lno
+NAME,PKNAME,TYPE`: its NAME is the array and its PKNAME the member. A raid
+row's PKNAME is its parent in the device tree, so reading the array from it
+named the member partition instead (review round 6).
 
 **Never assume a check that ran is a check that answered. Refuse on empty
 input.** A validation must prove the condition cleared; if the values it needs

@@ -75,6 +75,16 @@
       <p class="docs-subtitle">Behavior changes, operational improvements, and notable fixes for Glassmkr and the Crucible agent. Most recent at top.</p>
     </header>
 
+    <section class="release" id="2026-10-04">
+      <h2><a href="#2026-10-04" class="anchor-link">#</a>2026-10-04</h2>
+
+      <h3>Paste triage for AI assistants</h3>
+      <p>A new anonymous MCP endpoint, <code>https://app.glassmkr.com/api/triage/mcp</code>, runs Glassmkr's alert rules on command output pasted into an AI assistant: <code>smartctl</code>, <code>zpool status</code>, <code>/proc/mdstat</code> and <code>mdadm --detail</code>, <code>dmesg</code> or <code>journalctl -k</code>, <code>ipmitool</code> SEL and SDR output, and <code>nvidia-smi -q</code> with <code>nvidia-smi nvlink --status</code>. It needs no account and nothing installed on your servers. Each result lists the findings with their fix workflows, the rules that ran without a match, what one paste cannot determine, and the command to capture next. The pasted text is processed in memory and not stored. Setup for each assistant: <a href="/docs/ai-assistants">AI assistants</a>. On a self-hosted dashboard the endpoint is off unless <code>MCP_TRIAGE_ENABLED=1</code> is set. No agent upgrade is needed.</p>
+
+      <h3>Dashboard: alert quality</h3>
+      <p>Two rules no longer fire on conditions that are not what they name. <code>ipmi_sel_full</code> no longer treats a "Correctable memory error logging disabled" or "Correctable machine check error logging disabled" event as a full event log: those mean one DIMM or CPU reached its correctable-error logging limit while the log is still recording. <code>gpu_thermal_critical</code> no longer counts an HW Slowdown as thermal when an active HW Power Brake explains it: that is a power event, which <code>gpu_power_cap_throttling</code> reports. An HW Slowdown with no power brake still counts as thermal, and a GPU at 92 C or above still fires.</p>
+    </section>
+
     <section class="release" id="2026-09-16">
       <h2><a href="#2026-09-16" class="anchor-link">#</a>2026-09-16</h2>
 

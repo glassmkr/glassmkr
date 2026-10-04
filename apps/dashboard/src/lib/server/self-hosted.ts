@@ -17,6 +17,8 @@
 //      Hosted retains them only to serve residual legacy subscriptions.
 //   3. AI analysis needs a configured LLM_API_URL rather than the hosted
 //      default endpoint.
+//   4. The anonymous paste-triage MCP endpoint (/api/triage/mcp) is off
+//      unless MCP_TRIAGE_ENABLED=1, because it needs no account.
 //
 // WHAT IT DOES NOT DO: it does not disable auth, rate limits, audit logging, or
 // scope checks. Self-hosted is ungated, not unguarded.

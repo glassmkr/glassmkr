@@ -1,0 +1,6 @@
+root@proliant-dl380:~# ipmitool sdr type Fan
+Fan 1            | 0Ch | ok  | 29.1 | 35.28 percent
+Fan 2            | 0Dh | ok  | 29.2 | 35.28 percent
+Fan 3            | 0Eh | ok  | 29.3 | 34.12 percent
+Fan 4            | 0Fh | ok  | 29.4 | 35.28 percent
+Fans             | 12h | ok  | 30.1 | Fully Redundant

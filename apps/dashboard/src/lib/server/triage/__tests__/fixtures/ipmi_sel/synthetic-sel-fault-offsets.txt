@@ -1,0 +1,6 @@
+root@node-f9:~# ipmitool sel list
+   1 | 10/01/2026 | 02:00:00 | Event Logging Disabled #0x07 | Log area reset/cleared | Asserted
+   2 | 10/02/2026 | 11:20:01 | Drive Slot / Bay #0x52 | Drive Fault | Asserted
+   3 | 10/02/2026 | 11:25:33 | Critical Interrupt #0x17 | Bus Fatal Error | Asserted
+   4 | 10/02/2026 | 11:25:34 | Memory #0x02 | Memory Device Disabled | Asserted
+   5 | 10/02/2026 | 11:25:35 | Processor #0x04 | IERR | Asserted

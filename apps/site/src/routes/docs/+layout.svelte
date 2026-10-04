@@ -36,7 +36,8 @@
         { href: "/docs/api", label: "API reference" },
         { href: "/docs/api/errors", label: "Error codes", child: true },
         { href: "/docs/automated-onboarding", label: "Automated onboarding" },
-        { href: "/docs/mcp", label: "MCP" },
+        { href: "/docs/mcp", label: "MCP (your fleet)" },
+        { href: "/docs/ai-assistants", label: "ChatGPT and Claude (no account)" },
       ],
     },
     {

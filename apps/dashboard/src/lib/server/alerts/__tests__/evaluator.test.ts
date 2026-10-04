@@ -1499,6 +1499,27 @@ describe("ipmi_sel_full", () => {
     ];
     expect(alertsOf("ipmi_sel_full", s)).toHaveLength(0);
   });
+  it("does not fire on a per-DIMM 'Correctable memory error logging disabled' event", () => {
+    // Event Logging Disabled offset 0x00: one DIMM hit its correctable-error
+    // logging limit. The SEL itself is still recording (sel info: 0% used).
+    const s = healthySnapshot();
+    s.ipmi.sel_entries_count = 4;
+    s.ipmi.sel_percent_used = 0;
+    s.ipmi.sel_overflow = false;
+    s.ipmi.sel_events_recent = [
+      { id: 4, timestamp: new Date().toISOString(), sensor: "Event Logging Disabled #0x07", sensor_type: "other", event: "Correctable memory error logging disabled", direction: "Asserted", severity: "info" },
+      { id: 5, timestamp: new Date().toISOString(), sensor: "Event Logging Disabled #0x07", sensor_type: "other", event: "Correctable machine check error logging disabled", direction: "Asserted", severity: "info" },
+    ];
+    expect(alertsOf("ipmi_sel_full", s)).toHaveLength(0);
+  });
+  it("still fires on 'All event logging disabled' (the whole SEL stopped recording)", () => {
+    const s = healthySnapshot();
+    s.ipmi.sel_events_recent = [
+      { id: 1, timestamp: new Date().toISOString(), sensor: "Event Logging Disabled #0x07", sensor_type: "other", event: "All event logging disabled", direction: "Asserted", severity: "info" },
+    ];
+    const [a] = alertsOf("ipmi_sel_full", s);
+    expect((a.evidence as any).trigger).toBe("log_full_event");
+  });
   it("capability gate: no fire when IPMI is unavailable", () => {
     const s = healthySnapshot();
     s.ipmi.available = false;
@@ -2352,6 +2373,31 @@ describe("disk_io_errors", () => {
     const drives = a.evidence.affected_drives as Array<{ model?: string }>;
     expect(drives).toHaveLength(1);
     expect(drives[0].model).toBe("RIGHT");
+  });
+  it("resolves every name to the first matching SMART entry, as a scan of the inventory does", () => {
+    // The lookup is indexed once per evaluation (triage review R3-5); this
+    // pins it to the scan it replaced, on names that extend each other in
+    // both directions, a /dev/ prefix, an empty device and inventory order.
+    const norm = (n: string) => n.replace(/^\/dev\//, "");
+    const seg = (long: string, short: string) => long.startsWith(short) && /^(\d|n\d|p\d)/.test(long.slice(short.length));
+    const matches = (a: string, b: string) => a === b || seg(a, b) || seg(b, a);
+    const inventory = ["/dev/sdaa", "sda1", "/dev/sda", "nvme0n1", "/dev/nvme0", "nvme1n1p2", "", "nvme1", "sdb", "/dev/sdb"];
+    const names = ["sda", "/dev/sda", "sda1", "sda2", "sdaa", "sdaa1", "sdab", "nvme0", "nvme0n1", "nvme0n1p1", "nvme1", "nvme1n1", "nvme1n1p2", "nvme1n1p", "1", "n1", "p1", "", "sdb", "sdc", "nvme"];
+    const s = healthySnapshot();
+    s.smart = inventory.map((device, i) => ({ device, model: `M${i}`, serial: `S${i}` })) as any;
+    s.io_errors = undefined;
+    s.dmesg_events = {
+      available: true,
+      events: names.map((device) => ({ timestamp_iso: "", event_type: "scsi_sense" as const, severity: "critical" as const, raw_line: "", details: { device, sense_key: "Medium Error" } })),
+      events_by_type: { scsi_sense: names.length, nvme_reset: 0, ext4_remount_readonly: 0 },
+      window_seconds: 0,
+    } as any;
+    const alerts = alertsOf("disk_io_errors", s);
+    expect(alerts).toHaveLength(names.length);
+    alerts.forEach((a, i) => {
+      const hit = (s.smart as Array<{ device: string; model: string; serial: string }>).find((d) => matches(norm(d.device), norm(names[i])));
+      expect(a.evidence.affected_drives, names[i]).toEqual(hit ? [{ device: hit.device, model: hit.model, serial: hit.serial, firmware: undefined }] : []);
+    });
   });
 });
 

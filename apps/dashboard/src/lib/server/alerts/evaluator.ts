@@ -19,9 +19,9 @@
 import { linearProjection } from "$lib/server/cross_snapshot";
 import { getRuleMetadata } from "./fix-workflow/loader";
 import { OWNERSHIP_REMEDIATION_NOTE } from "$lib/alerts/vendor-facing";
-import { resolveFailedMembers } from "./raid-members";
+import { buildSmartBaseIndex, resolveFailedMembersFromIndex } from "./raid-members";
 import { lookupLifecycle } from "$lib/server/endoflife/cache";
-import { pciBdfMatches } from "$lib/utils/pci-bdf";
+import { parsePciBdf, pciBdfEqual } from "$lib/utils/pci-bdf";
 
 // PSI resource block emitted by Crucible v0.10.4+. Per /proc/pressure
 // kernel doc: avgN is the rolling % over N seconds, total is cumulative
@@ -636,6 +636,21 @@ export interface ServerConfig {
   // surprising the customer.
   ipmi_sel_critical_window_days?: number;
   muted_rules?: string[];
+}
+
+/**
+ * SEL event text meaning the whole log stopped recording: "Log full",
+ * "Log area full", "All event logging disabled". The per-device offsets of
+ * the same Event Logging Disabled sensor ("Correctable memory error logging
+ * disabled", "Correctable machine check error logging disabled") only say
+ * that one DIMM or CPU hit its correctable-error logging limit; the SEL is
+ * still recording, so they are not a full log (review 2026-10-03: a DIMM
+ * that hit its limit was reported as "SEL full" next to `sel info` showing
+ * 0% used). Shared with the paste-triage SEL parser.
+ */
+export function isSelLogFullEventText(event: string): boolean {
+  if (/correctable (?:memory|machine check) error logging disabled/i.test(event)) return false;
+  return /log( area)? full|logging disabled/i.test(event);
 }
 
 /**
@@ -1669,13 +1684,17 @@ const rules: AlertRule[] = [
 
       // Software RAID (mdadm).
       if (snap.raid) {
+        // The SMART index is built once for every degraded array, not per
+        // array (R5-9).
+        let smartIndex: ReturnType<typeof buildSmartBaseIndex> | null = null;
         for (const array of snap.raid) {
           if (!array.degraded && (!array.failed_disks || array.failed_disks.length === 0)) continue;
           // Resolve each failed member to its physical-drive identity (model +
           // serial) from the same snapshot's SMART, so a provider ticket can name
           // the exact drive to pull. Best-effort: a disk gone from the SMART scan
           // resolves to null identity and we keep just the member name.
-          const failedMembers = resolveFailedMembers(array.failed_disks, snap.smart);
+          smartIndex ??= buildSmartBaseIndex(snap.smart);
+          const failedMembers = resolveFailedMembersFromIndex(array.failed_disks, smartIndex);
           // Substitute the actual failed member into the FIX command instead of
           // a `/dev/<member>` placeholder (Grok L0 residual): the collector now
           // names the faulty member, so the re-add command should be runnable
@@ -3028,7 +3047,7 @@ const rules: AlertRule[] = [
       // record emitted after clearing a SEL.
       const events = snap.ipmi.sel_events_recent ?? [];
       const logFullEvent = events.find(
-        (e) => /log( area)? full|logging disabled/i.test(e.event) && e.direction === "Asserted",
+        (e) => isSelLogFullEventText(e.event) && e.direction === "Asserted",
       );
 
       // (b) Near-full heuristic on the absolute entry count. BMC SEL capacity
@@ -4544,16 +4563,46 @@ const rules: AlertRule[] = [
       // the node name. Same idea as the raid_degraded member join (#360).
       // A suffix must start a new numeric segment ("sda"~"sda1", "nvme0"~
       // "nvme0n1", "nvme0n1"~"nvme0n1p2") so "sda" cannot match "sdaa".
+      //
+      // The SMART names are indexed once per evaluation. One scan of the
+      // inventory per event made this join the product of the two lists: a
+      // pasted log of 5,000 sense lines beside 1,024 SMART entries cost 160 ms
+      // per anonymous paste-triage call (triage review R3-5). The lookup
+      // returns what snap.smart.find(matches) did: the first entry, in
+      // inventory order, whose name equals the event's, extends it by a
+      // segment, or is extended by it.
+      const norm = (s: string) => String(s).replace(/^\/dev\//, "");
+      const isDigit = (c: string | undefined) => c !== undefined && c >= "0" && c <= "9";
+      // True when s.slice(k) starts a new numeric segment: a digit, n<digit> or p<digit>.
+      const segmentAt = (s: string, k: number) =>
+        isDigit(s[k]) || ((s[k] === "n" || s[k] === "p") && isDigit(s[k + 1]));
+      let index: { exact: Map<string, number>; extended: Map<string, number> } | null = null;
+      const buildIndex = (smart: NonNullable<Snapshot["smart"]>) => {
+        const exact = new Map<string, number>();
+        // Every segment-boundary prefix of a name, to the first entry with it.
+        const extended = new Map<string, number>();
+        smart.forEach((d, i) => {
+          const name = norm(d.device ?? "");
+          if (!exact.has(name)) exact.set(name, i);
+          for (let k = 0; k < name.length; k++) {
+            if (segmentAt(name, k) && !extended.has(name.slice(0, k))) extended.set(name.slice(0, k), i);
+          }
+        });
+        return { exact, extended };
+      };
       const resolveDrives = (names: string[]) => {
         if (!snap.smart || snap.smart.length === 0) return [];
-        const norm = (s: string) => String(s).replace(/^\/dev\//, "");
-        const segmentMatch = (long: string, short: string) =>
-          long.startsWith(short) && /^(\d|n\d|p\d)/.test(long.slice(short.length));
-        const matches = (a: string, b: string) => a === b || segmentMatch(a, b) || segmentMatch(b, a);
+        const smart = snap.smart;
+        index ??= buildIndex(smart);
+        const { exact, extended } = index;
         const out: Array<{ device: string; model?: string; serial?: string; firmware?: string }> = [];
         for (const name of names) {
           const n = norm(name);
-          const hit = snap.smart.find((d) => matches(norm(d.device ?? ""), n));
+          let first = Math.min(exact.get(n) ?? Infinity, extended.get(n) ?? Infinity);
+          for (let k = 0; k < n.length; k++) {
+            if (segmentAt(n, k)) first = Math.min(first, exact.get(n.slice(0, k)) ?? Infinity);
+          }
+          const hit = first === Infinity ? undefined : smart[first];
           if (hit && !out.some((o) => o.device === hit.device)) {
             out.push({ device: hit.device, model: hit.model, serial: hit.serial, firmware: hit.firmware });
           }
@@ -5386,11 +5435,14 @@ const rules: AlertRule[] = [
         list.push(e);
         grouped.set(key, list);
       }
+      // Each GPU's address parsed once, not once per Xid group (R5-9).
+      const gpuBdfs = tier1.gpus.map((g) => ({ g, bdf: parsePciBdf(g.pci_bdf) }));
       for (const [key, events] of grouped) {
         const first = events[0];
         // The Xid BDF ("0000:3b:00") and nvidia-smi's ("00000000:3B:00.0")
         // never compare equal as strings; see pci-bdf.ts.
-        const gpu = tier1.gpus.find((g) => pciBdfMatches(g.pci_bdf, first.pci_bdf));
+        const xidBdf = parsePciBdf(first.pci_bdf);
+        const gpu = xidBdf ? gpuBdfs.find(({ bdf }) => bdf !== null && pciBdfEqual(bdf, xidBdf))?.g : undefined;
         const xidSummary = xidShortDescription(first.xid_code);
         results.push({
           type: "gpu_xid_critical",
@@ -5571,9 +5623,17 @@ const rules: AlertRule[] = [
         // trigger either: nvidia-smi sets it for that software target-holding
         // case too. The 92C backstop sits above every data-center GPU's thermal
         // target so normal target-holding never trips it.
+        //
+        // hw_slowdown is NVML's umbrella HW Slowdown reason: an external power
+        // brake sets it too, and nvidia-smi then lists HW Power Brake Slowdown
+        // active under it with HW Thermal Slowdown not active. That is a power
+        // event (gpu_power_cap_throttling reports it), not a thermal one; an
+        // H100 at 61C read that way came back as a critical thermal fault.
+        // A bare hw_slowdown with no power brake still counts as thermal.
+        const reasons = gpu.performance_state_reasons;
         const hwThermalSlowdown =
-          gpu.performance_state_reasons.includes("hw_slowdown") ||
-          gpu.performance_state_reasons.includes("hw_thermal_slowdown");
+          reasons.includes("hw_thermal_slowdown") ||
+          (reasons.includes("hw_slowdown") && !reasons.includes("hw_power_brake"));
         const tooHot = gpu.temp_c >= 92;
         if (!tooHot && !hwThermalSlowdown) continue;
         results.push({

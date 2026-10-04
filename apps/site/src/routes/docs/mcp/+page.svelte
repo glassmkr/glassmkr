@@ -37,6 +37,8 @@
       <p class="docs-subtitle">Glassmkr runs a Model Context Protocol (MCP) server, so a compatible AI client can look at your fleet and, when you grant it, act on it. Access is per-user, authorized through your browser from the dashboard, tiered into read, write, and administrative scopes, and revocable at any time. For scripted automation without an AI client, use the <a href="/docs/programmatic-api">programmatic API</a>.</p>
     </header>
 
+    <div class="callout"><strong>Two Glassmkr MCP endpoints.</strong> This page covers <code>https://app.glassmkr.com/mcp</code>, which signs you in and works on your own enrolled servers. To have Glassmkr's alert rules read command output you paste, with no account and nothing installed on your servers, use the paste-triage connector at <code>https://app.glassmkr.com/api/triage/mcp</code> instead: see <a href="/docs/ai-assistants">ChatGPT and Claude</a>.</div>
+
     <section id="what">
       <h2><a href="#what" class="anchor-link">#</a>What it is</h2>
       <p>MCP is an open protocol for connecting AI clients to external tools and data. The Glassmkr MCP server lets a client you trust (for example, a desktop AI assistant) work with your account at the level you authorize:</p>

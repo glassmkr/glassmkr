@@ -74,9 +74,13 @@ fix:
         lsblk /dev/${DEVICE}
 
         # 2. Establish RAID membership BEFORE touching anything. This part is
-        #    read-only and runs: it prints the array this device belongs to.
-        ARRAY=$(lsblk -no PKNAME,TYPE /dev/${DEVICE} 2>/dev/null | awk '$2 ~ /^raid/ {print "/dev/"$1; exit}')
-        if [ -n "$ARRAY" ]; then echo "device is a member of $ARRAY"; else echo "not a RAID member: skip step 3 entirely"; fi
+        #    read-only and runs: it prints the array this device belongs to
+        #    and the member (the device itself, or a partition of it). List
+        #    mode, read from the raid row: its NAME is the array and its
+        #    PKNAME the member.
+        ARRAY=$(lsblk -lno NAME,PKNAME,TYPE /dev/${DEVICE} 2>/dev/null | awk '$3 ~ /^raid/ {print "/dev/"$1; exit}')
+        MEMBER=$(lsblk -lno NAME,PKNAME,TYPE /dev/${DEVICE} 2>/dev/null | awk '$3 ~ /^raid/ {print "/dev/"$2; exit}')
+        if [ -n "$ARRAY" ]; then echo "member $MEMBER belongs to $ARRAY"; else echo "not a RAID member: skip step 3 entirely"; fi
         #
         # 3. The two commands below are commented DELIBERATELY, and not because
         #    they are optional. Failing a disk out of an array is a live change
@@ -90,14 +94,14 @@ fix:
         #    not already degraded past its redundancy (cat /proc/mdstat).
         #    Never substitute a literal array name you have not just derived.
         #
-        # sudo mdadm --manage "$ARRAY" --fail /dev/${DEVICE}
-        # sudo mdadm --manage "$ARRAY" --remove /dev/${DEVICE}
+        # sudo mdadm --manage "$ARRAY" --fail "$MEMBER"
+        # sudo mdadm --manage "$ARRAY" --remove "$MEMBER"
 
         # 4. Hot-swap the physical drive (chassis-specific; see vendor variants).
         #    After swap, the kernel detects the new drive (dmesg | tail).
 
         # 5. Add replacement drive back to RAID (if applicable)
-        # sudo mdadm --manage $ARRAY --add /dev/${DEVICE}
+        # sudo mdadm --manage "$ARRAY" --add "$MEMBER"   # the NEW drive's member path
 
         # 6. Watch rebuild progress
         cat /proc/mdstat   # one-shot; re-run to monitor

@@ -1,0 +1,4 @@
+root@r740:~# ipmitool sdr type "Power Supply"
+PS1 Status       | 63h | ok  | 10.1 | Presence detected
+PS2 Status       | 64h | ok  | 10.2 | Presence detected
+PS Redundancy    | 77h | ok  |  7.1 | Fully Redundant

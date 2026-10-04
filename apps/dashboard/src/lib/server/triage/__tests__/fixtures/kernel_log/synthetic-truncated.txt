@@ -1,0 +1,5 @@
+ey : Medium Error [current]
+[ 4410.220197] sd 3:0:0:0: [sdd] tag#11 Add. Sense: Unrecovered read error
+[ 4410.220204] I/O error, dev sdd, sector 1023 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0
+[ 4412.900000] EXT4-fs (sdd1): Remounting filesystem read-only
+[ 4415.000001] NVRM: Xid (PCI:0000:3b:0

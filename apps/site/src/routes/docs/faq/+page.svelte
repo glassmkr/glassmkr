@@ -222,6 +222,11 @@ sudo rm -rf /etc/glassmkr</code></pre>
       </details>
 
       <details>
+        <summary>Can I use Glassmkr from ChatGPT or Claude?</summary>
+        <p>Two ways. Without an account, add the paste-triage connector and paste command output such as <code>smartctl</code>, <code>zpool status</code> or <code>dmesg</code>: Glassmkr's alert rules read it and return findings and fix workflows. See <a href="/docs/ai-assistants">ChatGPT and Claude</a>. With an account, connect the <a href="/docs/mcp">MCP server</a> to give an assistant your fleet's live health and alerts, with the scopes you approve.</p>
+      </details>
+
+      <details>
         <summary>What is per-core CPU monitoring?</summary>
         <p>When <code>collectors.cpu.per_core: true</code> (Crucible 0.3.0+), Crucible reports individual CPU core utilization in addition to aggregate metrics. Enables the per-core CPU chart in the expanded view and gives the AI analyzer per-core awareness. Useful for spotting single-threaded bottlenecks, core pinning issues, and uneven load. Increases data volume proportionally to core count.</p>
       </details>

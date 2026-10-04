@@ -1,0 +1,9 @@
+root@edge-lab-2:~# ipmitool sel list
+   1 |  Pre-Init  |0000000004| System ACPI Power State #0x0a | S0/G0: working | Asserted
+   2 |  Pre-Init  |0000000011| Power Unit #0x01 | AC lost | Asserted
+   3 | 03/14/2026 | 10:20:31 | Power Supply #0xc8 | Presence detected | Asserted
+   4 | 03/14/2026 | 10:20:33 | OEM record c1 | 000157 | 0100ff4a0a0000
+   a | 06/02/2026 | 21:07:55 | Processor #0x01 | IERR | Asserted
+   b | 06/02/2026 | 21:07:55 | Watchdog2 #0xca | Hard reset | Asserted
+  1f | 09/01/2026 | 04:00:12 | Memory #0x02 | Uncorrectable ECC | Asserted
+  20 | OEM record e0 | 000000000000000000000000000000

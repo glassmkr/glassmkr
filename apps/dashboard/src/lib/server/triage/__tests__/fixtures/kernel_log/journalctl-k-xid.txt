@@ -1,0 +1,8 @@
+-- Boot 0b1c2d3e4f5a46b7a8c9d0e1f2a3b4c5 --
+Oct 03 08:02:11 gpu-node-example kernel: NVRM: loading NVIDIA UNIX x86_64 Kernel Module  550.90.07  Fri May 31 09:35:42 UTC 2024
+Oct 03 09:15:42 gpu-node-example kernel: NVRM: Xid (PCI:0000:3b:00): 94, pid=48211, name=python3, Contained ECC error.
+Oct 03 09:58:03 gpu-node-example kernel: NVRM: Xid (PCI:0000:3b:00): 94, pid=48877, name=python3, Contained ECC error.
+Oct 03 10:20:17 gpu-node-example kernel: NVRM: GPU at PCI:0000:af:00: GPU-00000000-0000-0000-0000-000000000000
+Oct 03 10:20:17 gpu-node-example kernel: NVRM: Xid (PCI:0000:af:00): 79, pid='<unknown>', name=<unknown>, GPU has fallen off the bus.
+Oct 03 10:20:17 gpu-node-example kernel: NVRM: GPU 0000:af:00.0: GPU has fallen off the bus.
+Oct 03 10:20:18 gpu-node-example kernel: NVRM: Xid (PCI:0000:5e:00): 8, pid=49001, name=Xorg, Channel 00000010

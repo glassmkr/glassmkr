@@ -1,0 +1,6 @@
+root@gpu-12:~# ipmitool sdr elist
+PS1 Status       | 63h | ok  | 10.1 | Presence detected
+PS2 Status       | 64h | ok  | 10.2 | Presence detected
+PS Redundancy    | 77h | ok  |  7.1 | Redundancy Lost
+Pwr Consumption  | 76h | ok  |  7.1 | 1186 Watts
+Inlet Temp       | 04h | ok  |  7.1 | 24 degrees C

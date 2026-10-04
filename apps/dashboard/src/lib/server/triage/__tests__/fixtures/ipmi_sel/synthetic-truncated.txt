@@ -1,0 +1,9 @@
+root@node-b03:~# ipmitool sel info
+SEL Information
+Version          : 1.5 (v1.5, v2 compliant)
+Entries          : 87
+Free Space       : 14
+root@node-b03:~# ipmitool sel elist
+  51 | 09/25/2026 | 19:33:20 | Memory #0x02 | Correctable ECC | Asserted
+  52 | 09/26/2026 | 07:12:02 | Memory #0x02 | Uncorrectable ECC | Asserted
+  53 | 09/26/2026 | 07:12

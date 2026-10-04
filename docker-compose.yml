@@ -161,6 +161,11 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
       # Optional: outgoing email (alert channels); empty disables email sending
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # Optional: the anonymous paste-triage endpoint (off unless set to 1).
+      # Without Redis its rate limits let every request through; see
+      # SELF_HOSTING.md before turning it on.
+      MCP_TRIAGE_ENABLED: ${MCP_TRIAGE_ENABLED:-}
+      MCP_PUBLIC_ORIGIN: ${MCP_PUBLIC_ORIGIN:-}
     ports:
       # Loopback by default: Docker publishes straight past ufw and firewalld,
       # so "3000:3000" silently exposes the dashboard to the internet on a box

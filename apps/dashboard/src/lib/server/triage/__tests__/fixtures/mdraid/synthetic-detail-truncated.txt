@@ -1,0 +1,12 @@
+/dev/md2:
+           Version : 1.2
+        Raid Level : raid6
+        Array Size : 11720294400 (10.92 TiB 12.00 TB)
+      Raid Devices : 6
+     Total Devices : 5
+       Persistence : Superblock is persistent
+
+             State : clean, degraded
+    Active Devices : 5
+   Working Devices : 5
+    Failed Devices : 0

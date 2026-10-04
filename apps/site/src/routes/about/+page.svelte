@@ -45,7 +45,7 @@
        defaults, alert rules, evidence, and remediation workflows that other
        server owners can use without reproducing the same career first.</p>
     <p>General-purpose monitoring tools like Datadog and New Relic do not understand IPMI, SMART, or RAID. They are built for cloud workloads. Traditional tools like Nagios and Zabbix can monitor hardware, but they are heavy to deploy and require extensive configuration.</p>
-    <p>I wanted something opinionated: {rules.length} alerts covering what actually breaks, with defaults rather than a configuration exercise. Setup is one command on Ubuntu or Debian and a few minutes by hand elsewhere; it needs an account key, and the agent needs root once to install before it runs as its own unprivileged user. In August 2026 I open-sourced the entire stack.</p>
+    <p>I wanted something opinionated: {rules.length} alerts covering what actually breaks, with defaults rather than a configuration exercise. Setup is one command on the apt and dnf/yum families (Debian, Ubuntu, RHEL, Rocky, AlmaLinux, CentOS, Fedora) and a few minutes by hand elsewhere; it needs an account key, and the agent needs root once to install before it runs as its own unprivileged user. In August 2026 I open-sourced the entire stack.</p>
   </section>
 
   <section>

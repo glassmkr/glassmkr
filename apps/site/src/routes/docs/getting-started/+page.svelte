@@ -51,13 +51,16 @@
       <div class="callout">
         <strong>Automating, or onboarding many servers?</strong> The whole flow runs over the API, no dashboard clicks. A <code>write</code>-scoped account key (<code>gmk_acct_live_</code>) creates each server with <code>POST /api/v1/servers</code>, and the response returns that server's collector key. See the <a href="/docs/programmatic-api">Programmatic API quickstart</a>.
       </div>
+      <div class="callout">
+        <strong>Checked a paste in ChatGPT or Claude first?</strong> With Crucible installed, the dashboard runs the same alert rules on every snapshot and keeps the history one paste cannot give: whether a counter is still climbing, whether an error came back after it was cleared, and whether a server stopped reporting.
+      </div>
       <p class="note">Last verified: 2026-08-30 against Crucible v1.1.1 (fresh installs on four validation hosts: Rocky, Debian, Alma, Ubuntu).</p>
     </section>
 
     <section id="prerequisites">
       <h2><a href="#prerequisites" class="anchor-link">#</a>Prerequisites</h2>
       <ul>
-        <li>A Linux server. Debian, Ubuntu, RHEL, Rocky, Alma and Fedora can use the one-line installer; Arch, Alpine and anything without apt or dnf use the single-file binary, which needs no Node. See step 3.</li>
+        <li>A Linux server. Debian, Ubuntu, RHEL, Rocky, Alma and Fedora can use the one-line installer; Arch and other glibc distributions with systemd but without apt or dnf use the single-file binary, which needs no Node. See step 3. The installer and the single-file binary do not support Alpine (musl libc, OpenRC).</li>
         <li>Root or sudo access.</li>
         <li>Outbound HTTPS (port 443) to <code>app.glassmkr.com</code>. No inbound ports required.</li>
       </ul>
@@ -85,7 +88,7 @@
       <p>The dashboard shows this command with your collector key pre-filled:</p>
       <pre><code>curl -sf https://glassmkr.com/install.sh | sudo bash -s -- --api-key gmk_cru_live_your_key_here</code></pre>
       <div class="callout">
-        <strong>This script supports the apt and dnf/yum families</strong> (Debian, Ubuntu, RHEL, Rocky, Alma, Fedora, CentOS). It installs distribution packages and a Node runtime for those. On other distributions (Arch, Alpine, and anything without apt or dnf) use the single-file binary below.
+        <strong>This script supports the apt and dnf/yum families</strong> (Debian, Ubuntu, RHEL, Rocky, Alma, Fedora, CentOS). It installs distribution packages and a Node runtime for those. On other glibc distributions with systemd (Arch, and anything else without apt or dnf) use the single-file binary below.
       </div>
       <p>The installer:</p>
       <ul>
@@ -99,8 +102,8 @@
       <pre><code>op read "op://Private/Dashboard/key" | sudo glassmkr-crucible init --api-key -</code></pre>
       <p>The legacy <code>--dashboard-key</code> flag is preserved as an alias for <code>--api-key</code> so existing Ansible or Terraform automation keeps working without changes.</p>
 
-      <h3>Single-file binary (any distribution, no Node required)</h3>
-      <p>The release binaries bundle their own runtime, so a host with no Node can run them. This is the path for RHEL family, Arch and Alpine, and it works on Debian family too:</p>
+      <h3>Single-file binary (glibc distributions, no Node required)</h3>
+      <p>The release binaries bundle their own runtime, so a host with no Node can run them. This is the path for Arch and other glibc + systemd hosts without apt or dnf, and it also works on the apt and dnf/yum families. It needs glibc and systemd, so it does not run on Alpine:</p>
       <pre><code>curl -fsSLO https://github.com/glassmkr/crucible/releases/download/v{AGENT_VERSION}/glassmkr-crucible-linux-x64
 curl -fsSLO https://github.com/glassmkr/crucible/releases/download/v{AGENT_VERSION}/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS

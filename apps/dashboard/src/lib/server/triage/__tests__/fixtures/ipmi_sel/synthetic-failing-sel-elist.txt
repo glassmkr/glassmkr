@@ -1,0 +1,11 @@
+[root@db-07 ~]# ipmitool sel elist
+   1 | 09/20/26 | 03:14:07 UTC | Event Logging Disabled #0x07 | Log area reset/cleared | Asserted
+   2 | 09/27/26 | 22:41:15 UTC | Memory #0x02 | Correctable ECC | Asserted
+   3 | 09/28/26 | 14:23:05 UTC | Memory #0x02 | Correctable ECC | Asserted
+   4 | 09/28/26 | 14:23:09 UTC | Memory #0x02 | Uncorrectable ECC | Asserted
+   5 | 09/29/26 | 02:47:17 UTC | Temperature Inlet Temp | Lower Critical going low  | Asserted | Reading 0 < Threshold 5 degrees C
+   6 | 09/29/26 | 02:47:18 UTC | Temperature Inlet Temp | Lower Critical going low  | Deasserted | Reading 25 > Threshold 5 degrees C
+   7 | 09/29/26 | 03:11:42 UTC | Power Supply PS2 Status | Failure detected | Asserted
+   8 | 09/29/26 | 03:11:42 UTC | Power Supply PS2 Status | Power Supply AC lost | Asserted
+   9 | 09/30/26 | 11:05:31 UTC | Processor CPU1 Status | Thermal Trip | Asserted
+[root@db-07 ~]#

@@ -1,0 +1,5 @@
+[Fri Oct  3 09:00:00 2026] {1}[Hardware Error]: Hardware error from APEI Generic Hardware Error Source: 1
+[Fri Oct  3 09:00:00 2026] {1}[Hardware Error]: event severity: recoverable
+[Fri Oct  3 09:00:00 2026] {1}[Hardware Error]:   section_type: memory error
+[Fri Oct  3 09:00:00 2026] {1}[Hardware Error]:   error_type: 3, multi-bit ECC
+[Fri Oct  3 09:00:00 2026] EDAC MC0: 1 UE multi-bit ECC on unknown memory (node:1 card:0 module:0 rank:0 bank:3 device:0 row:12345 column:1016 page:0x3e4f1c offset:0x0 grain:1 - APEI location: node:1 card:0 module:0 rank:0 bank:3 device:0 row:12345 column:1016)

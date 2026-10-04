@@ -1,0 +1,15 @@
+[ 7712.004118] sd 0:0:0:0: [sda] tag#7 Sense Key : Medium Error [current]
+[ 7712.004127] sd 0:0:0:0: [sda] tag#7 Add. Sense: Unrecovered read error
+[ 7712.004140] blk_update_request: I/O error, dev sda, sector 88213512 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0
+[ 7790.551023] sd 1:0:0:0: [sdb] tag#2 Sense Key : Unit Attention [current]
+[ 7790.551030] sd 1:0:0:0: [sdb] tag#2 Add. Sense: Power on, reset, or bus device reset occurred
+[ 8001.120311] sd 4:0:0:0: [sde] Sense Key : 0x4 [current] [descriptor]
+[ 8823.112233] nvme nvme0: I/O 512 QID 7 timeout, reset controller
+[ 8901.660141] nvme nvme2: controller is down; will reset: CSTS=0xffffffff, PCI_STATUS=0xffff
+[ 9002.000001] EXT4-fs error (device md0): ext4_journal_check_start:83: comm kworker/u64:2: Detected aborted journal
+[ 9002.000105] EXT4-fs (md0): Remounting filesystem read-only
+[ 9101.000001] NVRM: Xid (PCI:0000:3b:00): 79, pid='<unknown>', name=<unknown>, GPU has fallen off the bus.
+[ 9102.000001] NVRM: Xid (PCI:0000:86:00): 48, pid=1234, name=python3, An uncorrectable double bit error (DBE) has been detected on GPU in the framebuffer at partition 6, subpartition 0.
+[ 9103.000001] EDAC MC0: 2 CE memory read error on DIMM_A1 (channel:0 slot:0 page:0x12a3 offset:0x0 grain:8 syndrome:0x0)
+[ 9104.000001] EDAC MC1: 1 UE memory read error on DIMM_B2 (channel:1 slot:0 page:0x9b3 offset:0x0 grain:8)
+[ 9105.000001] print_req_error: I/O error, dev fd0, sector 0

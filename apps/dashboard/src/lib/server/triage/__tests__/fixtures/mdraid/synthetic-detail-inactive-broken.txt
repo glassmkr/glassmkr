@@ -1,0 +1,22 @@
+Personalities : [raid0] [linear]
+md9 : broken raid0 sdq1[1] sdp1[0]
+      3906764800 blocks super 1.2 512k chunks
+
+unused devices: <none>
+/dev/md8:
+           Version : 1.2
+        Raid Level : raid0
+     Total Devices : 2
+       Persistence : Superblock is persistent
+
+             State : inactive
+   Working Devices : 2
+
+              Name : stor-04.example.test:8
+              UUID : 01234567:89abcdef:01234567:89abcdef
+            Events : 5521
+
+    Number   Major   Minor   RaidDevice
+
+       -       8      161        -        /dev/sdk1
+       -       8      177        -        /dev/sdl1

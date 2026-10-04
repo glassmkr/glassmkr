@@ -1,0 +1,10 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.glassmkr/triage",
+  "title": "Glassmkr hardware triage",
+  "description": "Checks pasted smartctl, zpool, mdadm, dmesg, ipmitool and nvidia-smi output against Glassmkr rules.",
+  "version": "0.1.0",
+  "websiteUrl": "https://glassmkr.com/docs/ai-assistants",
+  "repository": { "url": "https://github.com/glassmkr/glassmkr", "source": "github" },
+  "remotes": [{ "type": "streamable-http", "url": "https://app.glassmkr.com/api/triage/mcp" }]
+}

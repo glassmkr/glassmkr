@@ -145,8 +145,8 @@ facts:
   agent_install_paths:
     status: resolved
     source_type: shipped_artifacts
-    source_path: "apps/site/static/install.sh (curl path; Ubuntu/Debian only, requires --api-key, --ingest-url for self-host); npm @glassmkr/crucible (manual path, any distro with Node >= 22.19.0); single-file binaries attach to GitHub Releases from v1.0.0 (crucible publish.yml binaries job)"
-    rule: "install.sh supports Ubuntu/Debian ONLY; do not claim one-line install for RHEL-family; binaries must exist on a Release before any surface describes them as available"
+    source_path: "apps/site/static/install.sh (curl path; apt and dnf/yum families: Debian, Ubuntu, RHEL, Rocky, AlmaLinux, CentOS, Fedora; requires --api-key, --ingest-url for self-host); npm @glassmkr/crucible (manual path, any distro with Node >= 22.19.0); single-file binaries attach to GitHub Releases from v1.0.0 (crucible publish.yml binaries job)"
+    rule: "install.sh supports the apt and dnf/yum families (its 'Supported package managers' header is the source); other glibc + systemd hosts (Arch) use the single-file binary; neither supports Alpine; binaries must exist on a Release before any surface describes them as available"
     consumers: [docs_install, homepage_install_section, README, for_pages]
 
   supported_os:

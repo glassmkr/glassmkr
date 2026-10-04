@@ -35,7 +35,11 @@ export function parsePciBdf(raw: string): PciBdf | null {
 export function pciBdfMatches(a: string, b: string): boolean {
   const x = parsePciBdf(a);
   const y = parsePciBdf(b);
-  if (!x || !y) return false;
+  return x !== null && y !== null && pciBdfEqual(x, y);
+}
+
+/** pciBdfMatches on addresses already parsed, for joining many against many. */
+export function pciBdfEqual(x: PciBdf, y: PciBdf): boolean {
   if (x.domain !== y.domain || x.bus !== y.bus || x.device !== y.device) return false;
   return x.fn === null || y.fn === null || x.fn === y.fn;
 }

@@ -34,7 +34,9 @@
     "lint:plan-language:test": "node scripts/lint-plan-language.test.mjs",
     "lint:brand-palette": "node scripts/check-brand-palette.mjs",
     "lint:brand-palette:test": "node scripts/check-brand-palette.test.mjs",
-    "gen-openapi:test": "node scripts/gen-openapi.test.mjs"
+    "gen-openapi:test": "node scripts/gen-openapi.test.mjs",
+    "lint:ai-plugin": "node integrations/ai-assistants/scripts/validate-openai-plugin.mjs",
+    "lint:ai-plugin:test": "node integrations/ai-assistants/scripts/validate-openai-plugin.test.mjs"
   },
   "devDependencies": {
     "@glassmkr/crucible": "^0.13.16",

@@ -1,0 +1,16 @@
+Hi, my server keeps rebooting, can you check what is wrong?
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 535.104.05             Driver Version: 535.104.05   CUDA Version: 12.2     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+|   0  NVIDIA H100 80GB HBM3          On  | 00000000:18:00.0 Off |                    0 |
+| N/A   34C    P0              69W / 700W |      0MiB / 81559MiB |      0%      Default |
++-----------------------------------------+----------------------+----------------------+
+| Sensor | Value | Status |
+|--------|-------|--------|
+| FAN1   | 0 RPM | cr     |
+[ 8823.112233] nvme nvme0: I/O 512 QID 7 timeout, reset controller
+md0 : active raid1 sdb1[1](F) sda1[0]
+{"device":{"name":"/dev/sda"},"smart_status":{"passed":true}}
+a | b | c
+1 | 2 | 3 | 4 | 5 | 6

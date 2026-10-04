@@ -1,0 +1,6 @@
+[Fri Oct  3 04:12:55 2026] nvme0n1: Read(0x2) @ LBA 1953457152, 8 blocks, Unrecovered Read Error (sct 0x2 / sc 0x81) DNR 
+[Fri Oct  3 04:12:55 2026] critical medium error, dev nvme0n1, sector 1953457152 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 2
+[Fri Oct  3 04:12:56 2026] nvme0n1: Read(0x2) @ LBA 1953457160, 8 blocks, Unrecovered Read Error (sct 0x2 / sc 0x81) DNR 
+[Fri Oct  3 04:12:56 2026] critical medium error, dev nvme0n1, sector 1953457160 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 2
+[Fri Oct  3 04:13:02 2026] nvme0n1: Read(0x2) @ LBA 1953457168, 8 blocks, Unrecovered Read Error (sct 0x2 / sc 0x81) DNR 
+[Fri Oct  3 04:13:02 2026] critical medium error, dev nvme0n1, sector 1953457168 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 2

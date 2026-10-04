@@ -19,9 +19,9 @@
     "@type": "WebPage",
     name: "Trust at Glassmkr",
     description:
-      "How Glassmkr handles trust: AGPL-3.0-only open-source Crucible agent and dashboard, servers in the Netherlands or full self-hosting, GDPR posture, and honest gaps. Updated 2026-08-24.",
+      "How Glassmkr handles trust: AGPL-3.0-only open-source Crucible agent and dashboard, servers in the Netherlands or full self-hosting, GDPR posture, and honest gaps. Updated 2026-10-04.",
     url: "https://glassmkr.com/trust",
-    dateModified: "2026-08-24",
+    dateModified: "2026-10-04",
   });
   const orgLd = JSON.stringify({
     "@context": "https://schema.org",
@@ -230,6 +230,11 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
       <li><strong>No bulk log streaming, no raw command output, no arbitrary file reads.</strong></li>
     </ul>
 
+    <h3>Output you paste into an AI assistant</h3>
+    <p>
+      The list above is what the agent sends. The paste-triage connector for ChatGPT and Claude works the other way round: you paste command output into your assistant, and the assistant sends that text to Glassmkr for the alert rules to read. No agent and no account are involved. The text is processed in memory, the result goes back to the assistant, and Glassmkr does not store the text or write it to a log. What is logged per call, and for how long, is in sections 4 and 7 of <a href="/privacy">the Privacy Policy</a>. The conversation itself is handled by OpenAI or Anthropic under their own policies.
+    </p>
+
     <h3>Data storage</h3>
     <p>
       PostgreSQL + ClickHouse on a server in Amsterdam, Netherlands (verifiable in the RIR record; see infrastructure provenance below). Daily encrypted backups stored on a second server in the same datacenter.
@@ -273,7 +278,7 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
     <ul>
       <li>Operator access to production systems is logged and retained for 90 days.</li>
       <li>We don’t sell customer data.</li>
-      <li>We don’t share customer data with third parties beyond what’s required to deliver the service (Stripe for billing, Resend for email, the LLM inference layer on our own infrastructure).</li>
+      <li>We don’t share customer data with third parties beyond what’s required to deliver the service (Stripe for billing, Resend for email, the LLM inference layer on our own infrastructure, and an AI assistant only when you connect one yourself).</li>
       <li>We run a monitoring service. There is no advertising and no data business behind it.</li>
     </ul>
     <p>
@@ -374,7 +379,7 @@ sudo journalctl -kf | grep glassmkr-egress</code></pre>
   </section>
 
   <footer class="trust-footer">
-    <p>Last updated: 2026-08-24.</p>
+    <p>Last updated: 2026-10-04.</p>
   </footer>
 </article>
 

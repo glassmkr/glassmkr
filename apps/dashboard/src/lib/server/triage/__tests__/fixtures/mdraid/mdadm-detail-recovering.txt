@@ -1,0 +1,35 @@
+/dev/md1:
+           Version : 1.2
+     Creation Time : Wed Jan 10 14:02:55 2024
+        Raid Level : raid5
+        Array Size : 5860147200 (5.46 TiB 6.00 TB)
+     Used Dev Size : 1953382400 (1862.89 GiB 2000.26 GB)
+      Raid Devices : 4
+     Total Devices : 4
+       Persistence : Superblock is persistent
+
+     Intent Bitmap : Internal
+
+       Update Time : Thu Oct  2 09:30:12 2026
+             State : clean, degraded, recovering
+    Active Devices : 3
+   Working Devices : 4
+    Failed Devices : 0
+     Spare Devices : 1
+
+            Layout : left-symmetric
+        Chunk Size : 512K
+
+Consistency Policy : bitmap
+
+    Rebuild Status : 8% complete
+
+              Name : stor-02.example.test:1  (local to host stor-02.example.test)
+              UUID : 9f8e7d6c:5b4a3928:17065f4e:3d2c1b0a
+            Events : 91873
+
+    Number   Major   Minor   RaidDevice State
+       0       8        1        0      active sync   /dev/sda1
+       4       8       65        1      spare rebuilding   /dev/sde1
+       2       8       33        2      active sync   /dev/sdc1
+       3       8       49        3      active sync   /dev/sdd1

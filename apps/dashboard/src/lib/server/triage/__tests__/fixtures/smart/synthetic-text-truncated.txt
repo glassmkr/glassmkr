@@ -1,0 +1,22 @@
+=== START OF INFORMATION SECTION ===
+Model Family:     Toshiba MG07ACA... Enterprise Capacity HDD
+Device Model:     TOSHIBA MG07ACA14TE
+Serial Number:    X9FAKE0010
+LU WWN Device Id: 5 000039 a00000010
+Firmware Version: 0104
+User Capacity:    14,000,519,643,136 bytes [14.0 TB]
+Sector Sizes:     512 bytes logical, 4096 bytes physical
+Rotation Rate:    7200 rpm
+
+=== START OF READ SMART DATA SECTION ===
+SMART overall-health self-assessment test result: PASSED
+
+SMART Attributes Data Structure revision number: 16
+Vendor Specific SMART Attributes with Thresholds:
+ID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_FAILED RAW_VALUE
+  1 Raw_Read_Error_Rate     0x000b   100   100   050    Pre-fail  Always       -       0
+  2 Throughput_Performance  0x0005   100   100   050    Pre-fail  Offline      -       0
+  3 Spin_Up_Time            0x0027   100   100   001    Pre-fail  Always       -       7745
+  4 Start_Stop_Count        0x0032   100   100   000    Old_age   Always       -       24
+  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       24
+  7 Seek_Error_Rate         0x000b   100   1

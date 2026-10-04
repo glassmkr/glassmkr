@@ -1,0 +1,4 @@
+[Fri Oct  3 09:10:00 2026] BTRFS error (device sdb1): bdev /dev/sdb1 errs: wr 1, rd 0, flush 0, corrupt 0, gen 0
+[Fri Oct  3 09:10:00 2026] BTRFS: error (device sdb1) in btrfs_commit_transaction:2418: errno=-5 IO failure (Error while writing out transaction)
+[Fri Oct  3 09:10:00 2026] BTRFS info (device sdb1): forced readonly
+[Fri Oct  3 09:10:00 2026] BTRFS warning (device sdb1): Skipping commit of aborted transaction.

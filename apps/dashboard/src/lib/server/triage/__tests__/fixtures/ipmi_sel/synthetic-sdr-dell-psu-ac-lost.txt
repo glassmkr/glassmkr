@@ -1,0 +1,12 @@
+root@r740:~# ipmitool sdr type "Power Supply"
+PS1 Status       | 63h | ok  | 10.1 | Presence detected
+PS2 Status       | 64h | ok  | 10.2 | Presence detected, Power Supply AC lost
+PS Redundancy    | 77h | ok  |  7.1 | Redundancy Lost
+root@r740:~# ipmitool sdr type Fan
+Fan1             | 30h | ok  |  7.1 | 5040 RPM
+Fan2             | 31h | ok  |  7.1 | 5160 RPM
+Fan3             | 32h | ok  |  7.1 | 5040 RPM
+Fan4             | 33h | ok  |  7.1 | 5160 RPM
+Fan5             | 34h | ok  |  7.1 | 5040 RPM
+Fan6             | 35h | ok  |  7.1 | 5040 RPM
+Fan Redundancy   | 75h | ok  |  7.1 | Fully Redundant

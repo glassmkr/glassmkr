@@ -1,0 +1,7 @@
+root@gpu-node-12:~# ipmitool sdr type Fan
+FAN1             | 41h | ok  | 29.1 | 8400 RPM
+FAN2             | 42h | ok  | 29.2 | 8300 RPM
+FAN3             | 43h | lcr | 29.3 | 300 RPM
+FAN4             | 44h | cr  | 29.4 | 0 RPM
+FAN5             | 45h | ok  | 29.5 | 8500 RPM
+FAN6             | 46h | ns  | 29.6 | No Reading

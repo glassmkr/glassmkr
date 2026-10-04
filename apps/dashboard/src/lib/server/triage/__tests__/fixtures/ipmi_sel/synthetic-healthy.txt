@@ -1,0 +1,29 @@
+root@node-a17:~# ipmitool sel info
+SEL Information
+Version          : 1.5 (v1.5, v2 compliant)
+Entries          : 6
+Free Space       : 16288 bytes 
+Percent Used     : 0%
+Last Add Time    : 09/14/2026 08:04:52
+Last Del Time    : 09/14/2026 08:02:11
+Overflow         : false
+Supported Cmds   : 'Reserve' 'Get Alloc Info' 
+# of Alloc Units : 1024
+Alloc Unit Size  : 16
+# Free Units     : 1018
+Largest Free Blk : 1018
+Max Record Size  : 16
+root@node-a17:~# ipmitool sel elist
+   1 | 09/14/2026 | 08:02:11 | Event Logging Disabled #0x07 | Log area reset/cleared | Asserted
+   2 | 09/14/2026 | 08:02:40 | System ACPI Power State #0x0a | S0/G0: working | Asserted
+   3 | 09/14/2026 | 08:02:41 | Power Supply PS1 Status | Presence detected | Asserted
+   4 | 09/14/2026 | 08:02:41 | Power Supply PS2 Status | Presence detected | Asserted
+   5 | 09/14/2026 | 08:03:05 | System Boot Initiated #0x8a | Initiated by power up | Asserted
+   6 | 09/14/2026 | 08:04:52 | OS Boot #0x8b | C: boot completed | Asserted
+root@node-a17:~# ipmitool sdr type Fan
+FAN1             | 41h | ok  | 29.1 | 5600 RPM
+FAN2             | 42h | ok  | 29.2 | 5500 RPM
+FAN3             | 43h | ok  | 29.3 | 5700 RPM
+FAN4             | 44h | ns  | 29.4 | No Reading
+FANA             | 45h | ok  | 29.5 | 3900 RPM
+root@node-a17:~# 

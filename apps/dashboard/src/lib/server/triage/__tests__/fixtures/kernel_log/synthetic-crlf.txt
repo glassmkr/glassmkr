@@ -1,0 +1,3 @@
+[Fri Oct  3 10:00:01 2026] nvme nvme0: I/O 77 QID 2 timeout, reset controller
+[Fri Oct  3 10:00:02 2026] NVRM: Xid (PCI:0000:3b:00): 79, pid=2201, name=python3, GPU has fallen off the bus.
+[Fri Oct  3 10:00:03 2026] EXT4-fs (nvme0n1p2): Remounting filesystem read-only

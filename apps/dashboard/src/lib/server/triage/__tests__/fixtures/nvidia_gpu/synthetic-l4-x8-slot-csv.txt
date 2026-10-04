@@ -1,0 +1,3 @@
+$ nvidia-smi --query-gpu=index,name,pci.bus_id,temperature.gpu,utilization.gpu,power.draw,power.limit,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max --format=csv
+index, name, pci.bus_id, temperature.gpu, utilization.gpu [%], power.draw [W], power.limit [W], pcie.link.gen.current, pcie.link.gen.max, pcie.link.width.current, pcie.link.width.max
+0, NVIDIA L4, 00000000:01:00.0, 71, 96 %, 71.62 W, 72.00 W, 4, 4, 8, 16

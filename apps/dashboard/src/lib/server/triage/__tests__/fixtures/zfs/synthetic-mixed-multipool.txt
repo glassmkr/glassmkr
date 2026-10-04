@@ -1,0 +1,85 @@
+  pool: rpool
+ state: ONLINE
+  scan: scrub repaired 0B in 00:01:52 with 0 errors on Sun Sep 14 00:25:53 2025
+config:
+
+	NAME                                   STATE     READ WRITE CKSUM
+	rpool                                  ONLINE       0     0     0
+	  mirror-0                             ONLINE       0     0     0
+	    nvme-FAKE_ROOT_DISK_A-part3        ONLINE       0     0     0
+	    nvme-FAKE_ROOT_DISK_B-part3        ONLINE       0     0     0
+
+errors: No known data errors
+
+  pool: tank
+ state: DEGRADED
+status: One or more devices has been removed by the administrator.
+	Sufficient replicas exist for the pool to continue functioning in a
+	degraded state.
+action: Online the device using 'zpool online' or replace the device with
+	'zpool replace'.
+  scan: scrub repaired 0B in 03:10:05 with 0 errors on Sun Sep 14 03:34:06 2025
+config:
+
+	NAME                                   STATE     READ WRITE CKSUM
+	tank                                   DEGRADED     0     0     0
+	  raidz1-0                             DEGRADED     0     0     0
+	    ata-TOSHIBA_MG07ACA14TE_FAKE0001   ONLINE       0     0     0
+	    ata-TOSHIBA_MG07ACA14TE_FAKE0002   REMOVED      0     0     0
+	    ata-TOSHIBA_MG07ACA14TE_FAKE0003   ONLINE       0     0     0
+
+errors: No known data errors
+
+  pool: backup
+ state: DEGRADED
+status: One or more devices has been taken offline by the administrator.
+	Sufficient replicas exist for the pool to continue functioning in a
+	degraded state.
+action: Online the device using 'zpool online' or replace the device with
+	'zpool replace'.
+  scan: scrub repaired 0B in 07:44:30 with 0 errors on Sun Sep 14 08:08:31 2025
+config:
+
+	NAME                                   STATE     READ WRITE CKSUM
+	backup                                 DEGRADED     0     0     0
+	  mirror-0                             DEGRADED     0     0     0
+	    ata-ST16000NM001G-2KK103_FAKE0001  ONLINE       0     0     0
+	    ata-ST16000NM001G-2KK103_FAKE0002  OFFLINE      0     0     0
+	    ata-ST16000NM001G-2KK103_FAKE0003  ONLINE       0     0     0
+
+errors: No known data errors
+
+  pool: bulk
+ state: DEGRADED
+status: One or more devices are faulted in response to persistent errors.
+	Sufficient replicas exist for the pool to continue functioning in a
+	degraded state.
+action: Replace the faulted device, or use 'zpool clear' to mark the device
+	repaired.
+  scan: scrub repaired 0B in 11:02:51 with 0 errors on Sun Sep 14 11:26:52 2025
+config:
+
+	NAME                   STATE     READ WRITE CKSUM
+	bulk                   DEGRADED     0     0     0
+	  draid2:4d:7c:1s-0    DEGRADED     0     0     0
+	    sdc                ONLINE       0     0     0
+	    sdd                ONLINE       0     0     0
+	    sde                FAULTED      0    58     0  too many errors
+	    sdf                ONLINE       0     0     0
+	    sdg                ONLINE       0     0     0
+	    sdh                ONLINE       0     0     0
+	    sdi                ONLINE       0     0     0
+	spares
+	  draid2-0-0           AVAIL
+
+errors: No known data errors
+
+  pool: scratch
+ state: ONLINE
+config:
+
+	NAME        STATE     READ WRITE CKSUM
+	scratch     ONLINE       0     0     0
+	  sdj       ONLINE       0     0     0
+
+errors: No known data errors

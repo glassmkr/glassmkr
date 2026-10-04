@@ -1,0 +1,9 @@
+[    5.100100] scsi 3:0:0:1: rdac: LUN 1 (RDAC) (unowned)
+[    5.101000] sd 3:0:0:1: [sdc] 4294967296 512-byte logical blocks: (2.20 TB/2.00 TiB)
+[    5.110000] sd 3:0:0:1: [sdc] tag#0 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=0s
+[    5.110003] sd 3:0:0:1: [sdc] tag#0 Sense Key : Illegal Request [current]
+[    5.110006] sd 3:0:0:1: [sdc] tag#0 <<vendor>>ASC=0x94 ASCQ=0x1
+[    5.110009] sd 3:0:0:1: [sdc] tag#0 CDB: Read(10) 28 00 00 00 00 00 00 00 08 00
+[    5.110012] I/O error, dev sdc, sector 0 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 2
+[    5.110020] Buffer I/O error on dev sdc, logical block 0, async page read
+[    5.120000] sd 3:0:0:1: [sdc] Attached SCSI disk

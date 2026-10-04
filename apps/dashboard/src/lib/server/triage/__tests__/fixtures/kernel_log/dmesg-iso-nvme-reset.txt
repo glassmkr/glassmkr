@@ -1,0 +1,7 @@
+2026-10-02T23:13:58,004112+00:00 nvme nvme1: 63/0/0 default/read/poll queues
+2026-10-02T23:14:05,118223+00:00 nvme nvme1: I/O tag 28 (101c) opcode 0x2 (Read) QID 6 timeout, aborting req_op:READ(0) size:131072
+2026-10-02T23:14:05,118301+00:00 nvme nvme1: Abort status: 0x0
+2026-10-02T23:14:35,630118+00:00 nvme nvme1: I/O tag 28 (101c) opcode 0x2 (Read) QID 6 timeout, reset controller
+2026-10-02T23:14:46,882017+00:00 nvme nvme1: 63/0/0 default/read/poll queues
+2026-10-02T23:14:46,890244+00:00 nvme1n1: I/O Cmd(0x2) @ LBA 1220558848, 256 blocks, I/O Error (sct 0x3 / sc 0x71)
+2026-10-02T23:14:46,890251+00:00 I/O error, dev nvme1n1, sector 1220558848 op 0x0:(READ) flags 0x80700 phys_seg 4 prio class 2

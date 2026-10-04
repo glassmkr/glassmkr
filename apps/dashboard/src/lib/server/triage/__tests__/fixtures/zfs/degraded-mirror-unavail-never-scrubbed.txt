@@ -1,0 +1,16 @@
+  pool: data
+ state: DEGRADED
+status: One or more devices could not be opened.  Sufficient replicas exist for
+	the pool to continue functioning in a degraded state.
+action: Attach the missing device and online it using 'zpool online'.
+   see: https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-2Q
+  scan: none requested
+config:
+
+	NAME                      STATE     READ WRITE CKSUM
+	data                      DEGRADED     0     0     0
+	  mirror-0                DEGRADED     0     0     0
+	    sdb                   ONLINE       0     0     0
+	    11829537491204371654  UNAVAIL      0     0     0  was /dev/sdc1
+
+errors: No known data errors

@@ -152,11 +152,11 @@
             <span class="step-num">2</span>
             <div>
               <strong>Install Crucible</strong>
-              <!-- The installer requires root AND a key, and refuses anything outside
-                   Ubuntu and Debian. This command had neither, so following the empty
+              <!-- The installer requires root AND a key, and installs packages with apt
+                   or dnf/yum only. This command had neither, so following the empty
                    state exactly produced an immediate failure. The key comes from step 1. -->
               <pre><code>curl -sf https://glassmkr.com/install.sh | sudo bash -s -- --api-key gmk_cru_live_your_key</code></pre>
-              <p class="step-desc">Ubuntu and Debian. On RHEL, Rocky, Alma, Arch or Alpine use the single-file binary, which needs no Node: <a href="https://glassmkr.com/docs/getting-started" target="_blank" rel="noopener">getting started</a>.</p>
+              <p class="step-desc">Debian, Ubuntu, RHEL, Rocky, AlmaLinux, CentOS and Fedora. On Arch and other glibc distributions with systemd use the single-file binary, which needs no Node: <a href="https://glassmkr.com/docs/getting-started" target="_blank" rel="noopener">getting started</a>.</p>
             </div>
           </div>
           <div class="empty-step">

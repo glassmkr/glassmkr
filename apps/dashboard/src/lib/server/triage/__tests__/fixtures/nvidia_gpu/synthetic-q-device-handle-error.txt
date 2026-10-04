@@ -1,0 +1,10 @@
+root@gpu-node-07:~# nvidia-smi -q
+
+==============NVSMI LOG==============
+
+Timestamp                                 : Fri Oct  3 11:22:43 2026
+Driver Version                            : 550.90.07
+CUDA Version                              : 12.4
+
+Attached GPUs                             : 8
+Unable to determine the device handle for GPU0000:2A:00.0: Unknown Error

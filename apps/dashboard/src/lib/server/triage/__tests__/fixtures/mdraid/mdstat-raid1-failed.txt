@@ -1,0 +1,6 @@
+Personalities : [raid1]
+md126 : active raid1 sdb2[1](F) sda2[0]
+      523200 blocks super 1.2 [2/1] [U_]
+      bitmap: 1/1 pages [4KB], 65536KB chunk
+
+unused devices: <none>
