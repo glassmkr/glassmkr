@@ -351,6 +351,30 @@ describe("gpu_thermal_critical", () => {
   it("does not fire at temp 65C with no throttle", () => {
     expect(alertsByType(gpuSnapshot([gpuBase({ temp_c: 65 })]), "gpu_thermal_critical").length).toBe(0);
   });
+
+  // HW Slowdown is NVML's umbrella reason: an external power brake sets it
+  // too, and nvidia-smi then lists HW Power Brake Slowdown active under it with
+  // HW Thermal Slowdown not active. An H100 at 61C read that way was reported
+  // as a critical thermal fault; gpu_power_cap_throttling owns the power event.
+  it("does not fire on a hw_slowdown that a power brake explains", () => {
+    const s = gpuSnapshot([gpuBase({
+      temp_c: 61,
+      thermal_slowdown_active: true,
+      performance_state_reasons: ["hw_slowdown", "hw_power_brake"],
+    })]);
+    expect(alertsByType(s, "gpu_thermal_critical").length).toBe(0);
+    expect(alertsByType(s, "gpu_power_cap_throttling").length).toBe(1);
+  });
+
+  it("still fires on hw_slowdown with no power brake, and on a thermal slowdown beside a power brake", () => {
+    const bare = gpuSnapshot([gpuBase({ temp_c: 80, performance_state_reasons: ["hw_slowdown"] })]);
+    expect(alertsByType(bare, "gpu_thermal_critical").length).toBe(1);
+    const both = gpuSnapshot([gpuBase({
+      temp_c: 80,
+      performance_state_reasons: ["hw_slowdown", "hw_thermal_slowdown", "hw_power_brake"],
+    })]);
+    expect(alertsByType(both, "gpu_thermal_critical").length).toBe(1);
+  });
 });
 
 // ============================================================================

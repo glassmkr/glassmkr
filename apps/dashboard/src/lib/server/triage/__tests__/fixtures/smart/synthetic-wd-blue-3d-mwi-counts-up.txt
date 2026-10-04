@@ -1,0 +1,52 @@
+root@host-example:~# smartctl -a /dev/sdb
+smartctl 7.2 2020-12-30 r5155 [x86_64-linux-5.15.0-91-generic] (local build)
+Copyright (C) 2002-20, Bruce Allen, Christian Franke, www.smartmontools.org
+
+=== START OF INFORMATION SECTION ===
+Model Family:     WD Blue / Red / Green SSDs
+Device Model:     WDC  WDS500G2B0A-00SM50
+Serial Number:    FAKE-WDBLUE-0001
+Firmware Version: 401000WD
+User Capacity:    500,107,862,016 bytes [500 GB]
+Sector Size:      512 bytes logical/physical
+Rotation Rate:    Solid State Device
+Form Factor:      2.5 inches
+TRIM Command:     Available, deterministic, zeroed
+Device is:        In smartctl database [for details use: -P show]
+ATA Version is:   ACS-4 T13/BSR INCITS 529 revision 5
+SATA Version is:  SATA 3.3, 6.0 Gb/s (current: 6.0 Gb/s)
+Local Time is:    Sat Oct  3 10:00:00 2026 UTC
+SMART support is: Available - device has SMART capability.
+SMART support is: Enabled
+
+=== START OF READ SMART DATA SECTION ===
+SMART overall-health self-assessment test result: PASSED
+
+SMART Attributes Data Structure revision number: 4
+Vendor Specific SMART Attributes with Thresholds:
+ID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_FAILED RAW_VALUE
+  5 Reallocated_Sector_Ct   0x0032   100   100   ---    Old_age   Always       -       0
+  9 Power_On_Hours          0x0032   100   100   ---    Old_age   Always       -       12345
+ 12 Power_Cycle_Count       0x0032   100   100   ---    Old_age   Always       -       210
+165 Block_Erase_Count       0x0032   100   100   ---    Old_age   Always       -       4295229445
+166 Minimum_PE_Cycles_TLC   0x0032   100   100   ---    Old_age   Always       -       1
+167 Max_Bad_Blocks_per_Die  0x0032   100   100   ---    Old_age   Always       -       34
+168 Maximum_PE_Cycles_TLC   0x0032   100   100   ---    Old_age   Always       -       17
+169 Total_Bad_Blocks        0x0032   100   100   ---    Old_age   Always       -       363
+170 Grown_Bad_Blocks        0x0032   100   100   ---    Old_age   Always       -       0
+171 Program_Fail_Count      0x0032   100   100   ---    Old_age   Always       -       0
+172 Erase_Fail_Count        0x0032   100   100   ---    Old_age   Always       -       0
+173 Average_PE_Cycles_TLC   0x0032   100   100   ---    Old_age   Always       -       8
+174 Unexpected_Power_Loss   0x0032   100   100   ---    Old_age   Always       -       41
+184 End-to-End_Error        0x0032   100   100   ---    Old_age   Always       -       0
+187 Reported_Uncorrect      0x0032   100   100   ---    Old_age   Always       -       0
+188 Command_Timeout         0x0032   100   100   ---    Old_age   Always       -       0
+194 Temperature_Celsius     0x0022   072   048   ---    Old_age   Always       -       28 (Min/Max 18/52)
+199 UDMA_CRC_Error_Count    0x0032   100   100   ---    Old_age   Always       -       0
+230 Media_Wearout_Indicator 0x0032   002   002   ---    Old_age   Always       -       0x020b0032020b
+232 Available_Reservd_Space 0x0033   100   100   004    Pre-fail  Always       -       100
+233 NAND_GB_Written_TLC     0x0032   100   100   ---    Old_age   Always       -       4218
+234 NAND_GB_Written_SLC     0x0032   100   100   ---    Old_age   Always       -       16321
+241 Host_Writes_GiB         0x0030   253   253   ---    Old_age   Offline      -       7520
+242 Host_Reads_GiB          0x0030   253   253   ---    Old_age   Offline      -       9104
+244 Temp_Throttle_Status    0x0032   000   100   ---    Old_age   Always       -       0

@@ -730,7 +730,9 @@ function parseCsv(lines: string[], table: GpuTable): { gpus: number; driver?: st
 // or "<inactive>" is inactive (idle, not a fault), anything else is the
 // fault bucket.
 function classifyLink(linkId: number, value: string): NvLinkBasic {
-  const bw = value.match(/(\d+(?:\.\d+)?)\s*GB\/s/i);
+  // Bounded, and never starting inside a number: "\d+" retried from every
+  // digit of a long run cost 0.3 s per 200 KB paste (R2-10).
+  const bw = value.match(/(?<![\d.])(\d{1,7}(?:\.\d{1,6})?)\s*GB\/s/i);
   if (bw) {
     const speed = Number(bw[1]);
     return { link_id: linkId, state: speed > 0 ? "up" : "inactive", speed_gbps: speed };
@@ -926,7 +928,14 @@ function unopenedGpus(lines: string[]): number {
   return seen.size;
 }
 
-function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unmatched: number, dropped: number): ParseNote[] {
+function buildNotes(
+  total: number,
+  counts: BuildCounts,
+  nvlinkGpus: number,
+  unmatched: number,
+  dropped: number,
+  downLinks: readonly number[],
+): ParseNote[] {
   const notes: ParseNote[] = [{ level: "info", message: `Read ${gpuCount(total)} from nvidia-smi output.` }];
   if (dropped > 0) {
     notes.push({
@@ -962,9 +971,15 @@ function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unma
     });
   }
   if (counts.widthOnly > 0) {
+    // Two notes: analyze.ts cuts a note at 240 characters, and one note cut
+    // this command off mid-quote (R2-14).
     notes.push({
       level: "info",
-      message: `The PCIe link width is below the card's maximum on ${gpuCount(counts.widthOnly)}. nvidia-smi's maximum is the card's, not the slot's, so this output cannot tell a slot wired for fewer lanes from a link that trained down; cat "$(readlink -f /sys/bus/pci/devices/<bus id>)/../max_link_width" shows the slot's width.`,
+      message: `The PCIe link width is below the card's maximum on ${gpuCount(counts.widthOnly)}. nvidia-smi's maximum is the card's, not the slot's, so this output cannot tell a slot wired for fewer lanes from a link that trained down.`,
+    });
+    notes.push({
+      level: "info",
+      message: `The slot's own width: cat "$(readlink -f /sys/bus/pci/devices/<bus id>)/../max_link_width", with the GPU's bus id as lspci -D prints it.`,
     });
   }
   if (counts.vbiosSkipped > 0) {
@@ -974,14 +989,17 @@ function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unma
     });
   }
   if (counts.remapGpus > 0) {
-    const pending =
-      counts.remapPending > 0
-        ? ` A remap is pending on ${gpuCount(counts.remapPending)}: it takes effect after a GPU reset.`
-        : "";
     notes.push({
       level: "info",
-      message: `Remapped rows on ${gpuCount(counts.remapGpus)}: ${counts.remapUncorrectable} uncorrectable and ${counts.remapCorrectable} correctable in total. A successful remap retires the faulty memory row; no rule in this check reads remapped-row counts, so they are listed here rather than as a finding.${pending}`,
+      message: `Remapped rows on ${gpuCount(counts.remapGpus)}: ${counts.remapUncorrectable} uncorrectable and ${counts.remapCorrectable} correctable in total. A successful remap retires the faulty memory row; no rule in this check reads remapped-row counts, so they are listed here rather than as a finding.`,
     });
+    // Its own note, so the 240-character cut cannot drop it (R2-14).
+    if (counts.remapPending > 0) {
+      notes.push({
+        level: "info",
+        message: `A row remap is pending on ${gpuCount(counts.remapPending)}: it takes effect after a GPU reset.`,
+      });
+    }
   }
   if (counts.remapFailure > 0) {
     notes.push({
@@ -989,7 +1007,15 @@ function buildNotes(total: number, counts: BuildCounts, nvlinkGpus: number, unma
       message: `Remapping Failure Occurred: Yes on ${gpuCount(counts.remapFailure)}. No rule in this check reads that field, so it is listed here rather than as a finding.`,
     });
   }
-  if (nvlinkGpus > 0 && total < 2) {
+  if (nvlinkGpus > 0 && total < 2 && downLinks.length > 0) {
+    // A warning, so the text block prints it: the rule never looked at these
+    // links, and the answer must not read like a clean NVLink (R2-5).
+    const ids = downLinks.slice(0, 8).join(", ") + (downLinks.length > 8 ? ` and ${downLinks.length - 8} more` : "");
+    notes.push({
+      level: "warning",
+      message: `NVLink ${downLinks.length === 1 ? "link" : "links"} ${ids} report Down on the only GPU in this paste. The NVLink check needs output covering two or more GPUs, so it did not run: paste nvidia-smi nvlink --status for all GPUs.`,
+    });
+  } else if (nvlinkGpus > 0 && total < 2) {
     notes.push({
       level: "info",
       message: "NVLink state was read, but the NVLink check only runs when the paste covers two or more GPUs.",
@@ -1080,14 +1106,16 @@ function parseUnsafe(text: string): ParserResult {
   };
   const gpus = buildGpus(table.list, counts);
   const driver = query.driver ?? csv.driver;
-  const notes = buildNotes(gpus.length, counts, nvlink.gpus, nvlink.unmatched, table.dropped);
+  const n = gpus.length;
+  const downLinks = n < 2 ? gpus.flatMap((g) => g.nvlink_links.filter((l) => l.state === "down").map((l) => l.link_id)) : [];
+  const notes = buildNotes(n, counts, nvlink.gpus, nvlink.unmatched, table.dropped, downLinks);
   if (unopened > 0) notes.push(unopenedNote(unopened));
   // A rule is checked only when some GPU carries what it reads; a memory-only
   // CSV said six GPU rules "ran and found no matching signal" while its own
-  // notes said each check was skipped (R2-17).
-  const n = gpus.length;
+  // notes said each check was skipped (R2-17). nvlink_link_down returns
+  // without reading any link below two GPUs in total (R2-5).
   const fed: Record<(typeof RULES)[number], boolean> = {
-    nvlink_link_down: nvlink.gpus > 0,
+    nvlink_link_down: nvlink.gpus > 0 && n >= 2,
     gpu_uncorrected_ecc: counts.eccSkipped < n,
     gpu_corrected_ecc_storm: counts.eccSkipped < n,
     gpu_thermal_critical: counts.thermalBlind < n,

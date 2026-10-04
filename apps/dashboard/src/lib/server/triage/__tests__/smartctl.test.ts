@@ -808,3 +808,83 @@ describe("software block devices are not unreadable disks (R2-13)", () => {
     expect(unreadableOf(parsed)).toEqual([{ device: "/dev/sdb", reason: "no_smart_data" }]);
   });
 });
+
+// R2-2: the wear loop kept the most-worn of every candidate. SandForce
+// counters that always read 000 (177 Wear_Range_Delta, 233 SandForce_Internal,
+// 241 Lifetime_Writes_GiB) and a WD Blue whose 230 counts up both came back as
+// a critical "replace immediately" on a healthy drive.
+describe("SATA SSD wear attributes (R2-2)", () => {
+  it("reads a SandForce drive's SSD_Life_Left, not its zeroed counters", () => {
+    const { parsed, results } = run("synthetic-sandforce-sv300-healthy.txt");
+    expect(smartOf(parsed)[0]).toMatchObject({ health: "PASSED", reallocated_sectors: 0, percentage_used: 0 });
+    expect(results.filter((r) => r.type === "nvme_wear_high")).toEqual([]);
+  });
+
+  it("does not read a WD Blue's 230 Media_Wearout_Indicator as wear, and says so", () => {
+    const { parsed, results } = run("synthetic-wd-blue-3d-mwi-counts-up.txt");
+    expect(smartOf(parsed)[0].percentage_used).toBeUndefined();
+    expect(results.filter((r) => r.type === "nvme_wear_high")).toEqual([]);
+    expect(noteText(parsed)).toMatch(/1 WD Blue, Red or Green SSD reports attribute 230 \(Media_Wearout_Indicator\)/);
+  });
+
+  it("still reads the named life attributes and the id fallback for unnamed ones", () => {
+    const table = (rows: string[]) =>
+      [
+        "smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.8.0-45-generic] (local build)",
+        "=== START OF INFORMATION SECTION ===",
+        "Device Model:     FAKE SSD 1TB",
+        "Serial Number:    FAKE-SSD-0001",
+        "=== START OF READ SMART DATA SECTION ===",
+        "SMART overall-health self-assessment test result: PASSED",
+        "ID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_FAILED RAW_VALUE",
+        ...rows,
+        "",
+      ].join("\n");
+    const used = (rows: string[]) => smartOf(smartctlParser.parse(table(rows)))[0]?.percentage_used;
+    expect(used(["177 Wear_Leveling_Count     0x0013   011   011   000    Pre-fail  Always       -       1500"])).toBe(89);
+    expect(used(["233 Media_Wearout_Indicator 0x0032   040   040   000    Old_age   Always       -       0"])).toBe(60);
+    expect(used(["202 Percent_Lifetime_Remain 0x0030   075   075   001    Old_age   Offline      -       25"])).toBe(25);
+    expect(used(["202 Unknown_SSD_Attribute   0x0030   070   070   001    Old_age   Offline      -       30"])).toBe(30);
+    // A named explicit attribute wins over a generic one that looks worse.
+    expect(
+      used([
+        "231 SSD_Life_Left           0x0013   090   090   010    Pre-fail  Always       -       0",
+        "175 Lifetime_Endurance_Est  0x0032   020   020   000    Old_age   Always       -       0",
+      ]),
+    ).toBe(10);
+    // Counters and attributes smartctl named something else are not wear.
+    expect(used(["241 Lifetime_Writes_GiB     0x0032   010   010   000    Old_age   Always       -       17883"])).toBeUndefined();
+    expect(used(["233 SandForce_Internal      0x0032   010   010   000    Old_age   Always       -       21418"])).toBeUndefined();
+  });
+});
+
+// R2-8: the header regexes must keep matching what they matched before.
+describe("loop header shapes (R2-8)", () => {
+  const block = "smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.8.0-45-generic] (local build)\n=== START OF READ SMART DATA SECTION ===\nSMART overall-health self-assessment test result: PASSED\n";
+  it.each([
+    ["=== /dev/sda ===", "/dev/sda"],
+    ["==> /dev/sdb <==", "/dev/sdb"],
+    ["---- /dev/sdc", "/dev/sdc"],
+    ["*** /dev/sde ***  ", "/dev/sde"],
+    ["Device: /dev/sdf", "/dev/sdf"],
+    ["Device :  /dev/sdg  ", "/dev/sdg"],
+    ["Disk /dev/nvme0n1", "/dev/nvme0n1"],
+  ])("names the block under %s", (header, device) => {
+    expect(smartOf(smartctlParser.parse(`${header}\n${block}`)).map((d) => d.device)).toEqual([device]);
+  });
+});
+
+// R2-9 and R2-11: hostile shapes that stay bounded (timed in adversarial.test.ts).
+describe("JSON bounds (R2-9, R2-11)", () => {
+  it("still repairs a truncated smartctl JSON document", () => {
+    const { parsed } = run("synthetic-json-truncated.txt");
+    expect(parsed.formats).toContain("smartctl_json");
+    expect(noteText(parsed)).toMatch(/smartctl JSON block was cut off/);
+  });
+
+  it("reads at most 1024 drives across separate JSON values, with a note", () => {
+    const parsed = smartctlParser.parse('{"smart_status":{"passed":true}}\n'.repeat(1500));
+    expect(smartOf(parsed).length + unreadableOf(parsed).length).toBeLessThanOrEqual(1024);
+    expect(noteText(parsed)).toContain("Only the first 1024 drive reads in this paste were read.");
+  });
+});

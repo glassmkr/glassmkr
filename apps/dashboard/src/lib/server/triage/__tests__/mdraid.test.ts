@@ -405,9 +405,14 @@ describe("mixed and messy pastes", () => {
   it("stays fast on 200 KB of distinct member tokens and caps the array count with a note", () => {
     const members = Array.from({ length: 20_000 }, (_, k) => `sd${k}[${k % 100}]`).join(" ");
     let t0 = performance.now();
-    const one = mdraidParser.parse(`md0 : active raid1 ${members}\n      1 blocks [2/2] [UU]\n`);
+    // A 200 KB line is not md output (R2-1 line cap): read fast, not as an array.
+    const huge = mdraidParser.parse(`md0 : active raid1 ${members}\n      1 blocks [2/2] [UU]\n`);
     expect(performance.now() - t0).toBeLessThan(1000);
-    expect(raidOf(one)[0].disks.length).toBeLessThanOrEqual(512);
+    expect(huge.subjects).toBe(0);
+    // A line under the cap with more than 512 members keeps the first 512.
+    const wide = Array.from({ length: 1_200 }, (_, k) => `s${k}[${k % 100}]`).join(" ");
+    const one = mdraidParser.parse(`md0 : active raid1 ${wide}\n      1 blocks [2/2] [UU]\n`);
+    expect(raidOf(one)[0].disks.length).toBe(512);
 
     const many = Array.from({ length: 2_000 }, (_, k) => `md${k} : active raid1 a${k}[0] b${k}[1]\n      1 blocks [2/2] [UU]\n`).join("\n");
     t0 = performance.now();
@@ -500,5 +505,36 @@ describe("injection inside otherwise matching lines", () => {
       expect(noteText).not.toContain(sentence);
       expect(evaluatorText).not.toContain(sentence);
     }
+  });
+});
+
+describe("review round 2", () => {
+  // R2-1: the device-table row regex ended in "(?:\s+(.*))?$", which retried
+  // every split of a padded run when the line ended in U+2029.
+  it("reads a padded device-table row ending in a line separator in linear time", () => {
+    const head = "/dev/md0:\n    Raid Level : raid1\n    Number   Major   Minor   RaidDevice State\n";
+    const row = "       0       8        1        0" + " ".repeat(16_000) + "x\u2029";
+    const t0 = performance.now();
+    const r = mdraidParser.parse(head + `${row}\n`.repeat(12));
+    expect(performance.now() - t0).toBeLessThan(150);
+    expect(r.formats).toEqual(["mdadm_detail"]);
+  });
+
+  it("still reads the state and device after the four number columns", () => {
+    const r = mdraidParser.parse(
+      "/dev/md0:\n    Raid Level : raid1\n         State : clean, degraded\n    Number   Major   Minor   RaidDevice State\n       0       8        1        0      active sync   /dev/sda1\n       1       8       17        1      faulty   /dev/sdb1\n",
+    );
+    expect(raidOf(r)[0]).toMatchObject({ disks: ["sda1", "sdb1"], failed_disks: ["sdb1"], degraded: true });
+  });
+
+  // R2-12: merging one array line pasted again and again with new members
+  // grew a single entry without bound, at quadratic cost.
+  it("caps the members of an array merged from repeated lines, with a note", () => {
+    const line = (i: number) => "md0 : active raid1 " + Array.from({ length: 300 }, (_, k) => `d${i}x${k}[0](F)`).join(" ");
+    const r = mdraidParser.parse(["Personalities : [raid1]", line(0), line(1), line(2)].join("\n"));
+    const md0 = raidOf(r)[0];
+    expect(md0.disks).toHaveLength(512);
+    expect(md0.failed_disks).toHaveLength(512);
+    expect(r.notes.map((n) => n.message)).toContain("1 array lists more than 512 members across this paste; only the first 512 were read.");
   });
 });

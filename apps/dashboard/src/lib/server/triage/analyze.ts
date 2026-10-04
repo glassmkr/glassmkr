@@ -62,7 +62,7 @@ const SEL_WINDOW_DAYS = 36_500;
 const MAX_FINDINGS = 30;
 const MAX_OBSERVED_KEYS = 24;
 const MAX_ARRAY_ITEMS = 16;
-const MAX_NOTE_LENGTH = 240;
+export const MAX_NOTE_LENGTH = 240;
 
 export const TRIAGE_FORMATS = [
   "smartctl_json",
@@ -171,6 +171,26 @@ const TRIAGE_SUMMARY: Record<string, string> = {
     "A ZFS pool in this output is SUSPENDED or has a vdev that is not ONLINE. Severity follows the vdev's redundancy: a SUSPENDED pool, a FAULTED top-level vdev, or a DEGRADED single-disk, raidz1, two-way mirror or raidz2 vdev is critical; a DEGRADED raidz2 already resilvering onto a spare, a raidz3 or a wider mirror is a warning; an OFFLINE vdev or a failed L2ARC cache device is info. A failed log (SLOG) device is reported by zfs_slog_faulted.",
   drive_smart_unreadable:
     "One or more fixed disks are present but their SMART health cannot be read, so a failure on them would go unseen. This is NOT a drive fault: it is a coverage gap. The usual cause is that smartmontools (the `smartctl` binary) is not installed, or a disk sits behind a RAID/HBA controller that needs a specific `smartctl -d` device type (`smartctl --scan-open` finds it). Some virtual or enclosure devices genuinely expose no SMART.",
+  // ecc_errors always fires on the same EDAC UE count, so one event read as
+  // two separate critical problems (R2-16).
+  mce_uncorrected:
+    "EDAC reports an uncorrected memory error. It is the same event as the ECC memory errors finding in this answer, which reads the same EDAC count: identify the DIMM and replace it.",
+  // The YAML speaks of a configured threshold, Crucible's mapping, the rule
+  // id's history and when the drive turns read-only (R2-4).
+  nvme_wear_high:
+    "A solid-state drive's wear indicator shows how much of its rated write endurance is used: percentage used on NVMe, or a life-remaining attribute such as Percent_Lifetime_Remain or Wear_Leveling_Count on a SATA SSD. 75% used is reported at info, 85% at warning and 95% at critical. Identify the drive by its serial before replacing anything.",
+  // The YAML calls every critical code a hardware-witnessed fault; Xid 119
+  // and 120 (GSP) are often driver or firmware (R2-4).
+  gpu_xid_critical:
+    "The kernel log has an NVIDIA Xid event with a code NVIDIA's Xid table classes as critical. The code names the event, not its cause: capture nvidia-bug-report.sh before resetting or reseating the GPU, and look the code up in NVIDIA's Xid documentation.",
+  // The YAML describes the mount-options branch too, which a paste never
+  // feeds: here the finding always comes from the kernel's remount line
+  // (R2-14).
+  filesystem_readonly:
+    "The kernel logged that it remounted a filesystem read-only, which it does when the filesystem fails, usually after I/O errors. Anything that writes to it fails; data already on it stays readable. Check the kernel log lines before the remount for the device's errors.",
+  // Shorter than the YAML so the text block carries it whole (R2-14).
+  nvme_critical_warning:
+    "An NVMe drive's Critical Warning byte is non-zero. Each set bit is a condition the NVMe specification flags for immediate attention: available spare below threshold, temperature threshold exceeded, reliability degraded, read-only mode, or a failed volatile memory backup.",
 };
 
 /**
@@ -184,8 +204,13 @@ const TRIAGE_SUMMARY: Record<string, string> = {
 export const DISK_IO_GREP =
   "I/O error|critical (medium|target) error|device offline error|Sense Key|Add\\. Sense|nvme[0-9]+: .*(timeout|reset|abort|disabl|remov)|sct 0x2|end_request";
 
-// Quick checks that tell the reader to open the dashboard, or describe it.
-const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: string }> = {
+// Quick checks that tell the reader to open the dashboard, or describe it, or
+// call a result healthy (R2-4).
+export const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: string }> = {
+  zfs_scrub_errors: {
+    command: "sudo zpool status | grep -E '(pool:|scan:|errors:)' | head -40",
+    explanation: "Per-pool scan recency and error count. `errors: No known data errors` means the scrub found nothing; any other phrasing is the signal. `scan: scrub in progress` means a scrub is running now.",
+  },
   disk_io_errors: {
     command: `sudo dmesg -T | grep -iE '${DISK_IO_GREP}' | tail -40`,
     explanation: "Kernel lines for block-device errors, SCSI sense data and NVMe timeouts, resets and aborts, from every log level: SCSI sense data is logged at info, so the log is not filtered by level.",
@@ -210,6 +235,32 @@ export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string,
   nvme_wear_high: [
     ["Match the SERIAL from the alert evidence, not the device letter", "Match the serial this answer names, not the device letter"],
     [" (a validation session compared the wrong twin of an MX500 pair and wrongly concluded the alert overstated wear 25x; the alerted twin really was at 80%)", ""],
+    // Lifetime predictions (R2-4).
+    [
+      "# Imminent-replacement workflow (wear >= 95%; critical band).\n# Drive may enter read-only protection mode at 100%. Treat\n# as if failure is hours-to-days away.",
+      "# Replacement workflow (wear >= 95%; critical band).\n# Replace the drive as soon as a maintenance window allows.",
+    ],
+    [
+      "# Planned-replacement workflow (wear 85-94%; warning band).\n# Drive has months-to-quarters of life left; schedule\n# replacement during the next regular maintenance window.",
+      "# Planned-replacement workflow (wear 75-94%; info and warning bands).\n# Schedule replacement during a regular maintenance window.",
+    ],
+    [
+      "# 1. Check projected end-of-life: divide remaining wear\n#    headroom by recent wear rate.",
+      "# 1. Read the current wear and the data written so far.",
+    ],
+  ],
+  // Causes the code alone does not establish, and a VBIOS reflash (R2-4).
+  gpu_xid_critical: [
+    [
+      "# XID 79 (most severe): GPU fell off the PCIe bus. Reseat the\n# card; if it recurs, RMA.\n# XID 48 / 95: Double-bit ECC / uncontained ECC. VRAM end-of-\n# life; plan replacement.\n# XID 94: contained ECC. Memory region blocked but data is\n# safe; preventive replacement.\n# XID 119 / 120: GSP RPC timeout. Driver/firmware version\n# mismatch; verify and reflash vbios.",
+      "# XID 79: the GPU has fallen off the PCIe bus.\n# XID 48 / 95: double-bit ECC error / uncontained ECC error.\n# XID 94: contained ECC error.\n# XID 119 / 120: GSP RPC timeout / GSP error.\n# The code names the event, not its cause: capture\n# nvidia-bug-report.sh before any reset, reseat or reboot.",
+    ],
+  ],
+  psu_redundancy_loss: [
+    [
+      "# 4. Plan replacement at next maintenance window; no\n#    emergency. Degraded means \"watch this PSU, it's\n#    likely the next to fail\".",
+      "# 4. Plan replacement at next maintenance window; no\n#    emergency. Degraded means the BMC reports this\n#    PSU's redundancy as reduced.",
+    ],
   ],
   nvme_critical_warning: [
     ["Reserved blocks below threshold; SSD nearing end of life.", "Reserved blocks below the drive's spare threshold."],
@@ -233,6 +284,13 @@ const NEVER_SCRUBBED = {
   title: "ZFS pool has never been scrubbed",
   summary:
     "The pool shows no record of a scrub. A scrub reads every block and finds silent corruption; a just-created pool simply needs its first one. This is a maintenance gap reported at info, not a fault.",
+};
+
+// YAML titles that name a source the answer did not read: mce_uncorrected
+// reads the EDAC UE count only, and was titled a machine check beside a note
+// saying machine-check lines were not decoded (R2-16).
+const TRIAGE_TITLE: Record<string, string> = {
+  mce_uncorrected: "Uncorrected memory error reported by EDAC",
 };
 
 // Evidence that misleads in a paste answer: ipmi_sel_critical's
@@ -516,7 +574,14 @@ function sanitizeEvidence(evidence: Record<string, unknown>): Observed {
       if (list.every(isPlainObject)) {
         const items = list.map((item) => itemName(key, item)).filter(Boolean);
         if (items.length !== list.length) continue;
-        clean = items.join(",");
+        if (NAMED_ITEM_LISTS[key]) {
+          // Names the paste chose (GPU products, sensor names): a few whole
+          // names and a count, as for affected_components. Sixteen 64-character
+          // product names joined into ~1 KB of paste text in the evidence
+          // (R2-13).
+          const names = value.slice(0, 256).filter(isPlainObject).map((item) => itemName(key, item)).filter(Boolean);
+          clean = boundedNameList([...new Set(names)], ",") ?? undefined;
+        } else clean = items.join(",");
         // zfs_slog_faulted names its pool only inside each item.
         sharedPool ||= sharedItemValue(list, "pool");
       } else {
@@ -700,7 +765,7 @@ function shapeFinding(
   }
 
   let severity = alert.severity;
-  let title = meta?.title ?? alert.type;
+  let title = TRIAGE_TITLE[alert.type] ?? meta?.title ?? alert.type;
   let summary = triageSummary(alert.type);
   // The YAML verdict prior is the rule's default; a branch the triage below
   // marks benign carries "recoverable" so it does not say "vendor-side" beside
@@ -871,17 +936,26 @@ function componentList(events: unknown): string | null {
     const label = isPlainObject(e) ? safeLabel(e.sensor, COMPONENTS_CHARS).replace(/,/g, " ").trim() : "";
     if (label && !labels.includes(label)) labels.push(label);
   }
+  return boundedNameList(labels, ", ");
+}
+
+/**
+ * At most MAX_COMPONENTS whole names within COMPONENTS_CHARS, then "+N more"
+ * for the rest. The first name is always kept (each is at most 64
+ * characters), so a long one is never replaced by a bare count.
+ */
+function boundedNameList(labels: readonly string[], separator: string): string | null {
   if (labels.length === 0) return null;
   const kept: string[] = [];
   for (const label of labels) {
     if (kept.length === MAX_COMPONENTS) break;
     const rest = labels.length - kept.length - 1;
-    const text = [...kept, label].join(", ") + (rest > 0 ? ` +${rest} more` : "");
-    if (text.length > COMPONENTS_CHARS) break;
+    const text = [...kept, label].join(separator) + (rest > 0 ? ` +${rest} more` : "");
+    if (kept.length > 0 && text.length > COMPONENTS_CHARS) break;
     kept.push(label);
   }
   const more = labels.length - kept.length;
-  return kept.join(", ") + (more > 0 ? ` +${more} more` : "");
+  return kept.join(separator) + (more > 0 ? ` +${more} more` : "");
 }
 
 function hasUnknownTimes(snapshot: Record<string, unknown>): boolean {
@@ -927,19 +1001,32 @@ const CONTINUOUS_MONITORING = {
   source_url: "https://github.com/glassmkr/crucible",
 } as const;
 
+/**
+ * The paste as the readers see it. "." in a JavaScript regex stops at U+2028
+ * and U+2029, which no reader splits lines on, so any pattern with a
+ * whitespace run before a trailing "(.*)$" retried every split of that run on
+ * a line holding one: one anonymous 200 KB paste held the process for 40 s
+ * (R2-1). They become ordinary line breaks before any reader runs.
+ */
+function readerText(text: string): string {
+  return text.replace(/[\u2028\u2029]/g, "\n");
+}
+
 /** Analyze pasted command output with Glassmkr's alert rules. */
 export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAnalysis {
   const parsers = opts.parsers ?? TRIAGE_PARSERS;
   const hintDomain = opts.formatHint ? FORMAT_DOMAIN[opts.formatHint] : undefined;
   const notes: string[] = [];
+  // Bytes and lines below are counted on the paste as given.
+  const read = readerText(text);
 
   // 1. Detect and parse.
   const parsed: Array<{ parser: TriageParser; result: ParserResult; detected: boolean }> = [];
   for (const parser of parsers) {
-    const detected = safeDetect(parser, text);
+    const detected = safeDetect(parser, read);
     if (!detected && parser.domain !== hintDomain) continue;
     try {
-      parsed.push({ parser, result: parser.parse(text), detected });
+      parsed.push({ parser, result: parser.parse(read), detected });
     } catch {
       notes.push(`The ${parser.domain} reader failed on this input and was skipped.`);
     }
@@ -1040,7 +1127,7 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     ? []
     : allow
         .filter((rule) => !fired.has(rule) && !skipped.has(rule))
-        .map((rule) => ({ rule_id: rule, title: getRuleMetadata(rule)?.title ?? rule }));
+        .map((rule) => ({ rule_id: rule, title: TRIAGE_TITLE[rule] ?? getRuleMetadata(rule)?.title ?? rule }));
 
   const not_determinable: TriageAnalysis["not_determinable"] = [];
   for (const { parser } of active) {
@@ -1123,7 +1210,7 @@ function nextCapture(
   };
   /** A detected output that ran no rule: capture it again, unless it said there was nothing to read. */
   const recapture = (r: ParserResult, why: string) => {
-    if (!r.nothing_to_report) return add(DOMAIN_GOAL[r.domain], why);
+    if (!r.nothing_to_report) return add(DOMAIN_GOAL[r.domain], r.recapture_why ? cleanNote(r.recapture_why) : why);
     const next = NOTHING_TO_REPORT_NEXT[r.domain];
     if (next) add(next.goal, next.why);
   };
@@ -1161,6 +1248,10 @@ function nextCapture(
     add("bmc_events", "ipmitool sel info shows whether the BMC event log is full and has stopped recording.");
   }
   if (domains.has("nvidia_gpu") && !formats.has("nvidia_smi_nvlink_status")) add("nvlink", captureWhy("nvlink"));
+  // NVLink output for one GPU: the check needs every GPU's (R2-5).
+  if (gpuRules && formats.has("nvidia_smi_nvlink_status") && !gpuRules.includes("nvlink_link_down")) {
+    add("nvlink", "The NVLink check runs only on output covering two or more GPUs, so it needs nvidia-smi nvlink --status for every GPU on the host.");
+  }
 
   const driveFinding = ["raid_degraded", "zfs_pool_unhealthy", "zfs_scrub_errors", "disk_io_errors", "filesystem_readonly"]
     .some((r) => fired.has(r));
@@ -1193,7 +1284,9 @@ const TEXT_OBSERVED_KEYS = 12;
 // the explanation (R2-3, R2-9, R2-16).
 const TEXT_WARNINGS = 4;
 const TEXT_NOTES = 6;
-const TEXT_SUMMARY_CHARS = 300;
+// A backstop. Every summary a finding can carry fits (a test holds it): at
+// 300, the caveats added on purpose were cut mid-word (R2-14).
+export const TEXT_SUMMARY_CHARS = 480;
 
 function captureLines(analysis: TriageAnalysis): string[] {
   const lines: string[] = [];

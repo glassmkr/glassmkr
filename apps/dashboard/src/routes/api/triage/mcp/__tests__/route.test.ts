@@ -270,6 +270,22 @@ describe("HTTP guards", () => {
     expect(body.result.structuredContent.target).toBe("hosted");
   });
 
+  // Review round 2: only a missing arguments was tolerated; null or an array
+  // reached the SDK and came back as a -32603 Internal error with a raw zod
+  // dump.
+  it("reads a null arguments as an empty one, and rejects a non-object as invalid params", async () => {
+    const ok = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_monitoring_setup", arguments: null } }));
+    expect(ok.status).toBe(200);
+    const body = await ok.json();
+    expect(body.result.isError).toBeFalsy();
+    expect(body.result.structuredContent.target).toBe("hosted");
+    for (const args of [[], "x", 7]) {
+      const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_monitoring_setup", arguments: args } }));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ jsonrpc: "2.0", error: { code: -32602, message: "Invalid params: tool arguments must be an object" }, id: null });
+    }
+  });
+
   it("415s a non-JSON content type", async () => {
     const res = await post("x", { "Content-Type": "text/plain" });
     expect(res.status).toBe(415);

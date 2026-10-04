@@ -5,12 +5,23 @@
 // text block that stands on its own (R1-24), and dashboard-only rule wording
 // (R1-29).
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { analyzeOutput, analysisOutputShape, DISK_IO_GREP, renderAnalysisText, TRIAGE_TEXT_REPLACE, triageRuleCopy } from "../analyze";
+import {
+  analyzeOutput,
+  analysisOutputShape,
+  DISK_IO_GREP,
+  MAX_NOTE_LENGTH,
+  renderAnalysisText,
+  TEXT_SUMMARY_CHARS,
+  TRIAGE_QUICK_CHECK,
+  TRIAGE_TEXT_REPLACE,
+  triageRuleCopy,
+} from "../analyze";
 import { resolveFix } from "$lib/server/alerts/fix-workflow/resolve";
+import { getRuleMetadata } from "$lib/server/alerts/fix-workflow/loader";
 import { kernelLogParser } from "../parsers/kernel-log";
 import { TRIAGE_PARSERS } from "../registry";
 
@@ -211,10 +222,42 @@ describe("rule wording in a paste answer (R1-29)", () => {
     });
   }
 
+  // R2-4: the check above resolves each rule with no evidence, so it only
+  // ever saw the missing-evidence fallback variant. Every variant a finding
+  // can carry is read here, as buildFix rewrites it.
+  const PREDICTION = /life left|hours-to-days|days away|projected end-of-life|end-of-(?:\s*#\s*)?life|end of life|next to fail|configured threshold|Crucible maps|for history/i;
+  const RULE_SPECIFIC: Record<string, RegExp> = {
+    // Causes an Xid code alone does not establish.
+    gpu_xid_critical: /reflash|version mismatch|hardware-witnessed/i,
+    zfs_scrub_errors: /is healthy/i,
+  };
+  for (const rule of rules) {
+    it(`${rule}: no variant predicts a lifetime or states an unestablished cause`, () => {
+      const meta = getRuleMetadata(rule)!;
+      const pairs = TRIAGE_TEXT_REPLACE[rule] ?? [];
+      const text = (t: string | null | undefined) => pairs.reduce((acc, [from, to]) => acc.split(from).join(to), t ?? "");
+      const qc = TRIAGE_QUICK_CHECK[rule];
+      const shared = [
+        triageRuleCopy(rule).summary,
+        qc ? qc.command : text(meta.fix.quick_check.command),
+        qc ? qc.explanation : text(meta.fix.quick_check.description),
+        ...meta.fix.prerequisites.map(text),
+        text(meta.fix.safe_mode?.command),
+        text(meta.fix.validation?.command),
+      ];
+      for (const variant of meta.fix.variants) {
+        const all = [...shared, text(variant.command)].join("\n");
+        expect(all).not.toMatch(PREDICTION);
+        if (RULE_SPECIFIC[rule]) expect(all).not.toMatch(RULE_SPECIFIC[rule]);
+      }
+    });
+  }
+
   it("every rewrite still finds its text in the rule's YAML fix", () => {
     for (const [rule, pairs] of Object.entries(TRIAGE_TEXT_REPLACE)) {
       const fix = resolveFix(rule, {}, { os_id: null, os_id_like: null, os_version_id: null, dmi_vendor: null })!;
-      const all = [fix.quick_check.command, fix.quick_check.description, fix.safe_mode?.command, fix.command, fix.validation?.command, ...fix.prerequisites].join("\n");
+      const variants = getRuleMetadata(rule)!.fix.variants.map((v) => v.command);
+      const all = [fix.quick_check.command, fix.quick_check.description, fix.safe_mode?.command, ...variants, fix.validation?.command, ...fix.prerequisites].join("\n");
       for (const [from] of pairs) expect(all, `${rule}: ${from}`).toContain(from);
     }
   });
@@ -432,4 +475,99 @@ describe("rule evaluation writes nothing to the log (R2-21)", () => {
     console.log("after");
     expect(log).toHaveBeenCalledWith("after");
   });
+});
+
+// R2-14: analyze.ts cuts a note at MAX_NOTE_LENGTH and the text block cuts a
+// summary at TEXT_SUMMARY_CHARS. Both are backstops: a cut landed mid-command
+// and mid-word on constant text written for these answers.
+describe("constant copy is never cut (R2-14)", () => {
+  const files = readdirSync(FIXTURES, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .flatMap((d) => readdirSync(join(FIXTURES, d.name)).map((f) => `${d.name}/${f}`));
+
+  it("no parser writes a note longer than the answer keeps, on any fixture", () => {
+    for (const file of files) {
+      const text = fixture(file);
+      for (const parser of TRIAGE_PARSERS) {
+        for (const n of parser.parse(text).notes) {
+          expect(n.message.length, `${file} ${parser.domain}: ${n.message}`).toBeLessThanOrEqual(MAX_NOTE_LENGTH);
+        }
+      }
+    }
+  });
+
+  it("every rule summary fits the text block", () => {
+    for (const rule of new Set(TRIAGE_PARSERS.flatMap((p) => p.rules))) {
+      expect(triageRuleCopy(rule).summary.length, rule).toBeLessThanOrEqual(TEXT_SUMMARY_CHARS);
+    }
+  });
+
+  it("the text block carries every finding's summary whole, on every fixture", () => {
+    for (const file of files) {
+      const a = analyzeOutput(fixture(file));
+      const text = renderAnalysisText(a);
+      for (const f of a.findings) expect(text, `${file} ${f.rule_id}`).toContain(f.summary);
+    }
+  });
+});
+
+// R2-13: drifted_models joined up to sixteen 64-character product names from
+// the paste, about 1 KB of paste-controlled text in the answer's own evidence.
+describe("named item lists are bounded like affected_components (R2-13)", () => {
+  it("a CSV with 16 distinct long GPU names lists a few whole names and a count", () => {
+    const name = (i: number) => `Model ${String.fromCharCode(65 + i)} ${"word ".repeat(12)}`.slice(0, 64).trim();
+    const rows = Array.from({ length: 32 }, (_, i) => {
+      const k = i >> 1;
+      return `${i}, GPU-0000feed-0000-4000-8000-${String(i).padStart(12, "0")}, ${name(k)}, 00000000:${(16 + i).toString(16).padStart(2, "0")}:00.0, 96.00.${i % 2 === 0 ? "74" : "89"}.00.01, 550.127.05`;
+    });
+    const text = ["index, uuid, name, pci.bus_id, vbios_version, driver_version", ...rows].join("\n");
+    const a = analyzeOutput(text);
+    const drift = a.findings.find((f) => f.rule_id === "gpu_driver_or_firmware_drift")!;
+    const listed = String(drift.observed.drifted_models);
+    expect(listed).toMatch(/ \+\d+ more$/);
+    expect(listed.length).toBeLessThanOrEqual(64 + " +16 more".length);
+    expect(listed.startsWith(name(0))).toBe(true);
+    expect(renderAnalysisText(a)).not.toContain(name(5));
+  });
+
+  it("every observed string value in the answer stays short, for every fixture", () => {
+    const files = readdirSync(FIXTURES, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .flatMap((d) => readdirSync(join(FIXTURES, d.name)).map((f) => `${d.name}/${f}`));
+    for (const file of files) {
+      for (const f of analyzeOutput(fixture(file)).findings) {
+        for (const [k, v] of Object.entries(f.observed)) {
+          if (typeof v === "string") expect(v.length, `${file} ${f.rule_id} ${k}`).toBeLessThanOrEqual(128);
+        }
+      }
+    }
+  });
+});
+
+// R2-16: mce_uncorrected reads the EDAC UE count only, yet was titled a
+// machine check exception in the same answer that says machine-check lines
+// were not decoded, and read as a second, separate critical problem.
+describe("an EDAC uncorrected error (R2-16)", () => {
+  it("is not titled a machine check, and says it is the ECC finding's event", () => {
+    const a = analyzeOutput(fixture("kernel_log/kern-log-edac.txt"));
+    const mce = a.findings.find((f) => f.rule_id === "mce_uncorrected")!;
+    expect(mce.title).toBe("Uncorrected memory error reported by EDAC");
+    expect(mce.summary).toMatch(/same event as the ECC memory errors finding/);
+    expect(renderAnalysisText(a)).not.toMatch(/machine check exception/i);
+  });
+});
+
+// R2-17: `zpool status -x` printing that all pools are healthy is complete
+// output, not a cut-off paste.
+describe("zpool status -x summary output (R2-17)", () => {
+  it.each(["all pools are healthy\n", "$ zpool status -x\nall pools are healthy\n", "pool 'tank' is healthy\n"])(
+    "%j asks for zpool status without -x, without calling the paste incomplete",
+    (text) => {
+      const a = analyzeOutput(text);
+      const zfs = a.next_capture.find((c) => c.goal === "zfs")!;
+      expect(zfs.command).toContain("zpool status -v");
+      expect(zfs.why).not.toMatch(/could not be read in full/);
+      expect(renderAnalysisText(a)).not.toMatch(/could not be read in full/);
+    },
+  );
 });

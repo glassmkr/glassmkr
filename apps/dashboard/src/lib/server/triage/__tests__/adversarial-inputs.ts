@@ -104,5 +104,86 @@ export function adversarialInputs(size: number): AdversarialInput[] {
     { name: "mdraid: long member list", text: fill("Personalities : [raid1]\nmd0 : active raid1 ", "a", size) },
     { name: "mdraid: padded detail value", text: fill("/dev/md0:\n   State : ", " ", size, "x\n") },
   );
+  out.push(...roundTwoInputs(size));
   return out;
+}
+
+/** Distinct short tokens: "aaa", "aab", ... in [a-z0-9]. */
+function token(i: number, width: number): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let s = "";
+  for (let k = 0; k < width; k++) {
+    s = chars[i % chars.length] + s;
+    i = Math.floor(i / chars.length);
+  }
+  return s;
+}
+
+/** Lines from `make(i)` until the paste reaches `size`. */
+function lines(prefix: string, make: (i: number) => string, size: number): string {
+  const parts: string[] = [prefix];
+  let n = prefix.length;
+  for (let i = 0; ; i++) {
+    const line = make(i) + "\n";
+    if (n + line.length > size) break;
+    parts.push(line);
+    n += line.length;
+  }
+  return parts.join("");
+}
+
+// Review round 2: regexes that stay quadratic inside a parser's line cap, and
+// joins that grow with the product of two lists.
+function roundTwoInputs(size: number): AdversarialInput[] {
+  const banner = "smartctl 7.4 2023-08-01 r5530\n";
+  const detailTable = "/dev/md0:\n    Number   Major   Minor   RaidDevice State\n       0       8        1        0";
+  return [
+    // R2-1: '.' stops at U+2028 and U+2029, so a whitespace run before a
+    // trailing "(.*)$" is retried at every split. mdraid had no line cap.
+    { name: "mdraid: padded detail row ending in U+2029", text: fill(detailTable, " ", size, "x\u2029\n") },
+    { name: "mdraid: tab-padded detail row ending in U+2028", text: fill(detailTable, "\t", size, "x\u2028\n") },
+    { name: "smartctl: padded prompt lines with a mid-line U+2028", text: fill("", "root@h:~#" + " ".repeat(4080) + "x\u2028y\n", size) },
+    { name: "nvidia: padded -q value with a mid-line U+2028", text: fill(NVSMI_BANNER + "GPU 00000000:01:00.0\n", "    Product Name :" + " ".repeat(4060) + "x\u2028y\n", size) },
+    { name: "zpool: padded scan lines with a mid-line U+2028", text: fill("  pool: p\n state: ONLINE\n", "  scan:" + " ".repeat(4080) + "x\u2028y\n", size) },
+    { name: "kernel: padded syslog lines with a mid-line U+2029", text: fill("", "Oct  4 06:51:00" + " ".repeat(2000) + "x\u2029y\n", size) },
+    // R2-8: two whitespace quantifiers splitting one run in the header regexes.
+    { name: "smartctl: padded Drive label lines", text: fill(banner, "Drive" + " ".repeat(4089) + "x\n", size) },
+    { name: "smartctl: padded decorated header lines", text: fill(banner, "= /dev/sda" + " ".repeat(4084) + "x\n", size) },
+    // R2-9: every indented line is a truncated JSON candidate.
+    { name: "smartctl: indented quote-per-line JSON candidates", text: fill(banner, ' {"s\n', size) },
+    // R2-10: a digit run where the NVLink bandwidth belongs.
+    {
+      name: "nvidia: NVLink link lines of digits",
+      text: lines("GPU 0: a (UUID: GPU-1)\n", (i) => `    Link ${i % 1000}: ` + "1".repeat(4080), size),
+    },
+    // R2-11: SMART entries from separate JSON values, joined against distinct
+    // I/O error devices.
+    {
+      name: "smartctl JSON values joined with distinct I/O error devices",
+      text:
+        fill("", '{"smart_status":0}\n', Math.floor(size / 2)) +
+        lines("", (i) => `blk_update_request: I/O error, dev u${token(i, 3)}, sector 0`, Math.ceil(size / 2)),
+    },
+    {
+      name: "smartctl JSON values joined with SCSI sense events",
+      text:
+        fill("", '{"smart_status":0}\n', Math.floor(size / 2)) +
+        lines("", (i) => `sd 0:0:0:0: [s${token(i, 3)}] Sense Key : Medium Error [current]`, Math.ceil(size / 2)),
+    },
+    {
+      name: "smartctl JSON values joined with degraded md arrays",
+      text:
+        fill("", '{"smart_status":0}\n', Math.floor(size / 2)) +
+        lines("Personalities : [raid1]\n", (i) => `md${i} : active raid1 sda1[0](F) sdb1[1]\n      1 blocks [2/1] [_U]`, Math.ceil(size / 2)),
+    },
+    // R2-12: the same array line repeated with distinct members.
+    {
+      name: "mdraid: repeated array line with distinct members",
+      text: lines("Personalities : [raid1]\n", (i) => "md0 : active raid1 " + Array.from({ length: 512 }, (_, k) => `${token(i * 512 + k, 3)}[0]`).join(" "), size),
+    },
+    {
+      name: "mdraid: repeated array line with distinct failed members",
+      text: lines("Personalities : [raid1]\n", (i) => "md0 : active raid1 " + Array.from({ length: 400 }, (_, k) => `${token(i * 400 + k, 3)}[0](F)`).join(" "), size),
+    },
+  ];
 }

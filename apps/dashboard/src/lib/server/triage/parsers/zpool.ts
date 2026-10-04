@@ -566,6 +566,9 @@ function parse(text: string): ParserResult {
   };
   // "no pools available" is the whole answer, not a cut-off paste (R2-16).
   if (xNoPools > 0 && pools.length === 0 && xHealthy === 0 && blocks.length === 0) result.nothing_to_report = true;
+  if (xHealthy > 0 && pools.length === 0 && blocks.length === 0) {
+    result.recapture_why = "zpool status without -x prints each pool's state, vdev tree and scrub line, which the -x summary leaves out.";
+  }
   return result;
 }
 

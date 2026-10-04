@@ -223,15 +223,24 @@ export const POST: RequestHandler = async (event) => {
   // MCP 2025-06-18 removed JSON-RPC batching, and ChatGPT and Claude never
   // send one. A batch that also cancels its own request left the transport
   // waiting forever for a response the SDK never sends, so the POST hung
-  // until the proxy timed out (R1-14).
+  // until the proxy timed out (R1-14). Rejecting every batch is a deliberate
+  // departure from 2025-03-26, which says a server MUST accept them: passed
+  // through, one POST could also carry dozens of tools/call past the global
+  // bucket below, which is debited once per POST.
   if (Array.isArray(parsedBody)) {
     return withHeaders(jsonRpcHttpError(400, -32600, "Batch requests are not supported"), origin);
   }
   // CallToolRequest.params.arguments is optional in MCP, but the SDK validates
   // a missing one as a non-object, so a client calling the no-argument tool
-  // without it got an error instead of the result (R1-33).
-  if (isPlainObject(parsedBody) && parsedBody.method === "tools/call" && isPlainObject(parsedBody.params) && parsedBody.params.arguments === undefined) {
-    parsedBody.params.arguments = {};
+  // without it got an error instead of the result (R1-33). A null is read the
+  // same way; anything else that is not an object is invalid params, not the
+  // SDK's -32603 Internal error with its schema dump.
+  if (isPlainObject(parsedBody) && parsedBody.method === "tools/call" && isPlainObject(parsedBody.params)) {
+    const args = parsedBody.params.arguments;
+    if (args === undefined || args === null) parsedBody.params.arguments = {};
+    else if (!isPlainObject(args)) {
+      return withHeaders(jsonRpcHttpError(400, -32602, "Invalid params: tool arguments must be an object"), origin);
+    }
   }
   if (isPlainObject(parsedBody) && parsedBody.method === "tools/call") {
     const globalBlocked = await limited([[TIER_TRIAGE_GLOBAL, "all"]]);

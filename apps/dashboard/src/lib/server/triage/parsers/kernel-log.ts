@@ -49,6 +49,15 @@ const DOW = "(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)";
 const CTIME_RE = new RegExp(`^\\[${DOW} ${MON} +(\\d{1,2}) (\\d{2}:\\d{2}:\\d{2}) (\\d{4})\\]\\s?(.*)$`);
 // plain dmesg and `journalctl -o short-monotonic`: "[ 8823.112233] msg"
 const RELATIVE_RE = /^\[\s*(\d{1,10}\.\d{1,9})\]\s?(.*)$/;
+// `dmesg -H` / `--reltime` / `-e`: "[Oct 4 06:51] msg" on the first line of a
+// minute (strftime "%b%e %H:%M", so "[Oct14 06:51]" for days 10 to 31), then
+// "[  +0.000012] msg" or "[ +12.345678] msg" deltas. Neither dates an event.
+// Left in the message, the prefix hid the anchored 6.x NVMe media-error lines
+// and the paste was not recognised (R2-7).
+const RELTIME_RE = new RegExp(`^\\[(?:${MON} {0,2}\\d{1,2} \\d{2}:\\d{2}|\\s{0,8}[+-]\\d{1,10}\\.\\d{1,9})\\]\\s?(.*)$`);
+// `grep -H` (or grep over several files) puts the file name first:
+// "/var/log/kern.log:Oct  4 06:51:00 host kernel: msg".
+const GREP_FILE_RE = /^\/[A-Za-z0-9_.\/-]{1,256}:(?=\S)/;
 // `dmesg --time-format iso` (comma fraction), journalctl short-iso, rsyslog RFC 3339
 const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([,.]\d{1,9})?(Z|[+-]\d{2}:?\d{2})?\s+(.*)$/;
 // journalctl short / short-precise ("Oct 03") and RFC 3164 syslog ("Oct  3")
@@ -132,7 +141,7 @@ function journalLine(
 }
 
 function classify(rawLine: string): KernelLine {
-  const line = rawLine.replace(LEVEL_PREFIX_RE, "");
+  const line = rawLine.replace(GREP_FILE_RE, "").replace(LEVEL_PREFIX_RE, "");
 
   const ct = line.match(CTIME_RE);
   if (ct) {
@@ -161,6 +170,12 @@ function classify(rawLine: string): KernelLine {
       return { ...base, format: "journalctl_kernel", fromKernel: true, message: j[3] };
     }
     return { ...base, format: "dmesg", fromKernel: true, message: rest };
+  }
+
+  const reltime = line.match(RELTIME_RE);
+  if (reltime) {
+    // A delta repeats across lines, so it is no dedup key: such a line counts.
+    return { format: "dmesg", time: "", timeKind: "unknown", stampKey: null, fromKernel: true, message: reltime[2] };
   }
 
   const iso = line.match(ISO_RE);
@@ -312,9 +327,15 @@ const NVME_MEDIA_RE = /^(nvme\d{1,4}n\d{1,4}): [A-Za-z ]{1,40}\(0x[0-9a-f]{1,2}\
 const PROBE_OP_RE = /\bop 0x[0-9a-f]{1,2}:\((?:DISCARD|WRITE_ZEROES|SECURE_ERASE)\)/;
 const IO_DEV_RE = /\bdev\s+([A-Za-z0-9_-]{1,32})/;
 const IO_ON_DEVICE_RE = /\bon device\s+([A-Za-z0-9_-]{1,32})/;
-// Floppy (fd0 on most VMs), optical and loop devices are not disks; an I/O
-// error on them says nothing about storage hardware.
-const NON_DISK_RE = /^(?:fd|sr|loop)\d+$/;
+// Floppy (fd0 on most VMs), optical and loop devices are not disks, and
+// network or virtual block devices (nbd, Ceph rbd, zram, ram, DRBD) have no
+// local media: probing an unconnected /dev/nbdN logs I/O errors by design
+// (R2-15). An I/O error on them says nothing about storage hardware. dm-N and
+// md devices stay counted: their errors come with the member disk's.
+const NON_DISK_RE = /^(?:fd|sr|loop|nbd|rbd|zram|ram|drbd)\d+(?:p\d+)?$/;
+// Distinct device names kept for disk_io_errors, which joins each one against
+// every SMART entry in the paste. The count stays exact (R2-11).
+const MAX_IO_DEVICES = 256;
 
 // EDAC core report (drivers/edac/edac_mc.c): "EDAC MC0: 1 CE <msg> on <label> (<location> ...)".
 const EDAC_RE = /\bEDAC MC(\d{1,3}): (\d{1,9}) (CE|UE)\b(.*)$/;
@@ -351,6 +372,18 @@ function splitLines(text: string): string[] {
 
 function matchesUnevaluated(message: string): boolean {
   return MCE_RE.test(message) || FS_FAIL_RE.test(message) || LIBATA_UNC_RE.test(message);
+}
+
+// A line with no kernel prefix (dmesg -t, journalctl -o cat, a hand-trimmed
+// excerpt) counts only when it starts the way the kernel prints an event a
+// matcher below reads. Matched anywhere in the line, a pasted command
+// ("dmesg | grep -i 'I/O error'"), a sentence about one, or a grep under a
+// prompt no prompt pattern knows came back as a critical disk error (R2-3).
+const BARE_KERNEL_LINE_RE =
+  /^(?:(?:blk_update_request|print_req_error|end_request): |(?:I\/O|critical medium|critical target|device offline) error, dev |Buffer I\/O error on dev|lost page write due to I\/O error|(?:EXT[234]-fs|XFS|BTRFS|JBD2|F2FS-fs|FAT-fs)\b[^:]{0,80}: |sd \d{1,4}:\d{1,4}:\d{1,4}:\d{1,9}: |nvme nvme\d|nvme\d{1,4}n\d{1,4}: |NVRM: Xid |EDAC MC\d|mce: |(?:\{\d{1,3}\})?\[Hardware Error\]:|Kernel panic - not syncing: |ata\d{1,3}(?:\.\d{2})?: )/;
+
+function kernelShaped(line: KernelLine): boolean {
+  return line.format !== null || BARE_KERNEL_LINE_RE.test(line.message);
 }
 
 function matchesAnyEvent(message: string): boolean {
@@ -423,7 +456,7 @@ export const kernelLogParser: TriageParser = {
         const trimmed = raw.slice(0, MAX_LINE).trimEnd();
         if (!trimmed || PROMPT_RE.test(trimmed)) continue;
         const line = classify(trimmed);
-        if (!line.fromKernel) continue;
+        if (!line.fromKernel || !kernelShaped(line)) continue;
         if (line.format !== null) return true;
         if (matchesAnyEvent(line.message) || matchesUnevaluated(line.message)) return true;
       }
@@ -456,6 +489,7 @@ export const kernelLogParser: TriageParser = {
     let mceLines = 0;
     let fsFailLines = 0;
     let libataUncLines = 0;
+    let ioDevicesCapped = false;
     const nvmeMediaByDevice = new Map<string, number>();
 
     try {
@@ -474,6 +508,7 @@ export const kernelLogParser: TriageParser = {
           if (matchesAnyEvent(msg)) nonKernelMatches++;
           continue;
         }
+        if (!kernelShaped(line)) continue;
         if (line.format !== null) {
           kernelLines++;
           formats.add(line.format);
@@ -570,7 +605,10 @@ export const kernelLogParser: TriageParser = {
             ioCount++;
             if (dev !== null) {
               const name = safeIdent(dev, 32);
-              if (name) ioDevices.add(name);
+              if (name && !ioDevices.has(name)) {
+                if (ioDevices.size < MAX_IO_DEVICES) ioDevices.add(name);
+                else ioDevicesCapped = true;
+              }
             }
             matched = true;
           }
@@ -620,7 +658,8 @@ export const kernelLogParser: TriageParser = {
       for (const [name, n] of nvmeMediaByDevice) {
         if (ioDevices.has(name)) continue;
         ioCount += n;
-        ioDevices.add(name);
+        if (ioDevices.size < MAX_IO_DEVICES) ioDevices.add(name);
+        else ioDevicesCapped = true;
       }
     } catch {
       // Never throw on hostile input; report what was read so far.
@@ -727,7 +766,13 @@ export const kernelLogParser: TriageParser = {
     if (nonDiskIoLines > 0) {
       notes.push({
         level: "info",
-        message: `${plural(nonDiskIoLines, "I/O error line on a floppy, optical or loop device was", "I/O error lines on floppy, optical or loop devices were")} not counted.`,
+        message: `${plural(nonDiskIoLines, "I/O error line on a floppy, optical, loop, network or virtual block device was", "I/O error lines on floppy, optical, loop, network or virtual block devices were")} not counted.`,
+      });
+    }
+    if (ioDevicesCapped) {
+      notes.push({
+        level: "info",
+        message: `I/O errors name more than ${MAX_IO_DEVICES} devices; the count covers all of them and the first ${MAX_IO_DEVICES} are listed.`,
       });
     }
     if (unknownSenseLines > 0) {

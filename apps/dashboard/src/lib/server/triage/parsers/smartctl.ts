@@ -54,6 +54,9 @@ interface AttrRow {
   name: string;
   /** Normalized VALUE column (0..253), null when smartctl prints "---". */
   value: number | null;
+  /** WORST and THRESH columns, null when absent or "---". */
+  worst: number | null;
+  thresh: number | null;
   /** Raw counter, as the JSON raw.value would carry it. */
   raw: number | null;
 }
@@ -163,6 +166,8 @@ interface Counters {
   softwareBlock: number;
   sharedSerial: number;
   budgetHit: boolean;
+  deviceCapHit: boolean;
+  wdWearUnread: number;
 }
 
 // Crucible's passthrough grammar (privileged.ts isAllowedSmartType): an
@@ -191,10 +196,12 @@ const BARE_COMMAND_RE = /^\s*((?:sudo\s+(?:-\S+\s+)*)?smartctl\s+-.*)$/;
 const WINDOWS_PROMPT_RE = /^\s*(?:PS )?[A-Za-z]:\\[^>\n]{0,200}>\s?(.*)$/;
 // Loop headers naming the device: "=== /dev/sda ===", "==> /dev/sda <==",
 // "/dev/sda:", "Device: /dev/sda". A bare "/dev/sda" line only counts when a
-// smartctl banner follows it.
-const DECORATED_HEADER_RE = /^\s*[=#*>-]+\s*(\/dev\/[A-Za-z0-9_\/.+:-]{1,120})\s*[=#*<-]*\s*$/;
+// smartctl banner follows it. Each whitespace run has one owner: two
+// quantifiers that could split the same run cost 10 ms per padded 4 KB line,
+// 400 ms per paste (R2-8).
+const DECORATED_HEADER_RE = /^\s*[=#*>-]+\s*(\/dev\/[A-Za-z0-9_\/.+:-]{1,120})\s*(?:[=#*<-]+\s*)?$/;
 const COLON_HEADER_RE = /^\s*(\/dev\/[A-Za-z0-9_\/.+:-]{1,120}):\s*$/;
-const LABEL_HEADER_RE = /^\s*(?:Device|Disk|Drive)\s*:?\s+(\/dev\/[A-Za-z0-9_\/.+:-]{1,120})\s*$/i;
+const LABEL_HEADER_RE = /^\s*(?:Device|Disk|Drive)(?:\s*:\s+|\s+)(\/dev\/[A-Za-z0-9_\/.+:-]{1,120})\s*$/i;
 const BARE_HEADER_RE = /^\s*(\/dev\/[A-Za-z0-9_\/.+:-]{1,120})\s*$/;
 
 const HEALTH_ATA_RE = /^\s*SMART overall-health self-assessment test result:\s*(\S+)/;
@@ -663,7 +670,10 @@ function extractJson(text: string, counters: Counters): { values: JsonValue[]; m
         while (q < regionEnd && /\s/.test(text[q])) q++;
         start = q;
       } else if (scan.kind === "truncated") {
-        const slice = text.slice(start, regionEnd);
+        // Only what the scan read: keys past the cut cannot reach the
+        // repaired value, and testing to the region's end re-read the rest of
+        // the paste once per indented "{" line, outside the budget (R2-9).
+        const slice = text.slice(start, Math.min(regionEnd, start + scan.cost + 1));
         if (SMARTCTL_JSON_KEY_RE.test(slice)) {
           const repaired = repairJson(text, start, scan.cuts);
           if (repaired !== undefined && typeof repaired === "object" && repaired !== null) {
@@ -754,6 +764,8 @@ function readJsonDevice(o: Record<string, unknown>, offset: number, truncated: b
         id,
         name: str(a.name) ?? "",
         value: num(a.value) ?? null,
+        worst: num(a.worst) ?? null,
+        thresh: num(a.thresh) ?? null,
         raw: num(isObj(a.raw) ? a.raw.value : undefined) ?? null,
       });
     }
@@ -1050,6 +1062,8 @@ function applyLine(d: DeviceRead, line: string): void {
           id,
           name,
           value: attr[4] === "---" ? null : Number(attr[4]),
+          worst: attr[5] === "---" ? null : Number(attr[5]),
+          thresh: attr[6] === "---" ? null : Number(attr[6]),
           raw: rawFromText(rawText),
         });
       }
@@ -1228,6 +1242,25 @@ function serialOf(d: DeviceRead): string {
   return safeIdent(firstToken(d.serial), 40);
 }
 
+// Attributes smartctl's drive database names for an SSD's life remaining.
+const LIFE_LEFT_NAME_RE =
+  /^(?:SSD_Life_Left|Percent_Lifetime_Remain|Wear_Leveling_Count|Media_Wearout_Indicator|Remaining_Lifetime_Perc|Perc_Rated_Life_Remain|Percent_Life_Remaining)$/i;
+// Crucible's generic wear names, and the counters they also match
+// (Lifetime_Writes_GiB, Host_Writes_GiB, NAND_GB_Written_TLC).
+const WEAR_NAME_RE = /wear.?level|wearout|life.?left|life.?time|percent.?life|ssd.?life|endurance/;
+const WEAR_COUNTER_RE = /writes|reads|written|gib|_gb\b|_mb\b|lbas/;
+// smartctl's name for an attribute its drive database does not know.
+const UNNAMED_ATTR_RE = /^(?:Unknown_(?:SSD_)?Attribute)?$/i;
+
+/**
+ * WD Blue / Red / Green SATA SSDs. Their 230 Media_Wearout_Indicator counts
+ * up from 0 on some firmware and down from 100 on others, and smartctl gives
+ * it no defined meaning, so it says nothing reliable about wear (R2-2).
+ */
+function isWdSataSsd(d: DeviceRead): boolean {
+  return /\bWD Blue \/ Red \/ Green SSDs\b/i.test(d.family ?? "") || /^WDC\s+WDS/i.test(d.model ?? "");
+}
+
 /** Crucible's parseSmartctlJson field mapping, applied to a read from either format. */
 function toSmartEntry(d: DeviceRead, device: string): SmartEntry {
   // ATA and NVMe print a model; SCSI prints vendor and product, which
@@ -1261,10 +1294,20 @@ function toSmartEntry(d: DeviceRead, device: string): SmartEntry {
   }
 
   if (d.attrs.size > 0) {
-    // SATA SSD wear: the most-worn wear attribute's normalized value is life
-    // remaining. Name-matched, with the 202/233/177/173 id fallback; 231 and
-    // anything temperature-like is never read as wear.
-    let wearUsed: number | null = null;
+    // SATA SSD wear: a life attribute's normalized VALUE is life remaining.
+    // An attribute smartctl names for life remaining decides it; the generic
+    // name match and the 202/233/177/173 id fallback (Crucible smart.ts) are
+    // read only when there is none. Ported as-is, the most-worn of every
+    // candidate won, and a healthy SandForce drive (177 Wear_Range_Delta,
+    // 233 SandForce_Internal and 241 Lifetime_Writes_GiB always 000, 231
+    // SSD_Life_Left 100) or a WD Blue whose 230 counts up read as 98-100%
+    // worn, a critical "replace immediately" (R2-2). So the id fallback
+    // covers attributes smartctl could not name, counters are never wear, an
+    // attribute whose VALUE, WORST and THRESH are all 0 is not reported as a
+    // percentage, and a WD Blue / Red / Green SSD's 230 is not read at all.
+    let explicitUsed: number | null = null;
+    let genericUsed: number | null = null;
+    const wdSsd = isWdSataSsd(d);
     const modelStr = `${d.model ?? ""} ${d.family ?? ""} ${d.vendor ?? ""}`.toLowerCase();
     const isSeagate = /seagate|\bst\d{3,}/.test(modelStr);
     for (const a of d.attrs.values()) {
@@ -1282,13 +1325,19 @@ function toSmartEntry(d: DeviceRead, device: string): SmartEntry {
         if (a.id === 199 || a.name === "UDMA_CRC_Error_Count") entry.udma_crc_errors = raw;
       }
       const name = a.name.toLowerCase();
-      const isWearName = /wear.?level|wearout|life.?left|life.?time|percent.?life|ssd.?life|endurance/.test(name);
-      const isWearId = a.id === 202 || a.id === 233 || a.id === 177 || a.id === 173;
-      if ((isWearName || isWearId) && !name.includes("temp") && a.value !== null) {
-        const used = Math.min(100, Math.max(0, 100 - a.value));
-        if (wearUsed === null || used > wearUsed) wearUsed = used;
+      if (a.value === null || name.includes("temp")) continue;
+      if (a.value === 0 && a.worst === 0 && a.thresh === 0) continue;
+      if (wdSsd && a.id === 230) continue;
+      const used = Math.min(100, Math.max(0, 100 - a.value));
+      if (LIFE_LEFT_NAME_RE.test(a.name)) {
+        if (explicitUsed === null || used > explicitUsed) explicitUsed = used;
+        continue;
       }
+      const isWearName = WEAR_NAME_RE.test(name) && !WEAR_COUNTER_RE.test(name);
+      const isWearId = (a.id === 202 || a.id === 233 || a.id === 177 || a.id === 173) && UNNAMED_ATTR_RE.test(a.name);
+      if ((isWearName || isWearId) && (genericUsed === null || used > genericUsed)) genericUsed = used;
     }
+    const wearUsed = explicitUsed ?? genericUsed;
     if (wearUsed !== null && entry.percentage_used === undefined) entry.percentage_used = wearUsed;
   }
 
@@ -1419,6 +1468,10 @@ function buildNotes(c: Counters, subjects: number): ParseNote[] {
   }
   if (c.unreadableJson > 0) warn(`${c.unreadableJson} smartctl JSON ${plural(c.unreadableJson, "block", "blocks")} could not be read.`);
   if (c.budgetHit) warn("Part of the paste was not scanned for smartctl JSON: it holds too many JSON-like lines.");
+  if (c.deviceCapHit) warn(`Only the first ${MAX_DEVICES} drive reads in this paste were read.`);
+  if (c.wdWearUnread > 0) {
+    info(`${c.wdWearUnread} WD Blue, Red or Green ${plural(c.wdWearUnread, "SSD reports", "SSDs report")} attribute 230 (Media_Wearout_Indicator), which counts up on some firmware and down on others, so it was not read as wear: wear is not determinable from this paste.`);
+  }
   if (subjects === 0 && notes.length === 0) info("No smartctl device output was recognized in this paste.");
   return notes;
 }
@@ -1455,16 +1508,25 @@ function parseSmartctl(input: string): ParserResult {
     softwareBlock: 0,
     sharedSerial: 0,
     budgetHit: false,
+    deviceCapHit: false,
+    wdWearUnread: 0,
   };
   const formats: TriageFormat[] = [];
 
   const { values, masked } = extractJson(text, counters);
   const reads: DeviceRead[] = [];
+  // MAX_DEVICES bounds the whole paste, not each JSON value: one small value
+  // per line made 10,000 drives, and rules that join other output against
+  // every drive cost the product of the two (R2-11).
   for (const v of values) {
     const docs = Array.isArray(v.value) ? v.value : [v.value];
     let any = false;
-    for (const doc of docs.slice(0, MAX_DEVICES)) {
+    for (const doc of docs) {
       if (!isObj(doc) || !isSmartctlJson(doc)) continue;
+      if (reads.length >= MAX_DEVICES) {
+        counters.deviceCapHit = true;
+        break;
+      }
       reads.push(readJsonDevice(doc, v.offset, v.truncated));
       any = true;
     }
@@ -1475,6 +1537,8 @@ function parseSmartctl(input: string): ParserResult {
   if (textReads.length > 0) formats.push("smartctl_text");
   reads.push(...textReads);
   reads.sort((a, b) => a.offset - b.offset);
+  if (reads.length > MAX_DEVICES || textReads.length >= MAX_DEVICES) counters.deviceCapHit = true;
+  if (reads.length > MAX_DEVICES) reads.length = MAX_DEVICES;
 
   // Merge repeated reads of one device: same path (and passthrough selector),
   // or the same serial when no path is known. A serial alone only joins an
@@ -1539,6 +1603,7 @@ function parseSmartctl(input: string): ParserResult {
       counters.grownDefectTotal += d.grownDefects;
     }
     const entry = toSmartEntry(d, device);
+    if (entry.percentage_used === undefined && isWdSataSsd(d) && d.attrs.has(230)) counters.wdWearUnread++;
     const failedTest = d.selfTest?.find((r) => r.nibble !== null && r.nibble >= 3 && r.nibble <= 8);
     if (failedTest && failedTest.nibble !== null) {
       counters.failedSelfTestDrives++;

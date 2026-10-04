@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { kernelLogParser } from "../parsers/kernel-log";
-import { analyzeOutput } from "../analyze";
+import { DISK_IO_GREP, analyzeOutput } from "../analyze";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(__dirname, "fixtures", "kernel_log");
@@ -336,7 +336,7 @@ describe("mixed multi-subject paste", () => {
     expect(r.snapshot.ecc_edac).toMatchObject({ edac_corrected_total: 2, edac_uncorrected_total: 1 });
     expect(r.subjects).toBe(15);
     expect(r.notes.map((n) => n.message)).toContain(
-      "1 I/O error line on a floppy, optical or loop device was not counted.",
+      "1 I/O error line on a floppy, optical, loop, network or virtual block device was not counted.",
     );
   });
 
@@ -777,5 +777,126 @@ describe("recognised hardware lines no rule reads", () => {
     expect(r.notes.map((n) => n.message).join(" ")).toMatch(
       /none matched a SCSI sense, NVMe controller fault, ext4 read-only remount, block I\/O error, NVIDIA Xid or EDAC memory error line/,
     );
+  });
+});
+
+function quietAnalyze(text: string) {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    return analyzeOutput(text);
+  } finally {
+    log.mockRestore();
+  }
+}
+
+// R2-3: a line with no kernel prefix counted on any "I/O error" or EDAC text,
+// so the answer's own quick check pasted back, or a sentence about it, came
+// back as a critical disk error.
+describe("commands and prose that mention a kernel error", () => {
+  const GREP = "dmesg -T | grep -i 'I/O error'";
+  it.each([
+    `sudo dmesg -T | grep -iE '${DISK_IO_GREP}' | tail -40`,
+    'dmesg | grep -i "I/O error"',
+    "I ran dmesg -T | grep -iE 'I/O error' and it printed nothing.",
+    "No I/O errors in dmesg.",
+    "There are no I/O error lines in dmesg",
+    `web-01:~ # ${GREP}`,
+    `web-01 ~ # ${GREP}`,
+    `root@web-01 ~ # ${GREP}`,
+    `root@truenas[~]# ${GREP}`,
+    `user@h ~ % ${GREP}`,
+    `\u279c  ~ ${GREP}`,
+    `bash-5.1# ${GREP}`,
+    "grep -i 'EDAC MC0: 1 UE' /var/log/kern.log",
+  ])("raises nothing for %s", (line) => {
+    const r = kernelLogParser.parse(`${line}\n`);
+    expect(r.snapshot.io_errors).toBeUndefined();
+    expect(r.snapshot.ecc_edac).toBeUndefined();
+    expect(quietAnalyze(`${line}\n`).findings).toEqual([]);
+  });
+
+  it("raises nothing for a healthy log pasted with a grep under an uncovered prompt", () => {
+    const text = [
+      "[Fri Oct  3 10:00:00 2026] Linux version 6.8.0-45-generic (buildd@example) #45-Ubuntu SMP",
+      "[Fri Oct  3 10:00:01 2026] EXT4-fs (sda2): mounted filesystem with ordered data mode. Quota mode: none.",
+      `web-01:~ # ${GREP}`,
+      "web-01:~ #",
+    ].join("\n");
+    expect(quietAnalyze(text).findings).toEqual([]);
+  });
+
+  it.each([
+    ["blk_update_request: I/O error, dev sda, sector 2048 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0", "sda"],
+    ["print_req_error: I/O error, dev sdb, sector 2048", "sdb"],
+    ["end_request: I/O error, dev sdc, sector 2048", "sdc"],
+    ["I/O error, dev nvme0n1, sector 2048 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 2", "nvme0n1"],
+    ["Buffer I/O error on dev sdd1, logical block 0, async page read", "sdd1"],
+  ])("still counts the kernel line %s with no prefix (dmesg -t)", (line, device) => {
+    expect(kernelLogParser.parse(`${line}\n`).snapshot.io_errors).toEqual({ count: 1, devices: [device] });
+  });
+
+  it("still counts an un-prefixed EDAC line", () => {
+    const r = kernelLogParser.parse("EDAC MC0: 1 UE memory read error on CPU_SrcID#0_MC#0_Chan#0_DIMM#0 (channel:0 slot:0 page:0x0 offset:0x0 grain:32)\n");
+    expect(r.snapshot.ecc_edac).toMatchObject({ edac_uncorrected_total: 1 });
+  });
+});
+
+// R2-7: `dmesg -H` / --reltime prints "[Oct 4 06:51]" and "[  +0.000012]"
+// prefixes. Left in the message, they hid the anchored 6.x NVMe media-error
+// lines and the paste was not recognised at all.
+describe("dmesg -H (reltime) prefixes", () => {
+  const media = (stamp: string) =>
+    [
+      `[${stamp}] nvme0n1: Read(0x2) @ LBA 1953520, 8 blocks, Unrecovered Read Error (sct 0x2 / sc 0x81) DNR`,
+      "[  +0.000012] critical medium error, dev nvme0n1, sector 1953520 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 2",
+    ].join("\n");
+
+  it.each(["Oct 4 06:51", "Oct14 06:51"])("reads an NVMe media error under [%s]", (stamp) => {
+    const r = kernelLogParser.parse(`${media(stamp)}\n`);
+    expect(r.formats).toEqual(["dmesg"]);
+    expect(r.snapshot.io_errors).toEqual({ count: 1, devices: ["nvme0n1"] });
+    const a = quietAnalyze(`${media(stamp)}\n`);
+    expect(a.findings.map((f) => [f.rule_id, f.severity])).toEqual([["disk_io_errors", "critical"]]);
+  });
+
+  it("does not list disk_io_errors as checked when a read-only remount follows", () => {
+    const text = `${media("Oct 4 06:51")}\n[ +12.000101] EXT4-fs (nvme0n1p2): Remounting filesystem read-only\n`;
+    const a = quietAnalyze(text);
+    expect(a.findings.map((f) => f.rule_id).sort()).toEqual(["disk_io_errors", "filesystem_readonly"]);
+    expect(a.checked_no_signal.map((c) => c.rule_id)).not.toContain("disk_io_errors");
+  });
+
+  it("reads grep -H output prefixed with the log file name", () => {
+    const text = "/var/log/kern.log:Oct  4 06:51:00 web-01 kernel: [ 8823.112233] critical medium error, dev nvme0n1, sector 1953520 op 0x0:(READ) flags 0x80700 phys_seg 1 prio class 2\n";
+    const r = kernelLogParser.parse(text);
+    expect(r.formats).toEqual(["syslog_kernel"]);
+    expect(r.snapshot.io_errors).toEqual({ count: 1, devices: ["nvme0n1"] });
+  });
+});
+
+// R2-15: network and virtual block devices have no local media.
+describe("network and virtual block devices", () => {
+  it.each(["nbd0", "rbd0", "zram0", "drbd1", "loop0p1"])("does not count I/O errors on %s", (dev) => {
+    const text = [
+      `[  412.000001] block ${dev}: Attempted send on invalid socket`,
+      `[  412.000002] blk_update_request: I/O error, dev ${dev}, sector 0 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0`,
+      `[  412.000003] Buffer I/O error on dev ${dev}, logical block 0, async page read`,
+    ].join("\n");
+    const r = kernelLogParser.parse(text);
+    expect(r.snapshot.io_errors).toBeUndefined();
+    expect(r.notes.map((n) => n.message).join(" ")).toMatch(/2 I\/O error lines on floppy, optical, loop, network or virtual block devices were not counted/);
+    expect(quietAnalyze(text).findings).toEqual([]);
+  });
+});
+
+// R2-11: the device list rules join against every SMART entry is bounded; the
+// count stays exact.
+describe("I/O errors on many devices", () => {
+  it("keeps the count and lists at most 256 device names", () => {
+    const text = Array.from({ length: 300 }, (_, i) => `[ 1.000000] blk_update_request: I/O error, dev sd${i}, sector 0`).join("\n");
+    const r = kernelLogParser.parse(text);
+    expect(r.snapshot.io_errors?.count).toBe(300);
+    expect(r.snapshot.io_errors?.devices).toHaveLength(256);
+    expect(r.notes.map((n) => n.message)).toContain("I/O errors name more than 256 devices; the count covers all of them and the first 256 are listed.");
   });
 });

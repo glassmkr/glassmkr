@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { nvidiaSmiParser } from "../parsers/nvidia-smi";
+import { analyzeOutput, renderAnalysisText } from "../analyze";
 import type { ParserResult } from "../types";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "nvidia_gpu");
@@ -250,8 +251,9 @@ describe("failing: A100 SXM, driver 535 layout", () => {
       retired_pages_pending: null,
     });
     expect(result.notes.map((n) => n.message)).toContain(
-      "Remapped rows on 1 GPU: 1 uncorrectable and 0 correctable in total. A successful remap retires the faulty memory row; no rule in this check reads remapped-row counts, so they are listed here rather than as a finding. A remap is pending on 1 GPU: it takes effect after a GPU reset.",
+      "Remapped rows on 1 GPU: 1 uncorrectable and 0 correctable in total. A successful remap retires the faulty memory row; no rule in this check reads remapped-row counts, so they are listed here rather than as a finding.",
     );
+    expect(result.notes.map((n) => n.message)).toContain("A row remap is pending on 1 GPU: it takes effect after a GPU reset.");
   });
 
   it("fires uncorrected ECC (critical), thermal (critical) and PCIe (warning)", () => {
@@ -418,6 +420,42 @@ describe("NVLink fault bucket: 2x A100 identity CSV + nvlink --status", () => {
     expect(r.subjects).toBe(1);
     expect(evaluate(r)).toEqual([]);
     expect(r.notes.map((n) => n.message).join("\n")).toMatch(/two or more GPUs/);
+  });
+
+  // R2-5: the rule never looks at the links of a one-GPU paste, so it must
+  // not be reported as having run, and the Down links must be named.
+  it("a single GPU with Down links is not listed as checked, and the text names the links", () => {
+    const one = [
+      "$ nvidia-smi nvlink -s -i 1",
+      "GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-0000feed-0000-4000-8000-000000000601)",
+      ...Array.from({ length: 12 }, (_, i) => `\t Link ${i}: ${i === 6 || i === 7 ? "Down" : "25 GB/s"}`),
+    ].join("\n");
+    const r = nvidiaSmiParser.parse(one);
+    expect(r.rules_checked).not.toContain("nvlink_link_down");
+    const down = r.notes.find((n) => /Down/.test(n.message));
+    expect(down).toEqual({
+      level: "warning",
+      message: "NVLink links 6, 7 report Down on the only GPU in this paste. The NVLink check needs output covering two or more GPUs, so it did not run: paste nvidia-smi nvlink --status for all GPUs.",
+    });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const a = analyzeOutput(one);
+      expect(a.checked_no_signal.map((c) => c.rule_id)).not.toContain("nvlink_link_down");
+      expect(renderAnalysisText(a)).toContain(down!.message);
+      expect(a.next_capture.map((c) => c.goal)).toContain("nvlink");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("two GPUs in the CSV and one healthy NVLink block still count as checked", () => {
+    const text = fixture("synthetic-nvlink-fault-a100x2.txt")
+      .replace(/GPU 0:[\s\S]*?(?=GPU 1:)/, "")
+      .replace(/Down/g, "25 GB/s");
+    const r = nvidiaSmiParser.parse(text);
+    expect(r.subjects).toBe(2);
+    expect(r.rules_checked).toContain("nvlink_link_down");
+    expect(evaluate(r)).toEqual([]);
   });
 });
 
@@ -776,5 +814,34 @@ describe("rules_checked follows the fields in the paste (R2-17)", () => {
     expect(rules(nvidiaSmiParser.parse(fixture("synthetic-healthy-h100x2-q.txt")))).toEqual(
       nvidiaSmiParser.rules.filter((x) => x !== "nvlink_link_down").sort(),
     );
+  });
+});
+
+// R2-6: HW Slowdown is NVML's umbrella reason. A power brake sets it too, and
+// nvidia-smi lists HW Power Brake Slowdown active under it with HW Thermal
+// Slowdown not active: a power event, not a critical thermal fault.
+describe("HW Slowdown explained by a power brake (R2-6)", () => {
+  it("-q at 61 C: power-cap finding, no thermal finding", () => {
+    const text = fixture("synthetic-healthy-h100x2-q.txt")
+      .replace("GPU Current Temp                  : 45 C", "GPU Current Temp                  : 61 C")
+      .replace(
+        "        HW Slowdown                       : Not Active\n            HW Thermal Slowdown           : Not Active\n            HW Power Brake Slowdown       : Not Active",
+        "        HW Slowdown                       : Active\n            HW Thermal Slowdown           : Not Active\n            HW Power Brake Slowdown       : Active",
+      );
+    const r = nvidiaSmiParser.parse(text);
+    expect(byBdf(r, "00000000:18:00.0").performance_state_reasons).toEqual(["hw_slowdown", "hw_power_brake"]);
+    const ids = ruleIds(evaluate(r));
+    expect(ids).toContain("gpu_power_cap_throttling");
+    expect(ids).not.toContain("gpu_thermal_critical");
+  });
+
+  it("CSV reasons mask 0x88 at 61 C: power-cap finding, no thermal finding", () => {
+    const lines = fixture("synthetic-mixed-l40sx4-csv.txt").split("\n");
+    const text = [lines[0], lines[1], lines[2].replace(", 54, ", ", 61, ").replace(/0x0000000000000000$/, "0x0000000000000088")].join("\n");
+    const r = nvidiaSmiParser.parse(text);
+    expect(gpus(r)[0].performance_state_reasons).toEqual(["hw_slowdown", "hw_power_brake"]);
+    const ids = ruleIds(evaluate(r));
+    expect(ids).toContain("gpu_power_cap_throttling");
+    expect(ids).not.toContain("gpu_thermal_critical");
   });
 });

@@ -5525,9 +5525,17 @@ const rules: AlertRule[] = [
         // trigger either: nvidia-smi sets it for that software target-holding
         // case too. The 92C backstop sits above every data-center GPU's thermal
         // target so normal target-holding never trips it.
+        //
+        // hw_slowdown is NVML's umbrella HW Slowdown reason: an external power
+        // brake sets it too, and nvidia-smi then lists HW Power Brake Slowdown
+        // active under it with HW Thermal Slowdown not active. That is a power
+        // event (gpu_power_cap_throttling reports it), not a thermal one; an
+        // H100 at 61C read that way came back as a critical thermal fault.
+        // A bare hw_slowdown with no power brake still counts as thermal.
+        const reasons = gpu.performance_state_reasons;
         const hwThermalSlowdown =
-          gpu.performance_state_reasons.includes("hw_slowdown") ||
-          gpu.performance_state_reasons.includes("hw_thermal_slowdown");
+          reasons.includes("hw_thermal_slowdown") ||
+          (reasons.includes("hw_slowdown") && !reasons.includes("hw_power_brake"));
         const tooHot = gpu.temp_c >= 92;
         if (!tooHot && !hwThermalSlowdown) continue;
         results.push({

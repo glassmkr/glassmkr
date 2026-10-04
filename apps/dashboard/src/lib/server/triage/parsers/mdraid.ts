@@ -40,6 +40,8 @@ interface ArrayFacts {
   syncActive: boolean;
   /** Nothing in the output gives per-member status (slot map, State, table). */
   statusMissing: boolean;
+  /** Merging repeated reads of this array went past MAX_MEMBERS names. */
+  membersCapped: boolean;
 }
 
 // md personalities as the kernel names them in /proc/mdstat and mdadm prints
@@ -74,13 +76,20 @@ const FOREIGN_HEAD_RE = /^\s*\/dev\/(?!md)[A-Za-z0-9_.\/-]+\s*:\s*$/;
 // long run of spaces.
 const DETAIL_KV_RE = /^\s*([A-Z][A-Za-z ]{1,30}?)\s*:(.*)$/;
 const DETAIL_TABLE_RE = /^\s*Number\s+Major\s+Minor\s+RaidDevice\b/;
-const DETAIL_ROW_RE = /^\s*(\d{1,5}|-)\s+(\d{1,5}|-)\s+(\d{1,7}|-)\s+(\d{1,5}|-)(?:\s+(.*))?$/;
+// The four number columns only; the state and device after them are sliced
+// off in code. A "(?:\s+(.*))?$" tail retried every split of a padded run
+// when the line ended in a character "." does not match (U+2028), 40 s for
+// one 200 KB row (R2-1).
+const DETAIL_ROW_RE = /^\s*(\d{1,5}|-)\s+(\d{1,5}|-)\s+(\d{1,7}|-)\s+(\d{1,5}|-)(?=\s|$)/;
 const DEV_PATH_RE = /(?:^|\s)\/dev\/([A-Za-z0-9][A-Za-z0-9._\/-]*)/;
 const DETAIL_MAX_LINES = 1024;
 // Far above any real host (mdadm 1.x metadata allows 384 members per array);
 // only there to bound work on a hostile 200 KB paste.
 const MAX_MEMBERS = 512;
 const MAX_ARRAYS = 512;
+// An mdstat array line names every member: MAX_MEMBERS names of up to about 20
+// characters fit. A longer line is not md output and no regex here sees it.
+const MAX_LINE = 16_384;
 const SYNC_STATUS_KEYS = ["Rebuild Status", "Resync Status", "Check Status", "Reshape Status"];
 
 // A shell prompt ends the output block above it: "root@host:~# ...",
@@ -96,6 +105,23 @@ const DETECT_DETAIL_KEY = /^[ \t]*(?:Raid Level|State)[ \t]*:/m;
 
 function pushUnique(list: string[], value: string): void {
   if (value && !list.includes(value)) list.push(value);
+}
+
+/**
+ * Append the names `list` does not have yet, up to MAX_MEMBERS. Returns true
+ * when a name was left out. A Set, not Array.includes: one array line pasted
+ * again and again with new members grew a single entry to 28,000 disks at
+ * quadratic cost (R2-12).
+ */
+function addMembers(list: string[], add: readonly string[]): boolean {
+  const seen = new Set(list);
+  for (const name of add) {
+    if (!name || seen.has(name)) continue;
+    if (list.length >= MAX_MEMBERS) return true;
+    seen.add(name);
+    list.push(name);
+  }
+  return false;
 }
 
 function intField(value: string | undefined): number | null {
@@ -150,7 +176,7 @@ function readMdstatArray(lines: string[], start: number, match: RegExpExecArray)
   let j = start + 1;
   for (; j < lines.length && j <= start + MDSTAT_MAX_CONTINUATION; j++) {
     const line = lines[j];
-    if (line.trim() === "" || MDSTAT_UNUSED_RE.test(line) || endsBlock(line)) break;
+    if (line.length > MAX_LINE || line.trim() === "" || MDSTAT_UNUSED_RE.test(line) || endsBlock(line)) break;
     if (!slotMap) {
       const s = SLOT_MAP_RE.exec(line);
       if (s) slotMap = { total: Number(s[1]), inSync: Number(s[2]), map: s[3] };
@@ -190,6 +216,7 @@ function readMdstatArray(lines: string[], start: number, match: RegExpExecArray)
       syncActive,
       // Cut off before the "[n/m] [UU]" line: a missing slot is invisible.
       statusMissing: !slotMap && state === "active" && !NO_SLOT_MAP_RE.test(level),
+      membersCapped: false,
     },
     next: j,
   };
@@ -212,6 +239,10 @@ function readDetailBlock(lines: string[], start: number, rawName: string): { fac
   let j = start + 1;
   for (; j < lines.length && j <= start + DETAIL_MAX_LINES; j++) {
     const line = lines[j];
+    if (line.length > MAX_LINE) {
+      if (tableSeen) break;
+      continue;
+    }
     if (endsBlock(line)) break;
     if (line.trim() === "") continue;
     if (DETAIL_TABLE_RE.test(line)) {
@@ -221,7 +252,7 @@ function readDetailBlock(lines: string[], start: number, rawName: string): { fac
     if (tableSeen) {
       const r = DETAIL_ROW_RE.exec(line);
       if (!r) break; // the first non-row line after the table is other output
-      const rest = r[5] ?? "";
+      const rest = line.slice(r[0].length).trim();
       const pm = DEV_PATH_RE.exec(rest);
       const name = pm ? safeIdent(pm[1]) : "";
       const words = (pm ? rest.slice(0, pm.index) : rest).toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -302,6 +333,7 @@ function readDetailBlock(lines: string[], start: number, rawName: string): { fac
       unnamedFailed,
       syncActive,
       statusMissing: stateRaw === undefined && rows.length === 0,
+      membersCapped: false,
     },
     next: j,
   };
@@ -312,8 +344,8 @@ function mergeFacts(into: ArrayFacts, add: ArrayFacts): void {
   const b = add.entry;
   if (a.level === "unknown") a.level = b.level;
   if (a.status === "unknown") a.status = b.status;
-  for (const d of b.disks) pushUnique(a.disks, d);
-  for (const d of b.failed_disks) pushUnique(a.failed_disks, d);
+  if (addMembers(a.disks, b.disks)) into.membersCapped = true;
+  if (addMembers(a.failed_disks, b.failed_disks)) into.membersCapped = true;
   a.degraded = a.degraded || b.degraded;
   into.unnamedSlot = into.unnamedSlot || add.unnamedSlot;
   into.rebuilding = into.rebuilding || add.rebuilding;
@@ -323,6 +355,7 @@ function mergeFacts(into: ArrayFacts, add: ArrayFacts): void {
     (into.unnamedFailed && add.unnamedFailed) || ((into.unnamedFailed || add.unnamedFailed) && a.failed_disks.length === 0);
   into.syncActive = into.syncActive || add.syncActive;
   into.statusMissing = into.statusMissing && add.statusMissing;
+  into.membersCapped = into.membersCapped || add.membersCapped;
 }
 
 /** Same array within one source: same name (the output was pasted twice). */
@@ -370,6 +403,10 @@ function parse(text: string): ParserResult {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+    if (line.length > MAX_LINE) {
+      i++;
+      continue;
+    }
     if (MDSTAT_UNUSED_RE.test(line)) mdstatEnd = true;
     if (MDSTAT_HEAD_RE.test(line)) {
       formats.add("proc_mdstat");
@@ -479,6 +516,13 @@ function parse(text: string): ParserResult {
   }
   if (dropped) {
     notes.push({ level: "warning", message: `Only the first ${MAX_ARRAYS} md arrays in this paste were read.` });
+  }
+  const membersCapped = count((a) => a.membersCapped);
+  if (membersCapped > 0) {
+    notes.push({
+      level: "warning",
+      message: `${arrays(membersCapped, "lists", "list")} more than ${MAX_MEMBERS} members across this paste; only the first ${MAX_MEMBERS} were read.`,
+    });
   }
   if (formats.has("proc_mdstat") && mdstat.length === 0) {
     notes.push({ level: "info", message: "The /proc/mdstat output in this paste lists no md arrays." });
