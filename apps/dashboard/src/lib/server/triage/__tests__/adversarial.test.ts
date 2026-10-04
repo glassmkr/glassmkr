@@ -101,30 +101,47 @@ describe("hostile 200 KB pastes stay linear", () => {
 // charges a call by its time; up to that limit, the worst known shapes cost a
 // few times a realistic paste.
 describe("pastes at the line limit cost a few times a realistic one (R6-2)", () => {
-  const best = (text: string) => {
-    let ms = Infinity;
-    for (let i = 0; i < 3; i++) {
-      const started = performance.now();
-      analyzeOutput(text);
-      ms = Math.min(ms, performance.now() - started);
-    }
-    return ms;
+  const WARMUPS = 3;
+  const SAMPLES = 7;
+  const ABSOLUTE_CEILING_MS = 500;
+  const median = (samples: number[]) => samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)];
+  const elapsed = (text: string) => {
+    const started = performance.now();
+    analyzeOutput(text);
+    return performance.now() - started;
   };
+  const unit = BASELINE_FIXTURES.map((f) => readFileSync(new URL(f, FIXTURES), "utf8")).join("\n");
+  const realistic = unit.repeat(Math.ceil(SIZE / unit.length)).slice(0, SIZE);
 
-  it("every reader's detect line, then short lines up to the limit", () => {
-    const unit = BASELINE_FIXTURES.map((f) => readFileSync(new URL(f, FIXTURES), "utf8")).join("\n");
-    const realistic = unit.repeat(Math.ceil(SIZE / unit.length)).slice(0, SIZE);
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    try {
-      const baseline = best(realistic);
-      for (const { name, text } of roundSixInputs(SIZE, MAX_OUTPUT_LINES)) {
-        expect(text.split("\n").length, name).toBeLessThanOrEqual(MAX_OUTPUT_LINES);
-        expect(best(text), `${name} (realistic ${baseline.toFixed(1)} ms)`).toBeLessThan(4 * baseline + 5);
+  for (const { name, text } of roundSixInputs(SIZE, MAX_OUTPUT_LINES)) {
+    it(name, () => {
+      expect(text.split("\n").length, name).toBeLessThanOrEqual(MAX_OUTPUT_LINES);
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        // CI sampled the baseline first, then different parser paths. Warm
+        // both, then interleave samples so JIT, GC and runner load cannot
+        // make one unusually fast baseline set every hostile input's budget.
+        for (let i = 0; i < WARMUPS; i++) {
+          elapsed(realistic);
+          elapsed(text);
+        }
+        const realisticSamples: number[] = [];
+        const hostileSamples: number[] = [];
+        for (let i = 0; i < SAMPLES; i++) {
+          if (i % 2 === 0) realisticSamples.push(elapsed(realistic));
+          hostileSamples.push(elapsed(text));
+          if (i % 2 !== 0) realisticSamples.push(elapsed(realistic));
+        }
+        const baseline = median(realisticSamples);
+        const hostile = median(hostileSamples);
+        expect(baseline, "realistic paste median").toBeLessThan(ABSOLUTE_CEILING_MS);
+        expect(hostile, `${name} median`).toBeLessThan(ABSOLUTE_CEILING_MS);
+        expect(hostile, `${name} (realistic median ${baseline.toFixed(1)} ms)`).toBeLessThan(4 * baseline + 5);
+      } finally {
+        log.mockRestore();
       }
-    } finally {
-      log.mockRestore();
-    }
-  });
+    }, 15_000);
+  }
 });
 
 // R4-14: the SEL component list was deduplicated with Array.includes, so a

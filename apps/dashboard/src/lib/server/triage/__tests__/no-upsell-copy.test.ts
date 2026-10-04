@@ -6,7 +6,8 @@
 // runtime in their own tests, but nothing covered the rest of this server:
 // the strings it authors for findings, notes, the fix-workflow rewrites and
 // error messages. The first case reads every string literal in the triage
-// server code and its route (not comments, not tests). Finding titles,
+// server code and its route, except TRIAGE_TEXT_REPLACE's source search text
+// (not comments, not tests). Finding titles,
 // summaries and fix workflows also come from the rule YAMLs, which feed the
 // site's rule pages too, where the node cap is allowed; the second case reads
 // the YAML text a paste answer can carry, with a narrower list, since that
@@ -44,7 +45,23 @@ function upsellWords(text: string): string[] {
   return [...text.replace(VERB_PLAN, "").matchAll(UPSELL)].map((m) => m[0]);
 }
 
-/** Every string literal and template-literal chunk in a TypeScript source, with its line. */
+// Rounds 5 and 6 remove legacy roadmap tiers from rule copy. Their search
+// strings are not returned to the user; only TRIAGE_TEXT_REPLACE's source
+// side is exempt, and its replacement remains subject to the copy guard.
+function isRewriteSource(node: ts.Node): boolean {
+  const pair = node.parent;
+  if (!ts.isArrayLiteralExpression(pair) || pair.elements.length !== 2 || pair.elements[0] !== node || !ts.isStringLiteralLike(pair.elements[1])) return false;
+  const variants = pair.parent;
+  if (!ts.isArrayLiteralExpression(variants)) return false;
+  const property = variants.parent;
+  if (!ts.isPropertyAssignment(property) || property.initializer !== variants) return false;
+  const map = property.parent;
+  if (!ts.isObjectLiteralExpression(map)) return false;
+  const declaration = map.parent;
+  return ts.isVariableDeclaration(declaration) && ts.isIdentifier(declaration.name) && declaration.name.text === "TRIAGE_TEXT_REPLACE" && declaration.initializer === map;
+}
+
+/** String literals and template-literal chunks, excluding rewrite search text, with their line. */
 function stringLiterals(source: string, fileName: string): Array<{ line: number; text: string }> {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   const out: Array<{ line: number; text: string }> = [];
@@ -56,7 +73,7 @@ function stringLiterals(source: string, fileName: string): Array<{ line: number;
       ts.isTemplateMiddle(node) ||
       ts.isTemplateTail(node)
     ) {
-      out.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, text: node.text });
+      if (!isRewriteSource(node)) out.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, text: node.text });
     }
     ts.forEachChild(node, visit);
   };
@@ -99,6 +116,19 @@ describe("paste-triage server code carries no upsell text", () => {
       'const d = "Sign in or sign up at https://app.glassmkr.com";',
     ];
     for (const src of clean) expect(findings(src, "clean.ts"), src).toEqual([]);
+  });
+
+  it("ignores rewrite search text while checking replacement text and other arrays", () => {
+    const clean = 'const TRIAGE_TEXT_REPLACE = { rule: [["Legacy tier 2 wording", "Check the sensors."]] };';
+    expect(findings(clean, "clean.ts")).toEqual([]);
+    for (const src of [
+      'const TRIAGE_TEXT_REPLACE = { rule: [["Old wording", "Choose a paid tier."]] };',
+      'const OTHER_COPY = { rule: [["Choose a paid tier.", "Check the sensors."]] };',
+      'const TRIAGE_TEXT_REPLACE = { rule: ["Choose a paid tier.", "Check the sensors."] };',
+      'const message = "Choose a paid tier.";',
+    ]) {
+      expect(findings(src, "planted.ts"), src).not.toEqual([]);
+    }
   });
 
   it("no string literal in the triage server or its route names a price, plan, trial or node cap", () => {
