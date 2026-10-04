@@ -8,9 +8,16 @@ import { describe, expect, it, vi } from "vitest";
 
 const sentry = vi.hoisted(() => {
   process.env.SENTRY_DSN = "https://public@errors.example.invalid/1";
-  return { init: vi.fn() };
+  return { init: vi.fn(), http: vi.fn() };
 });
-vi.mock("@sentry/sveltekit", async (importOriginal) => ({ ...(await importOriginal<object>()), init: sentry.init }));
+// httpIntegration stays the real one, wrapped so its options can be read: a
+// bare httpIntegration() still registers an integration named "Http" and
+// captures every request body (R5-17).
+vi.mock("@sentry/sveltekit", async (importOriginal) => {
+  const orig = await importOriginal<{ httpIntegration: (options?: unknown) => unknown }>();
+  sentry.http.mockImplementation((options?: unknown) => orig.httpIntegration(options));
+  return { ...orig, init: sentry.init, httpIntegration: sentry.http };
+});
 vi.mock("$lib/server/watchdog-scheduler", () => ({ startWatchdog: () => {} }));
 vi.mock("$lib/server/trend-warnings/scheduler", () => ({ startTrendWarnings: () => {} }));
 vi.mock("$lib/server/billing/enforcement-scheduler", () => ({ startBillingEnforcement: () => {} }));
@@ -50,5 +57,12 @@ describe("the triage request body never reaches the error tracker (R4-18)", () =
     expect(other.request.data).toContain("FAILED");
     // Second layer: the Http integration does not read the triage body.
     expect((options.integrations as Array<{ name: string }>).map((i) => i.name)).toContain("Http");
+    expect(sentry.http).toHaveBeenCalledTimes(1);
+    const ignore = (sentry.http.mock.calls[0][0] as { ignoreIncomingRequestBody?: (url: string) => boolean } | undefined)
+      ?.ignoreIncomingRequestBody;
+    expect(typeof ignore).toBe("function");
+    expect(ignore!("https://app.glassmkr.com/api/triage/mcp")).toBe(true);
+    expect(ignore!("/api/triage/mcp")).toBe(true);
+    expect(ignore!("/api/v1/ingest")).toBe(false);
   });
 });

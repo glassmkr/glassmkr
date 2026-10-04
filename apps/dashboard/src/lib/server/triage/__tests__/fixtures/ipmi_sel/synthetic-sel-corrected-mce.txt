@@ -1,0 +1,4 @@
+root@node-f6:~# ipmitool sel elist
+   1 | 07/01/2026 | 08:00:01 | Event Logging Disabled #0x07 | Log area reset/cleared | Asserted
+   2 | 09/14/2026 | 03:12:45 | Processor #0x04 | Correctable machine check error | Asserted
+   3 | 09/28/2026 | 17:44:02 | Processor #0x04 | Correctable machine check error | Asserted

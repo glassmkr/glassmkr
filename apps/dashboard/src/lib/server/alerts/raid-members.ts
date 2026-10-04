@@ -53,6 +53,15 @@ export function resolveFailedMembers(
   failedDisks: ReadonlyArray<string> | null | undefined,
   smart: ReadonlyArray<SmartDriveLike> | null | undefined,
 ): FailedMember[] {
+  return resolveFailedMembersFromIndex(failedDisks, buildSmartBaseIndex(smart));
+}
+
+/**
+ * The SMART collection keyed by base device, for resolving many arrays
+ * against one snapshot: built per array, a snapshot with hundreds of degraded
+ * arrays rebuilt it hundreds of times (R5-9).
+ */
+export function buildSmartBaseIndex(smart: ReadonlyArray<SmartDriveLike> | null | undefined): ReadonlyMap<string, SmartDriveLike> {
   const byBase = new Map<string, SmartDriveLike>();
   for (const d of smart ?? []) {
     const base = baseDiskName(d?.device);
@@ -60,6 +69,14 @@ export function resolveFailedMembers(
     // writer wins so a stray duplicate cannot shadow the real disk.
     if (base && !byBase.has(base)) byBase.set(base, d);
   }
+  return byBase;
+}
+
+/** resolveFailedMembers against an index from buildSmartBaseIndex. */
+export function resolveFailedMembersFromIndex(
+  failedDisks: ReadonlyArray<string> | null | undefined,
+  byBase: ReadonlyMap<string, SmartDriveLike>,
+): FailedMember[] {
   return (failedDisks ?? []).map((member) => {
     const base = baseDiskName(member);
     const drive = base ? byBase.get(base) : undefined;

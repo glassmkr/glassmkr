@@ -198,8 +198,9 @@
           </li>
           <li>
             <strong>Install the agent on each machine you want to watch.</strong>
-            Ubuntu and Debian have a one-line installer; everything else uses the
-            single-file binary, which needs no Node.
+            The apt and dnf/yum families (Debian, Ubuntu, RHEL, Rocky, AlmaLinux, CentOS,
+            Fedora) have a one-line installer; other glibc distributions with systemd use
+            the single-file binary, which needs no Node.
             <span class="start-links"><a href="/docs/getting-started">Getting started</a></span>
           </li>
           <li>

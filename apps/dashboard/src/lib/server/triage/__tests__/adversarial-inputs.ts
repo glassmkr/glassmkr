@@ -104,7 +104,7 @@ export function adversarialInputs(size: number): AdversarialInput[] {
     { name: "mdraid: long member list", text: fill("Personalities : [raid1]\nmd0 : active raid1 ", "a", size) },
     { name: "mdraid: padded detail value", text: fill("/dev/md0:\n   State : ", " ", size, "x\n") },
   );
-  out.push(...roundTwoInputs(size), ...roundThreeInputs(size), ...roundFourInputs(size));
+  out.push(...roundTwoInputs(size), ...roundThreeInputs(size), ...roundFourInputs(size), ...roundFiveInputs(size));
   return out;
 }
 
@@ -248,5 +248,51 @@ export function roundFourInputs(size: number): AdversarialInput[] {
       text: lines("| GPU  Name | Volatile Uncorr. ECC |\n", () => "| NVIDIA-SMI 550.54.15" + " ".repeat(4000) + "x", size),
     },
     { name: "nvidia: summary header with lines of spaces", text: fill("Volatile Uncorr. ECC NVIDIA-SMI\n", " ".repeat(4000) + "\n", size) },
+  ];
+}
+
+/** An nvidia-smi --query-gpu CSV of `gpus` rows, then distinct bare Xid 79 lines up to `size`. */
+export function gpuXidJoin(gpus: number, size: number): string {
+  const rows = ["index, uuid, name, pci.bus_id, temperature.gpu"];
+  for (let i = 0; i < gpus; i++) {
+    rows.push(`${i}, GPU-${i.toString(16).padStart(8, "0")}-0000-4000-8000-000000000000, NVIDIA H100, 00000000:${(i + 1).toString(16).padStart(2, "0").toUpperCase()}:00.0, 40`);
+  }
+  return lines(rows.join("\n") + "\n", (i) => `NVRM: Xid (PCI:0000:${((i >> 5) & 0xff).toString(16).padStart(2, "0")}:${(i & 0x1f).toString(16).padStart(2, "0")}): 79`, size);
+}
+
+/** /proc/mdstat with `arrays` raid1 arrays (each one member, flagged (F) when `failed`), then 1,024 smartctl JSON values. */
+export function raidSmartJoin(arrays: number, failed: boolean): string {
+  const md = ["Personalities : [raid1]"];
+  for (let i = 0; i < arrays; i++) md.push(failed ? `md${i} : active raid1 a[0](F)` : `md${i} : active raid1 a[0]`);
+  const smart: string[] = [];
+  for (let i = 0; i < 1024; i++) {
+    const suffix = `p${i}`;
+    smart.push(JSON.stringify({ device: { name: "/dev/nvme0n1" + "x".repeat(60 - 12 - suffix.length) + suffix, type: "nvme" }, smart_status: { passed: true } }));
+  }
+  return md.join("\n") + "\n" + smart.join("\n") + "\n";
+}
+
+// Review round 5: the smartctl for-loop list regex retried its list at every
+// split of a padded run before a missing ';' (R5-8).
+export function roundFiveInputs(size: number): AdversarialInput[] {
+  return [
+    {
+      name: "smartctl: padded for-loop prompt lines with no ';'",
+      text: fill("SMART overall-health self-assessment test result: PASSED\n", "# smartctl for x in" + " ".repeat(4070) + "\n", size),
+    },
+    // R5-7: a stripped -q block reads its depth from the ':' column, holding
+    // section names until the key below them.
+    {
+      name: "nvidia: stripped -q block of section names before one key",
+      text: fill(NVSMI_BANNER + "Timestamp                                 : x\nGPU 00000000:01:00.0\n", "Section Name\n", size - 64, "Product Name                          : x\n"),
+    },
+    {
+      name: "nvidia: stripped -q blocks of one padded key each",
+      text: fill(NVSMI_BANNER, "GPU 00000000:01:00.0\nProduct Name                          : x\n", size),
+    },
+    // R5-9: every Xid group re-parsed every GPU's address.
+    { name: "nvidia CSV of 64 GPUs joined with distinct Xid groups", text: gpuXidJoin(64, size) },
+    // R5-12: no-break spaces become spaces before any reader runs.
+    { name: "run of no-break spaces in a padded key line", text: fill("Device Model:", "\u00a0", size, "x\n") },
   ];
 }

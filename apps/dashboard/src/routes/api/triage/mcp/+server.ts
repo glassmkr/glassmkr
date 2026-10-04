@@ -25,10 +25,15 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { take, type RateLimitConfig } from "$lib/server/auth/rate-limit.js";
 import { getSourceIp } from "$lib/server/auth/source-ip.js";
 import { getMcpPublicOrigin } from "$lib/server/oauth/constants.js";
-import { createTriageMcpServer } from "$lib/server/triage/mcp-server.js";
+import { createTriageMcpServer, MAX_OUTPUT_CHARS } from "$lib/server/triage/mcp-server.js";
 import { SELF_HOSTED } from "$lib/server/self-hosted";
 
-const MAX_POST_BODY_BYTES = 256 * 1024;
+// About twice the JSON encoding of a MAX_OUTPUT_CHARS paste, so a paste over
+// the character limit reaches the tool's own error: at 256 KB a 240,000-
+// character smartctl -j paste, and a schema-valid paste of short CRLF lines,
+// got a transport 413 that clients show as a connector failure (R5-14).
+const MAX_POST_BODY_BYTES = 512 * 1024;
+const BODY_TOO_LARGE = `Request body is too large: analyze_server_output accepts at most ${MAX_OUTPUT_CHARS.toLocaleString("en-US")} characters in output; pass the section for the affected device.`;
 const ALLOW_METHODS = "POST, OPTIONS";
 
 // Generous per IP: a connector platform calls from a small pool of egress IPs
@@ -216,7 +221,7 @@ export const POST: RequestHandler = async (event) => {
     parsedBody = JSON.parse(await readCappedBody(event.request));
   } catch (error) {
     if (error instanceof BodyTooLarge) {
-      return withHeaders(jsonRpcHttpError(413, -32000, "Request body is too large"), origin);
+      return withHeaders(jsonRpcHttpError(413, -32000, BODY_TOO_LARGE), origin);
     }
     return withHeaders(jsonRpcHttpError(400, -32700, "Parse error: invalid JSON"), origin);
   }

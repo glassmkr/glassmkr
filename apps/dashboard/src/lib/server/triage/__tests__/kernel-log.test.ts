@@ -81,6 +81,8 @@ const ALL_FIXTURES = [
   "synthetic-dmesg-T-xfs-shutdown.txt",
   "synthetic-dmesg-T-libata-unc-only.txt",
   "synthetic-dmesg-T-libata-unc-full.txt",
+  "synthetic-journal-usb-sync-cache-illegal.txt",
+  "synthetic-dmesg-T-read-capacity-16-illegal.txt",
 ];
 
 describe("kernelLogParser metadata", () => {
@@ -1027,5 +1029,57 @@ describe("localized dmesg -T and journalctl -k stamps (R3-6)", () => {
 
   it("an application log with a bracketed time is not a kernel log", () => {
     expect(kernelLogParser.detect("[INFO 12:00:00 2026] worker started\n[WARN 12:00:01 2026] retrying\n")).toBe(false);
+  });
+});
+
+// R5-4: a USB disk, SD reader or BMC virtual medium rejecting SYNCHRONIZE
+// CACHE at shutdown, or READ CAPACITY(16) at probe, prints the command's
+// failure line before the sense lines and no CDB line, so the probe filter
+// missed it and the answer said "failing storage hardware".
+describe("an unsupported cache flush or READ CAPACITY(16) (R5-4)", () => {
+  const syncCache = (driverbyte: string, prefix: (i: number) => string, key = "Illegal Request", addSense = "Invalid command operation code") =>
+    [
+      `${prefix(0)}sd 8:0:0:0: [sdd] Synchronize Cache(10) failed: Result: hostbyte=DID_OK driverbyte=${driverbyte}`,
+      `${prefix(1)}sd 8:0:0:0: [sdd] Sense Key : ${key} [current] `,
+      `${prefix(2)}sd 8:0:0:0: [sdd] Add. Sense: ${addSense}`,
+    ].join("\n");
+
+  it.each([
+    ["journalctl -k", fixture("synthetic-journal-usb-sync-cache-illegal.txt")],
+    ["dmesg on an older kernel", syncCache("DRIVER_SENSE", (i) => `[ 912.00000${i}] `)],
+    ["journalctl -o short-iso", syncCache("DRIVER_OK", () => "2026-10-02T23:59:58+0200 backup01 kernel: ")],
+    ["dmesg -T, READ CAPACITY(16)", fixture("synthetic-dmesg-T-read-capacity-16-illegal.txt")],
+  ])("%s: not a disk error", (_label, text) => {
+    const r = kernelLogParser.parse(text);
+    expect(types(evaluate(r.snapshot).alerts)).toEqual([]);
+    expect(r.notes.map((n) => n.message).join("\n")).toMatch(/SCSI sense report was not counted/);
+    expect(analyzeOutput(text).findings).toEqual([]);
+  });
+
+  it("an Invalid field in cdb answer to the same commands is a probe too", () => {
+    const text = syncCache("DRIVER_OK", (i) => `[ 912.00000${i}] `, "Illegal Request", "Invalid field in cdb");
+    expect(types(evaluate(kernelLogParser.parse(text).snapshot).alerts)).toEqual([]);
+  });
+
+  it("a Medium Error on a cache flush is still reported", () => {
+    const text = syncCache("DRIVER_SENSE", (i) => `[ 912.00000${i}] `, "Medium Error", "Unrecovered read error");
+    expect(evaluate(kernelLogParser.parse(text).snapshot).alerts.map((a) => `${a.type}:${a.severity}`)).toEqual(["disk_io_errors:critical"]);
+  });
+
+  it("the failure line of another disk does not excuse this one", () => {
+    const text = [
+      "[ 912.000000] sd 9:0:0:0: [sde] Synchronize Cache(10) failed: Result: hostbyte=DID_OK driverbyte=DRIVER_OK",
+      "[ 912.000001] sd 8:0:0:0: [sdd] Sense Key : Illegal Request [current] ",
+      "[ 912.000002] sd 8:0:0:0: [sdd] Add. Sense: Invalid command operation code",
+    ].join("\n");
+    expect(types(evaluate(kernelLogParser.parse(text).snapshot).alerts)).toEqual(["disk_io_errors"]);
+  });
+
+  it("an Illegal Request with no probe line before it is still reported", () => {
+    const text = [
+      "[ 912.000001] sd 8:0:0:0: [sdd] Sense Key : Illegal Request [current] ",
+      "[ 912.000002] sd 8:0:0:0: [sdd] Add. Sense: Invalid command operation code",
+    ].join("\n");
+    expect(types(evaluate(kernelLogParser.parse(text).snapshot).alerts)).toEqual(["disk_io_errors"]);
   });
 });

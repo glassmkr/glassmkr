@@ -294,6 +294,12 @@ const NON_ERROR_SENSE_KEYS = new Set(["No Sense", "Completed"]);
 // the same disk (scsi_print_sense, scsi_print_command).
 const SCSI_DETAIL_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+(?:tag#\d+\s+)?(Add\. Sense|CDB):\s*(.{0,160})/;
 const SCSI_DISABLE_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+.{0,80}\bdisabling (?:write same|discard)\b/i;
+// sd_sync_cache and read_capacity_16 print the failed command before the
+// sense lines, and no CDB line: a USB disk, SD reader or BMC virtual medium
+// that does not implement the command says so at every shutdown or probe (R5-4).
+const SCSI_PROBE_FAILED_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+(?:Synchronize Cache\((?:10|16)\)|Read Capacity\(16\)) failed: Result:/;
+/** How many lines before a sense key line to look for the command that failed. */
+const SENSE_COMMAND_LINES = 2;
 /** How many lines after a sense key line to read its Add. Sense and CDB from. */
 const SENSE_DETAIL_LINES = 4;
 
@@ -453,10 +459,12 @@ function matchesAnyEvent(message: string): boolean {
  *     status an ATA pass-through command (smartctl, hdparm, udisks) returns;
  *   - Illegal Request with "Invalid field in cdb" (or an unsupported opcode)
  *     on an ATA pass-through, WRITE SAME or UNMAP command, or followed by the
- *     kernel disabling write same or discard, is a feature the disk lacks.
+ *     kernel disabling write same or discard, is a feature the disk lacks;
+ *   - the same answer right after a failed SYNCHRONIZE CACHE or READ
+ *     CAPACITY(16) on that disk is a command it does not implement (R5-4).
  * Neither says anything about the media (R1-17).
  */
-function isProbeResponse(senseKey: string, device: string, following: string[]): boolean {
+function isProbeResponse(senseKey: string, device: string, following: string[], preceding: string[] = []): boolean {
   if (senseKey !== "Recovered Error" && senseKey !== "Illegal Request") return false;
   let addSense = "";
   let cdb = "";
@@ -473,10 +481,9 @@ function isProbeResponse(senseKey: string, device: string, following: string[]):
   }
   if (senseKey === "Recovered Error") return /^ATA pass through information available\b/i.test(addSense);
   if (disabled) return true;
-  return (
-    /^(?:Invalid field in cdb|Invalid command operation code)\b/i.test(addSense) &&
-    /^(?:ATA command pass through|Write same|Unmap)\b/i.test(cdb)
-  );
+  if (!/^(?:Invalid field in cdb|Invalid command operation code)\b/i.test(addSense)) return false;
+  if (/^(?:ATA command pass through|Write same|Unmap)\b/i.test(cdb)) return true;
+  return preceding.some((msg) => SCSI_PROBE_FAILED_RE.exec(msg)?.[1] === device);
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -500,7 +507,7 @@ export const kernelLogParser: TriageParser = {
   detect(text: string): boolean {
     try {
       for (const raw of splitLines(text)) {
-        const trimmed = raw.slice(0, MAX_LINE).trimEnd();
+        const trimmed = raw.slice(0, MAX_LINE).trim();
         if (!trimmed || PROMPT_RE.test(trimmed)) continue;
         const line = classify(trimmed);
         if (!line.fromKernel || !kernelShaped(line)) continue;
@@ -543,12 +550,15 @@ export const kernelLogParser: TriageParser = {
 
     try {
       const rawLines = splitLines(typeof text === "string" ? text : "");
+      // Lines are trimmed at both ends here and in detect(): a Markdown code
+      // block or a quoted email indents every line, and no stamp pattern
+      // allows leading whitespace (R5-12).
       const messageAt = (i: number): string => {
-        const t = rawLines[i].slice(0, MAX_LINE).trimEnd();
+        const t = rawLines[i].slice(0, MAX_LINE).trim();
         return t ? classify(t).message : "";
       };
       for (let li = 0; li < rawLines.length; li++) {
-        const trimmed = rawLines[li].slice(0, MAX_LINE).trimEnd();
+        const trimmed = rawLines[li].slice(0, MAX_LINE).trim();
         if (!trimmed || PROMPT_RE.test(trimmed)) continue;
         const line = classify(trimmed);
         const msg = line.message;
@@ -572,10 +582,14 @@ export const kernelLogParser: TriageParser = {
           const senseKey = senseKeyOf(scsi[2]);
           const device = safeIdent(scsi[1]);
           const following: string[] = [];
+          const preceding: string[] = [];
           if (senseKey === "Recovered Error" || senseKey === "Illegal Request") {
             for (let j = li + 1; j < rawLines.length && j <= li + SENSE_DETAIL_LINES; j++) following.push(messageAt(j));
           }
-          if (senseKey && (NON_ERROR_SENSE_KEYS.has(senseKey) || isProbeResponse(senseKey, scsi[1], following))) {
+          if (senseKey === "Illegal Request") {
+            for (let j = li - 1; j >= 0 && j >= li - SENSE_COMMAND_LINES; j--) preceding.push(messageAt(j));
+          }
+          if (senseKey && (NON_ERROR_SENSE_KEYS.has(senseKey) || isProbeResponse(senseKey, scsi[1], following, preceding))) {
             probeSenseLines++;
           } else if (senseKey) {
             ev = {
@@ -851,7 +865,7 @@ export const kernelLogParser: TriageParser = {
     if (probeSenseLines > 0) {
       notes.push({
         level: "info",
-        message: `${plural(probeSenseLines, "SCSI sense report was", "SCSI sense reports were")} not counted: "No Sense", or a drive's normal answer to a feature probe (ATA pass-through status, or an unsupported WRITE SAME, UNMAP or pass-through command). None of these is a media error.`,
+        message: `${plural(probeSenseLines, "SCSI sense report was", "SCSI sense reports were")} not counted: "No Sense", or a device's normal answer to a probe (ATA pass-through status, or an unsupported WRITE SAME, UNMAP, pass-through, cache flush or READ CAPACITY(16)). None is a media error.`,
       });
     }
     if (probeIoLines > 0) {

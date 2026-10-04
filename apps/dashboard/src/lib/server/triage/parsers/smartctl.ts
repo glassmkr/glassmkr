@@ -412,8 +412,11 @@ function setPath(d: DeviceRead, rawPath: string | undefined, rawType?: string): 
 /** Devices a command line names: every `smartctl ... /dev/X`, or a for-loop's explicit list. */
 function commandDevices(cmd: string): DevRef[] {
   if (!/\bsmartctl\b/.test(cmd)) return [];
-  const loop = /\bfor\s+\w+\s+in\s+([^;]{1,2000});/.exec(cmd);
-  const loopPaths = loop ? loop[1].split(/\s+/).filter((t) => DEV_PATH_RE.test(t)) : [];
+  // The whitespace after `in` is taken whole (a lookahead capture, the
+  // atomic-group idiom): as a plain \s+ it was retried at every split of a
+  // padded run before a missing ';', about 8 ms per 4 KB line (R5-8).
+  const loop = /\bfor\s+\w+\s+in(?=(\s+))\1([^;]{1,2000});/.exec(cmd);
+  const loopPaths = loop ? loop[2].split(/\s+/).filter((t) => DEV_PATH_RE.test(t)) : [];
   const out: DevRef[] = [];
   for (const m of cmd.matchAll(/\bsmartctl\b([^;|&]{0,1000})/g)) {
     const args = m[1];
@@ -617,6 +620,17 @@ function extractJson(text: string, counters: Counters): { values: JsonValue[]; m
   // nextHardBoundary[li]: the same, counting prompts and banners only.
   const nextBoundary: number[] = new Array(lineStarts.length);
   const nextHardBoundary: number[] = new Array(lineStarts.length);
+  // A "{" or "[" right after a line ending in "," "[" "{" or ":" continues the
+  // value before it. With the indentation stripped, every nested "{" of a
+  // cut-off document sat at column 0 and ended it at the attribute table
+  // (R5-7).
+  const continues: boolean[] = new Array(lineStarts.length);
+  let tail = "";
+  for (let lj = 0; lj < lineStarts.length; lj++) {
+    continues[lj] = tail !== "" && ",[{:".includes(tail);
+    const line = text.slice(lineStarts[lj], lineEnd(lj)).trimEnd();
+    if (line) tail = line[line.length - 1];
+  }
   let boundary = text.length;
   let hardBoundary = text.length;
   for (let lj = lineStarts.length - 1; lj >= 0; lj--) {
@@ -627,7 +641,7 @@ function extractJson(text: string, counters: Counters): { values: JsonValue[]; m
     if (line.length <= MAX_LINE && (BANNER_RE.test(line) || promptCommand(line) !== null)) {
       boundary = lineStarts[lj];
       hardBoundary = lineStarts[lj];
-    } else if (first === "{" || first === "[") {
+    } else if ((first === "{" || first === "[") && !continues[lj]) {
       boundary = lineStarts[lj];
     }
   }

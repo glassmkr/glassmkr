@@ -150,7 +150,7 @@ describe("/proc/mdstat", () => {
         disks: ["sde1", "sdd1", "sdc1", "sdb1", "sda1"], failed_disks: ["sdb1"],
       },
     ]);
-    expect(parsed.notes.map((n) => n.level)).toEqual(["info", "info"]);
+    expect(parsed.notes.map((n) => n.level)).toEqual(["warning", "info"]);
     expect(parsed.notes[0].message).toMatch(/^1 array has a member attached but not yet in sync/);
     expect(parsed.notes[1].message).toMatch(/^1 array has a resync, recovery, check or reshape running or queued/);
     expect(ids(results)).toEqual(["raid_degraded"]);
@@ -281,7 +281,7 @@ describe("mdadm --detail", () => {
     expect(raidOf(parsed)).toEqual([
       { device: "md1", level: "raid5", status: "active", degraded: true, disks: ["sda1", "sde1", "sdc1", "sdd1"], failed_disks: [] },
     ]);
-    expect(parsed.notes.map((n) => n.level)).toEqual(["info", "info"]);
+    expect(parsed.notes.map((n) => n.level)).toEqual(["warning", "info"]);
     expect(ids(results)).toEqual(["raid_degraded"]);
     expect(results[0].message).toContain("Failed disks: unknown");
   });
@@ -537,5 +537,44 @@ describe("review round 2", () => {
     expect(md0.disks).toHaveLength(512);
     expect(md0.failed_disks).toHaveLength(512);
     expect(r.notes.map((n) => n.message)).toContain("1 array lists more than 512 members across this paste; only the first 512 were read.");
+  });
+});
+
+// R5-3: a degraded array rebuilding with no failed member (a fresh raid5
+// build, or recovery onto a replacement already added) was answered "one or
+// more disks have failed", with steps to triage a failed member and add a
+// replacement. The parser tells the answer which arrays those are.
+describe("degraded and rebuilding, no failed member (R5-3)", () => {
+  it("a raid5 initial build names its rebuild target", () => {
+    const { parsed, results } = firing("synthetic-raid5-initial-build.txt");
+    expect(raidOf(parsed)).toEqual([
+      { device: "md0", level: "raid5", status: "active", degraded: true, disks: ["sdd", "sdc", "sdb", "sda"], failed_disks: [] },
+    ]);
+    expect(parsed.rebuilding_arrays).toEqual([{ device: "md0", member: "sdd" }]);
+    expect(ids(results)).toEqual(["raid_degraded"]);
+  });
+
+  it("mdadm --detail spare rebuilding", () => {
+    expect(parseFixture("mdadm-detail-recovering.txt").rebuilding_arrays).toEqual([{ device: "md1", member: "sde1" }]);
+  });
+
+  it("/proc/mdstat alone cannot name the rebuild target", () => {
+    expect(mdraidParser.parse("md0 : active raid1 sdb1[2] sda1[0]\n      976630336 blocks super 1.2 [2/1] [U_]\n").rebuilding_arrays).toEqual([
+      { device: "md0" },
+    ]);
+  });
+
+  it("an array with a failed member is not one of them, the rebuilding array beside it is", () => {
+    const parsed = parseFixture("synthetic-mdstat-failed-and-rebuilding.txt");
+    expect(raidOf(parsed).map((a) => [a.device, a.failed_disks])).toEqual([
+      ["md0", ["sdb1"]],
+      ["md1", []],
+    ]);
+    expect(parsed.rebuilding_arrays).toEqual([{ device: "md1" }]);
+    expect(parseFixture("mdstat-raid5-recovery.txt").rebuilding_arrays).toBeUndefined();
+  });
+
+  it("an empty slot whose member is not named is not one of them", () => {
+    expect(parseFixture("mdstat-removed-member.txt").rebuilding_arrays).toBeUndefined();
   });
 });

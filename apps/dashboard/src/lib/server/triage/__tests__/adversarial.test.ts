@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { analyzeOutput } from "../analyze";
 import type { TriageFormat } from "../types";
-import { adversarialInputs, roundFourInputs } from "./adversarial-inputs";
+import { adversarialInputs, gpuXidJoin, raidSmartJoin, roundFourInputs } from "./adversarial-inputs";
 
 const SIZE = 200_000;
 const BUDGET_RATIO = 20;
@@ -113,6 +113,41 @@ describe("a SEL of distinct sensors costs about what one sensor does (R4-14)", (
     try {
       best(same);
       expect(best(distinct)).toBeLessThan(3 * best(same) + 5);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+// R5-9: raid_degraded rebuilt the SMART base-name index for every degraded
+// array, and gpu_xid_critical re-parsed every GPU's address for every Xid
+// group. Each join now costs about what its control does.
+describe("evaluator joins cost about what their controls do (R5-9)", () => {
+  const best = (text: string) => {
+    let ms = Infinity;
+    for (let i = 0; i < 5; i++) {
+      const started = performance.now();
+      analyzeOutput(text);
+      ms = Math.min(ms, performance.now() - started);
+    }
+    return ms;
+  };
+
+  it("64 GPUs vs 1 GPU beside the same distinct Xid groups", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      best(gpuXidJoin(1, SIZE));
+      expect(best(gpuXidJoin(64, SIZE))).toBeLessThan(3 * best(gpuXidJoin(1, SIZE)) + 5);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("512 degraded arrays vs the same arrays healthy, beside 1,024 SMART entries", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      best(raidSmartJoin(512, false));
+      expect(best(raidSmartJoin(512, true))).toBeLessThan(3 * best(raidSmartJoin(512, false)) + 5);
     } finally {
       log.mockRestore();
     }

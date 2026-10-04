@@ -44,7 +44,12 @@ export const TRIAGE_TOOL_NAMES = [
   "get_monitoring_setup",
 ] as const;
 
-/** Largest paste accepted, in characters. The route's 256 KB body cap sits above it. */
+/**
+ * Largest paste accepted, in characters. The route's 512 KB body cap sits
+ * above the JSON encoding of any ordinary paste this long, so a longer one
+ * gets this tool's own error; it is not a guarantee for every schema-valid
+ * string (a paste of control characters escapes to six bytes each).
+ */
 export const MAX_OUTPUT_CHARS = 200_000;
 
 // The first 512 characters carry everything a client must know even if it

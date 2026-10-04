@@ -4,14 +4,15 @@
 
 ## Quick Start
 
-Install the Crucible agent on your server. The bootstrap script supports Ubuntu
-and Debian only and needs root plus a key:
+Install the Crucible agent on your server. The bootstrap script supports the
+apt and dnf/yum families (Debian, Ubuntu, RHEL, Rocky, AlmaLinux, CentOS,
+Fedora) and needs root plus a key:
 ```
 curl -sf https://glassmkr.com/install.sh | sudo bash -s -- --api-key gmk_cru_live_xxx
 ```
-On RHEL, Rocky, Alma or Arch use the single-file binary instead, which needs no
-Node (the installer and the binary do not support Alpine):
-https://glassmkr.com/docs/getting-started
+On Arch and other glibc distributions with systemd use the single-file binary
+instead, which needs no Node (the installer and the binary do not support
+Alpine): https://glassmkr.com/docs/getting-started
 
 Sign up at https://app.glassmkr.com/register, add your server, configure the API key in /etc/glassmkr/crucible.yaml (legacy installs: /etc/glassmkr/collector.yaml; the agent reads either). Crucible pushes health snapshots every 5 minutes by default (interval_seconds, minimum 60).
 

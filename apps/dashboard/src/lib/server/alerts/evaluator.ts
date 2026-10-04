@@ -19,9 +19,9 @@
 import { linearProjection } from "$lib/server/cross_snapshot";
 import { getRuleMetadata } from "./fix-workflow/loader";
 import { OWNERSHIP_REMEDIATION_NOTE } from "$lib/alerts/vendor-facing";
-import { resolveFailedMembers } from "./raid-members";
+import { buildSmartBaseIndex, resolveFailedMembersFromIndex } from "./raid-members";
 import { lookupLifecycle } from "$lib/server/endoflife/cache";
-import { pciBdfMatches } from "$lib/utils/pci-bdf";
+import { parsePciBdf, pciBdfEqual } from "$lib/utils/pci-bdf";
 
 // PSI resource block emitted by Crucible v0.10.4+. Per /proc/pressure
 // kernel doc: avgN is the rolling % over N seconds, total is cumulative
@@ -1684,13 +1684,17 @@ const rules: AlertRule[] = [
 
       // Software RAID (mdadm).
       if (snap.raid) {
+        // The SMART index is built once for every degraded array, not per
+        // array (R5-9).
+        let smartIndex: ReturnType<typeof buildSmartBaseIndex> | null = null;
         for (const array of snap.raid) {
           if (!array.degraded && (!array.failed_disks || array.failed_disks.length === 0)) continue;
           // Resolve each failed member to its physical-drive identity (model +
           // serial) from the same snapshot's SMART, so a provider ticket can name
           // the exact drive to pull. Best-effort: a disk gone from the SMART scan
           // resolves to null identity and we keep just the member name.
-          const failedMembers = resolveFailedMembers(array.failed_disks, snap.smart);
+          smartIndex ??= buildSmartBaseIndex(snap.smart);
+          const failedMembers = resolveFailedMembersFromIndex(array.failed_disks, smartIndex);
           // Substitute the actual failed member into the FIX command instead of
           // a `/dev/<member>` placeholder (Grok L0 residual): the collector now
           // names the faulty member, so the re-add command should be runnable
@@ -5431,11 +5435,14 @@ const rules: AlertRule[] = [
         list.push(e);
         grouped.set(key, list);
       }
+      // Each GPU's address parsed once, not once per Xid group (R5-9).
+      const gpuBdfs = tier1.gpus.map((g) => ({ g, bdf: parsePciBdf(g.pci_bdf) }));
       for (const [key, events] of grouped) {
         const first = events[0];
         // The Xid BDF ("0000:3b:00") and nvidia-smi's ("00000000:3B:00.0")
         // never compare equal as strings; see pci-bdf.ts.
-        const gpu = tier1.gpus.find((g) => pciBdfMatches(g.pci_bdf, first.pci_bdf));
+        const xidBdf = parsePciBdf(first.pci_bdf);
+        const gpu = xidBdf ? gpuBdfs.find(({ bdf }) => bdf !== null && pciBdfEqual(bdf, xidBdf))?.g : undefined;
         const xidSummary = xidShortDescription(first.xid_code);
         results.push({
           type: "gpu_xid_critical",

@@ -1,0 +1,12 @@
+root@node-e1:~# ipmitool sel info
+SEL Information
+Version          : 1.5 (v1.5, v2 compliant)
+Entries          : 0
+Free Space       : 16384 bytes 
+Percent Used     : 0%
+Last Add Time    : Not Available
+Last Del Time    : 10/02/2026 09:12:40
+Overflow         : false
+Supported Cmds   : 'Reserve' 'Get Alloc Info' 
+root@node-e1:~# ipmitool sel elist
+SEL has no entries

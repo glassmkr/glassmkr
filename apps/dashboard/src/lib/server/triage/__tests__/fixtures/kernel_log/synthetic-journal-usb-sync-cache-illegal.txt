@@ -1,0 +1,5 @@
+Oct 02 23:59:58 backup01 kernel: sd 8:0:0:0: [sdd] Synchronizing SCSI cache
+Oct 02 23:59:58 backup01 kernel: sd 8:0:0:0: [sdd] Synchronize Cache(10) failed: Result: hostbyte=DID_OK driverbyte=DRIVER_OK
+Oct 02 23:59:58 backup01 kernel: sd 8:0:0:0: [sdd] Sense Key : Illegal Request [current] 
+Oct 02 23:59:58 backup01 kernel: sd 8:0:0:0: [sdd] Add. Sense: Invalid command operation code
+Oct 03 00:00:12 backup01 kernel: usb 2-2: USB disconnect, device number 3

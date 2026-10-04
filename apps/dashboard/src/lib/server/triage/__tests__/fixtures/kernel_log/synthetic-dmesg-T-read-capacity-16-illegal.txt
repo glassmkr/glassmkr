@@ -1,0 +1,5 @@
+[Sat Oct  3 08:11:06 2026] sd 7:0:0:0: [sdc] Read Capacity(16) failed: Result: hostbyte=DID_OK driverbyte=DRIVER_OK
+[Sat Oct  3 08:11:06 2026] sd 7:0:0:0: [sdc] Sense Key : Illegal Request [current] 
+[Sat Oct  3 08:11:06 2026] sd 7:0:0:0: [sdc] Add. Sense: Invalid command operation code
+[Sat Oct  3 08:11:06 2026] sd 7:0:0:0: [sdc] 15633408 512-byte logical blocks: (8.00 GB/7.45 GiB)
+[Sat Oct  3 08:11:06 2026] sd 7:0:0:0: [sdc] Attached SCSI removable disk

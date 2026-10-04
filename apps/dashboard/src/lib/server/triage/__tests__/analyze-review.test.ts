@@ -915,3 +915,217 @@ describe("zfs_scrub_errors is checked only on a finished scrub (R3-16)", () => {
     expect(analyzeOutput(flat).checked_no_signal.map((c) => c.rule_id)).not.toContain("zfs_slog_faulted");
   });
 });
+
+// Review round 5 (2026-10-04).
+describe("SEL fault offsets reach the answer (R5-1)", () => {
+  it("a SEL of a faulted drive, a bus fatal error, a disabled DIMM and a CPU IERR is not 'No rule matched'", () => {
+    const a = analyzeOutput(fixture("ipmi_sel/synthetic-sel-fault-offsets.txt"));
+    const f = a.findings.find((x) => x.rule_id === "ipmi_sel_critical")!;
+    expect(f.severity).toBe("critical");
+    expect(f.observed.critical_events_counted).toBe(4);
+    expect(a.checked_no_signal.map((c) => c.rule_id)).not.toContain("ipmi_sel_critical");
+    expect(renderAnalysisText(a)).not.toMatch(/No rule matched/);
+  });
+
+  it("an IERR before a hard-reset boot row is reported", () => {
+    const a = analyzeOutput(fixture("ipmi_sel/synthetic-sel-ierr-hard-reset.txt"));
+    const f = a.findings.find((x) => x.rule_id === "ipmi_sel_critical")!;
+    expect(f.observed.critical_events_counted).toBe(1);
+    expect(f.observed.sensor_types).toBe("processor");
+  });
+});
+
+// R5-2: the SEL remediation said "The clear is safe" before a live `sel
+// clear`, and disk_io_errors ended with `dmesg -C`, which empties the kernel
+// log the user would paste next. buildFix never reads the rollback note.
+describe("a fix that clears a log says the clear cannot be undone (R5-2)", () => {
+  const rules = [...new Set(TRIAGE_PARSERS.flatMap((p) => p.rules))];
+  const CLEAR = /\b(?:sel clear|dmesg\s+(?:-C|--clear)|zpool clear|fsck(?:\.\w+)?)\b/;
+  const SAYS = /cannot be undone|not reversible|irreversible|can lose data/i;
+  for (const rule of rules) {
+    it(`${rule}: every live clear sits beside the warning`, () => {
+      const meta = getRuleMetadata(rule)!;
+      const pairs = TRIAGE_TEXT_REPLACE[rule] ?? [];
+      const text = (t: string | null | undefined) => pairs.reduce((acc, [from, to]) => acc.split(from).join(to), t ?? "");
+      const qc = TRIAGE_QUICK_CHECK[rule];
+      const shared = [
+        qc ? qc.command : text(meta.fix.quick_check.command),
+        ...meta.fix.prerequisites.map(text),
+        text(meta.fix.safe_mode?.command),
+        text(meta.fix.validation?.command),
+      ];
+      for (const variant of meta.fix.variants) {
+        const all = [...shared, text(variant.command)].join("\n");
+        const live = all.split("\n").filter((l) => !/^\s*#/.test(l) && CLEAR.test(l));
+        if (live.length > 0) expect(all, `${rule}: ${live.join(" / ")}`).toMatch(SAYS);
+      }
+    });
+  }
+
+  it("the SEL is exported before any clear, and the clear is not called safe", () => {
+    const a = analyzeOutput(fixture("ipmi_sel/synthetic-failing-sel-elist.txt"));
+    const fix = JSON.stringify(a.findings.find((x) => x.rule_id === "ipmi_sel_critical")!.fix);
+    expect(fix).not.toMatch(/clear is safe/i);
+    expect(fix).toContain("sudo ipmitool sel elist > /root/sel-$(date +%F).txt");
+    const lines = fix.split("\\n");
+    expect(lines.filter((l) => /sel clear/.test(l)).every((l) => /^#/.test(l.trim()))).toBe(true);
+  });
+
+  it("disk_io_errors never runs dmesg -C", () => {
+    const a = analyzeOutput(fixture("kernel_log/dmesg-T-sata-medium-error.txt"));
+    for (const f of a.findings.filter((x) => x.rule_id === "disk_io_errors")) {
+      const lines = JSON.stringify(f.fix).split("\\n");
+      expect(lines.filter((l) => /dmesg\s+-C/.test(l) && !/^#/.test(l.trim()))).toEqual([]);
+      expect(JSON.stringify(f.fix)).not.toMatch(/error\s*\\n#\s+counter/);
+    }
+  });
+});
+
+// R5-5: the summary blamed DIMM, PSU, fan, voltage or temperature hardware for
+// a watchdog reset, a lost AC feed and a kernel panic logged by the BMC.
+describe("ipmi_sel_critical names sensors, not a cause (R5-5)", () => {
+  const cases: Array<[string, string[]]> = [
+    ["a watchdog reset", ["   1 | 10/02/2026 | 03:00:00 | Watchdog2 #0xca | Timer expired | Asserted", "   2 | 10/02/2026 | 03:00:01 | Watchdog2 #0xca | Hard reset | Asserted"]],
+    ["a lost AC feed", ["   1 | 10/02/2026 | 03:00:00 | Power Unit #0x01 | AC lost | Asserted"]],
+    ["an OS critical stop", ["   1 | 10/02/2026 | 03:00:00 | OS Critical Stop #0x46 | Run-time critical stop | Asserted"]],
+  ];
+  for (const [label, rows] of cases) {
+    it(`${label}: no part named, and an investigation prior`, () => {
+      const f = analyzeOutput(sel(rows)).findings.find((x) => x.rule_id === "ipmi_sel_critical")!;
+      expect(f.severity).toBe("critical");
+      expect(f.summary).not.toMatch(/DIMM|PSU|\bfan\b|voltage|temperature hardware/i);
+      expect(f.fix?.verdict_prior).toBe("investigation");
+    });
+  }
+
+  it("a memory fault keeps the rule's own prior", () => {
+    const f = analyzeOutput(sel(["   1 | 10/02/2026 | 03:00:00 | Memory #0x02 | Uncorrectable ECC | Asserted"])).findings.find(
+      (x) => x.rule_id === "ipmi_sel_critical",
+    )!;
+    expect(f.fix?.verdict_prior).toBe(getRuleMetadata("ipmi_sel_critical")!.fix.verdict_prior);
+  });
+});
+
+// R5-10: YAML copy that is wrong for a paste, or points at text the answer
+// never carries.
+describe("rule copy that is wrong or dangling in a paste answer (R5-10)", () => {
+  const rules = [...new Set(TRIAGE_PARSERS.flatMap((p) => p.rules))];
+  const DANGLING = /once that\s*\n?#?\s*ships|sections? \d+-\d+|cpu_temperature_high|silent when all good/i;
+  for (const rule of rules) {
+    it(`${rule}: no variant points at a workflow, section or release the answer does not carry`, () => {
+      const meta = getRuleMetadata(rule)!;
+      const pairs = TRIAGE_TEXT_REPLACE[rule] ?? [];
+      const text = (t: string | null | undefined) => pairs.reduce((acc, [from, to]) => acc.split(from).join(to), t ?? "");
+      const qc = TRIAGE_QUICK_CHECK[rule];
+      const shared = [
+        triageRuleCopy(rule).summary,
+        qc ? qc.command : text(meta.fix.quick_check.command),
+        qc ? qc.explanation : text(meta.fix.quick_check.description),
+        ...meta.fix.prerequisites.map(text),
+        text(meta.fix.safe_mode?.command),
+        text(meta.fix.validation?.command),
+      ];
+      for (const variant of meta.fix.variants) expect([...shared, text(variant.command)].join("\n")).not.toMatch(DANGLING);
+    });
+  }
+
+  it("a faulted SLOG is not said to compromise sync-write durability", () => {
+    const f = analyzeOutput(fixture("zfs/synthetic-slog-cache-special.txt")).findings.find((x) => x.rule_id === "zfs_slog_faulted")!;
+    expect(f.summary).not.toMatch(/durability .*compromised/i);
+    expect(f.summary).toMatch(/main pool/);
+  });
+
+  it("the per-PSU path carries its own physical check and replacement steps", () => {
+    const f = analyzeOutput(fixture("ipmi_sel/synthetic-sdr-supermicro-psu-failure.txt")).findings.find(
+      (x) => x.rule_id === "psu_redundancy_loss",
+    )!;
+    const remediation = f.fix!.steps!.find((s) => s.title === "Remediation")!.command!;
+    expect(remediation).not.toMatch(/Dell critical/);
+    expect(remediation).toMatch(/Hot-swap/);
+  });
+});
+
+// R5-15: smartctl's "unknown" model stand-in was reported as an observed value.
+describe("a smartctl -H -A paste reports no stand-in model (R5-15)", () => {
+  it("no model=unknown in the answer", () => {
+    const a = analyzeOutput(fixture("smart/synthetic-ata-H-A-no-identity.txt"));
+    const f = a.findings.find((x) => x.rule_id === "smart_failing")!;
+    expect(f.observed).not.toHaveProperty("model");
+    expect(renderAnalysisText(a)).not.toMatch(/=unknown\b/);
+    expect(JSON.stringify(a.findings)).not.toMatch(/"unknown"/);
+  });
+});
+
+// R5-12: an email or chat copy turns runs of spaces into NBSP + space pairs,
+// and a Markdown code block or quoted email indents every line; most readers
+// then recognised nothing, and the kernel reader never allowed an indent.
+describe("pastes copied through email, chat or Markdown (R5-12)", () => {
+  const shape = (text: string) => analyzeOutput(text).findings.map((f) => [f.rule_id, f.severity, f.subject.id ?? ""].join(":"));
+  const nbsp = (text: string) => text.replace(/ {2,}/g, (run) => Array.from(run, (_, i) => (i % 2 === 0 ? " " : " ")).join(""));
+  const files = [
+    "smart/json-sata-failing.json",
+    "smart/ata-hdd-failing-a.txt",
+    "zfs/degraded-raidz2-faulted.txt",
+    "mdraid/mdadm-detail-degraded.txt",
+    "kernel_log/dmesg-T-sata-medium-error.txt",
+    "ipmi_sel/synthetic-failing-sel-elist.txt",
+    "nvidia_gpu/synthetic-failing-a100-q.txt",
+  ];
+  for (const file of files) {
+    it(`${file}: NBSP runs, a narrow no-break space, a zero-width space and a BOM change nothing`, () => {
+      const want = shape(fixture(file));
+      expect(want.length).toBeGreaterThan(0);
+      expect(shape(nbsp(fixture(file)))).toEqual(want);
+      expect(shape("﻿" + fixture(file).replace(/ {2}/g, "  ").replace(/\n/g, "​\n"))).toEqual(want);
+    });
+  }
+
+  for (const file of ["kernel_log/dmesg-T-sata-medium-error.txt", "kernel_log/journalctl-k-xid.txt", "kernel_log/kern-log-edac.txt"]) {
+    it(`${file}: a uniform four-space or tab indent changes nothing`, () => {
+      const want = shape(fixture(file));
+      expect(want.length).toBeGreaterThan(0);
+      expect(shape(fixture(file).replace(/^/gm, "    "))).toEqual(want);
+      expect(shape(fixture(file).replace(/^/gm, "\t"))).toEqual(want);
+    });
+  }
+});
+
+// R5-3: the rebuilding branch of raid_degraded.
+describe("a degraded array that is only rebuilding (R5-3)", () => {
+  const cases: Array<[string, string]> = [
+    ["a raid5 initial build", fixture("mdraid/synthetic-raid5-initial-build.txt")],
+    ["mdadm --detail spare rebuilding", fixture("mdraid/mdadm-detail-recovering.txt")],
+    ["an mdstat [U_] recovery", "md1 : active raid1 sdb2[2] sda2[0]\n      1952855040 blocks super 1.2 [2/1] [U_]\n      [==>..................]  recovery = 12.6% (246123456/1952855040) finish=140.2min speed=202816K/sec\n"],
+  ];
+  for (const [label, text] of cases) {
+    it(`${label}: no failed disk claimed, no replacement steps`, () => {
+      const a = analyzeOutput(text);
+      const f = a.findings.find((x) => x.rule_id === "raid_degraded")!;
+      expect(f.severity).toBe("critical");
+      expect(f.observed.rebuilding).toBe(true);
+      expect(f.summary).not.toMatch(/have failed/);
+      expect(f.summary).toMatch(/rebuild/);
+      expect(f.fix?.verdict_prior).toBe("recoverable");
+      const fix = JSON.stringify(f.fix);
+      expect(fix).not.toMatch(/FAILED member|hot-add|--add|replacement drive|sdX|sdN/i);
+      const out = renderAnalysisText(a);
+      expect(out).not.toMatch(/have failed|Triage the FAILED member/);
+      expect(out).toMatch(/not yet in sync/);
+    });
+  }
+
+  it("names the rebuild target when mdadm --detail does, and asks for no SMART data on a failing disk", () => {
+    const a = analyzeOutput(fixture("mdraid/synthetic-raid5-initial-build.txt"));
+    expect(a.findings[0].observed.rebuilding_member).toBe("sdd");
+    expect(a.next_capture.map((c) => c.why).join("\n")).not.toMatch(/disk behind this finding is failing/);
+  });
+
+  it("beside an array with a failed member, only the rebuilding one changes", () => {
+    const a = analyzeOutput(fixture("mdraid/synthetic-mdstat-failed-and-rebuilding.txt"));
+    const byId = Object.fromEntries(a.findings.map((f) => [f.subject.id, f]));
+    expect(byId.md0.observed.failed_disks).toBe("sdb1");
+    expect(byId.md0.observed.rebuilding).toBeUndefined();
+    expect(byId.md0.summary).toBe(getRuleMetadata("raid_degraded")!.summary.trim());
+    expect(byId.md1.observed.rebuilding).toBe(true);
+  });
+});

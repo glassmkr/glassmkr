@@ -1,0 +1,9 @@
+md0 : active raid1 sdb1[2](F) sda1[0]
+      976630464 blocks super 1.2 [2/1] [U_]
+      bitmap: 3/8 pages [12KB], 65536KB chunk
+
+md1 : active raid1 sdb2[2] sda2[0]
+      1952855040 blocks super 1.2 [2/1] [U_]
+      [==>..................]  recovery = 12.6% (246123456/1952855040) finish=140.2min speed=202816K/sec
+
+unused devices: <none>

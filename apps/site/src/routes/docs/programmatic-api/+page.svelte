@@ -100,7 +100,7 @@ done</code></pre>
 # not to app.glassmkr.com.
 curl -sf https://glassmkr.com/install.sh | sudo GLASSMKR_API_KEY=$COLLECTOR_KEY bash -s -- \
   --ingest-url "$BASE_URL/api/v1/ingest"</code></pre>
-        <p class="note">Drop the <code>--ingest-url</code> flag on the hosted service, where it is the default. The installer supports Ubuntu and Debian; other distributions use the single-file binary or npm, both covered in <a href="/docs/getting-started">Getting started</a>.</p>
+        <p class="note">Drop the <code>--ingest-url</code> flag on the hosted service, where it is the default. The installer supports the apt and dnf/yum families (Debian, Ubuntu, RHEL, Rocky, AlmaLinux, CentOS, Fedora); other distributions use the single-file binary or npm, both covered in <a href="/docs/getting-started">Getting started</a>.</p>
     </section>
 
     <section id="channels">

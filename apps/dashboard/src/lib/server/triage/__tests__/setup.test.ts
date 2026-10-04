@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FALLBACK_LATEST } from "$lib/server/version.js";
 import { monitoringSetup, renderSetupText, setupOutputSchema, type SetupResult } from "../setup.js";
@@ -211,5 +214,33 @@ describe("the Node.js prerequisite (R3-21)", () => {
     const installer = r.steps.find((s) => s.commands.some((c) => c.includes("install.sh")))!;
     expect(installer.detail).toMatch(/adds Node\.js 24 only when no node is installed/);
     expect(installer.detail).not.toMatch(/if it is missing/);
+  });
+});
+
+// R5-11: get_monitoring_setup offered the installer for the dnf/yum family,
+// as install.sh supports, while llms.txt, the dashboard's empty state and
+// ground-truth.yaml said Ubuntu and Debian only. install.sh's header is the
+// source; the other surfaces follow it.
+describe("installer families match install.sh (R5-11)", () => {
+  const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "..", "..", "..");
+  const header = /# Supported package managers: ([\s\S]*?)\. On any other/.exec(readFileSync(join(ROOT, "apps/site/static/install.sh"), "utf8"))?.[1];
+  const families = [...(header ?? "").replace(/\n#\s*/g, " ").matchAll(/\(([^)]*)\)/g)].flatMap((m) => m[1].split(/[/,]\s*/)).map((f) => f.trim());
+
+  it("install.sh names the apt and dnf/yum families", () => {
+    expect(header).toMatch(/apt .* dnf\/yum/);
+    expect(families).toEqual(["Debian", "Ubuntu", "RHEL", "Rocky", "AlmaLinux", "CentOS", "Fedora"]);
+  });
+
+  it("the setup tool, llms.txt and ground-truth.yaml name every one of them", () => {
+    const installer = monitoringSetup({ distro: "rocky", target: "hosted" }).steps.find((s) => /one-line installer/.test(s.title));
+    const llms = readFileSync(join(ROOT, "apps/dashboard/static/llms.txt"), "utf8");
+    const truth = readFileSync(join(ROOT, "ground-truth.yaml"), "utf8");
+    for (const f of families) {
+      expect(installer?.detail, f).toContain(f);
+      expect(llms, f).toContain(f);
+      expect(truth, f).toContain(f);
+    }
+    expect(llms).not.toMatch(/Ubuntu\s+and\s+Debian\s+only/);
+    expect(truth).not.toMatch(/Ubuntu\/Debian ONLY/);
   });
 });

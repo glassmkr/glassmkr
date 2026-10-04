@@ -36,6 +36,10 @@ const ALL_FIXTURES = [
   "synthetic-sdr-list-psu-hex.txt",
   "synthetic-sel-ce-logging-disabled.txt",
   "synthetic-sensor-psu-hex-only.txt",
+  "synthetic-sel-fault-offsets.txt",
+  "synthetic-sel-ierr-hard-reset.txt",
+  "synthetic-sel-corrected-mce.txt",
+  "synthetic-sel-empty.txt",
 ];
 
 function fixture(name: string): string {
@@ -393,7 +397,8 @@ describe("sel list: hex ids, Pre-Init and OEM records", () => {
     expect(fired(alerts)).toEqual(["ecc_errors", "ipmi_sel_critical"]);
     const ev = alertOf(alerts, "ipmi_sel_critical").evidence as Record<string, unknown>;
     const critical = ev.critical_events as Array<{ id: number; age_days: number | null }>;
-    expect(critical.map((e) => e.id).sort((a, b) => a - b)).toEqual([2, 11, 31]);
+    // id 10 is a Processor IERR, critical since R5-1.
+    expect(critical.map((e) => e.id).sort((a, b) => a - b)).toEqual([2, 10, 11, 31]);
     expect(critical.find((e) => e.id === 2)?.age_days).toBeNull();
     expect(critical.find((e) => e.id === 31)?.age_days).toBe(32);
   });
@@ -410,7 +415,7 @@ describe("sel list: hex ids, Pre-Init and OEM records", () => {
     const ev = alertOf(alerts, "ipmi_sel_critical").evidence as Record<string, unknown>;
     expect(ev.window_days).toBe(30);
     expect((ev.critical_events as Array<{ id: number }>).map((e) => e.id)).toEqual([2]);
-    expect(ev.events_outside_window).toBe(2);
+    expect(ev.events_outside_window).toBe(3);
   });
 });
 
@@ -782,5 +787,135 @@ describe("SEL sensor column length (R1-25)", () => {
     expect(sensors).toContain("Power Supply PS2 Status");
     expect(sensors).toContain("Some vendor text");
     for (const s of sensors) expect(s).not.toMatch(/ignore|previous/i);
+  });
+});
+
+// Review round 5 (2026-10-04). ipmitool prints the IPMI sensor-specific fault
+// offsets as plain text the ported severity table has no keyword for, so a
+// CPU IERR or a faulted drive came back as "ran and found no matching signal".
+describe("IPMI sensor-specific fault offsets (R5-1)", () => {
+  const severityOf = (text: string) =>
+    Object.fromEntries((ipmi(text).sel_events_recent ?? []).map((e) => [e.event, e.severity]));
+
+  it("Drive Fault, Bus Fatal Error, Memory Device Disabled and IERR are critical", () => {
+    expect(severityOf(fixture("synthetic-sel-fault-offsets.txt"))).toMatchObject({
+      "Drive Fault": "critical",
+      "Bus Fatal Error": "critical",
+      "Memory Device Disabled": "critical",
+      IERR: "critical",
+      "Log area reset/cleared": "info",
+    });
+    const alerts = evaluate(ipmiSelParser.parse(fixture("synthetic-sel-fault-offsets.txt")).snapshot);
+    expect(fired(alerts)).toEqual(["ipmi_sel_critical"]);
+    const ev = alertOf(alerts, "ipmi_sel_critical").evidence as Record<string, unknown>;
+    expect((ev.critical_events as Array<{ id: number }>).map((e) => e.id).sort((a, b) => a - b)).toEqual([2, 3, 4, 5]);
+  });
+
+  it("an IERR followed by a hard-reset boot row fires on the IERR, not the reset", () => {
+    const alerts = evaluate(ipmiSelParser.parse(fixture("synthetic-sel-ierr-hard-reset.txt")).snapshot);
+    const ev = alertOf(alerts, "ipmi_sel_critical").evidence as Record<string, unknown>;
+    expect((ev.critical_events as Array<{ id: number }>).map((e) => e.id)).toEqual([2]);
+  });
+
+  it("the rest of the offsets, named sensors included", () => {
+    const rows = [
+      "Processor CPU1 Status | FRB1/BIST failure",
+      "Processor CPU1 Status | FRB2/Hang in POST failure",
+      "Processor #0x04 | FRB3/Processor startup/init failure",
+      "Processor #0x04 | SM BIOS Uncorrectable CPU-complex Error",
+      "Memory DIMM_A1 | Memory Scrub Failed",
+      "Drive Slot / Bay HDD3_Status | In Failed Array",
+      "Drive Slot (Bay) #0x52 | Rebuild Aborted",
+      "Critical Interrupt PCIE_ERR | Fatal NMI",
+      "Critical Interrupt #0x17 | PCI SERR",
+    ].map((r, i) => `  ${i + 1} | 10/02/2026 | 11:00:0${i} | ${r} | Asserted`);
+    for (const e of ipmi(selRows(rows)).sel_events_recent ?? []) expect(e.severity, e.event).toBe("critical");
+  });
+
+  it("is keyed on the sensor type and the whole event, so free text and other types keep their class", () => {
+    const s = severityOf(
+      selRows([
+        "  1 | 10/02/2026 | 11:00:00 | Drive Slot / Bay #0x52 | Drive Present | Asserted",
+        "  2 | 10/02/2026 | 11:00:01 | Drive Slot / Bay #0x52 | Rebuild In Progress | Asserted",
+        "  3 | 10/02/2026 | 11:00:02 | Critical Interrupt #0x17 | Bus Correctable error | Asserted",
+        "  4 | 10/02/2026 | 11:00:03 | Fan FAN1 | Drive Fault | Asserted",
+        "  5 | 10/02/2026 | 11:00:04 | Processor #0x04 | IERRATA note | Asserted",
+      ]),
+    );
+    expect(s).toEqual({
+      "Drive Present": "info",
+      "Rebuild In Progress": "info",
+      "Bus Correctable error": "info",
+      "Drive Fault": "warning",
+      "IERRATA note": "warning",
+    });
+  });
+
+  it("a fault deasserted within the pairing window still pairs away as a transient", () => {
+    const alerts = evaluate(
+      ipmiSelParser.parse(
+        selRows([
+          "  1 | 10/02/2026 | 11:20:01 | Drive Slot / Bay #0x52 | Drive Fault | Asserted",
+          "  2 | 10/02/2026 | 11:20:02 | Drive Slot / Bay #0x52 | Drive Fault | Deasserted",
+        ]),
+      ).snapshot,
+    );
+    expect(fired(alerts)).toEqual([]);
+  });
+});
+
+// R5-6: "Correctable machine check error" (Processor offset 0x0c) matched the
+// "machine check" substring and was critical, while the memory equivalent
+// "Correctable ECC" is a warning.
+describe("corrected CPU machine checks (R5-6)", () => {
+  it("are warnings, and fire no ipmi_sel_critical", () => {
+    const s = ipmi(fixture("synthetic-sel-corrected-mce.txt"));
+    expect((s.sel_events_recent ?? []).filter((e) => e.sensor_type === "processor").map((e) => e.severity)).toEqual([
+      "warning",
+      "warning",
+    ]);
+    expect(fired(evaluate(ipmiSelParser.parse(fixture("synthetic-sel-corrected-mce.txt")).snapshot))).toEqual([]);
+  });
+
+  it("an uncorrectable machine check exception stays critical", () => {
+    const r = ipmiSelParser.parse(selRows(["  1 | 10/02/2026 | 11:00:00 | Processor #0x04 | Uncorrectable machine check exception | Asserted"]));
+    expect(r.snapshot.ipmi?.sel_events_recent?.[0].severity).toBe("critical");
+    expect(fired(evaluate(r.snapshot))).toEqual(["ipmi_sel_critical"]);
+  });
+});
+
+// R5-13: an empty SEL ("SEL has no entries") was unrecognised output, and the
+// answer asked for the command just run; beside sel info the elist output was
+// said to be missing.
+describe("an empty SEL (R5-13)", () => {
+  it.each([
+    ["the line alone", "SEL has no entries\n", "ipmitool_sel_elist"],
+    ["after an elist prompt", "root@node-e1:~# ipmitool sel elist\nSEL has no entries\n", "ipmitool_sel_elist"],
+    ["after a list prompt", "root@node-e1:~# ipmitool sel list\nSEL has no entries\n", "ipmitool_sel_list"],
+  ])("%s is a read of an empty event log", (_label, text, format) => {
+    expect(ipmiSelParser.detect(text)).toBe(true);
+    const r = ipmiSelParser.parse(text);
+    expect(r.formats).toEqual([format]);
+    expect(r.subjects).toBe(1);
+    expect(r.snapshot.ipmi?.sel_events_recent).toEqual([]);
+    expect(r.rules_checked).toEqual(["ecc_errors", "ipmi_sel_critical"]);
+    const notes = noteText(text);
+    expect(notes).toMatch(/SEL has no entries/);
+    expect(notes).not.toMatch(/SEL event rows \(ipmitool sel elist\)/);
+    expect(fired(evaluate(r.snapshot))).toEqual([]);
+  });
+
+  it("beside sel info, the elist output is not called missing", () => {
+    const text = fixture("synthetic-sel-empty.txt");
+    const r = ipmiSelParser.parse(text);
+    expect(r.formats).toEqual(["ipmitool_sel_elist", "ipmitool_sel_info"]);
+    expect(r.subjects).toBe(2);
+    expect(r.rules_checked).toEqual(["ecc_errors", "ipmi_sel_critical", "ipmi_sel_full"]);
+    expect(noteText(text)).not.toMatch(/SEL event rows/);
+  });
+
+  it("the line quoted inside other text does not count", () => {
+    const text = "Sep 30 10:00:00 host app[1]: note: SEL has no entries\n";
+    expect(ipmiSelParser.detect(text)).toBe(false);
   });
 });

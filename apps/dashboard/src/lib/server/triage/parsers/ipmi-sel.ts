@@ -118,6 +118,9 @@ const SEL_INFO_HEADER = /^[ \t]*SEL Information[ \t]*$/m;
 const ENTRIES_LINE = /^[ \t]*Entries[ \t]*:[ \t]*(\d{1,9})[ \t]*$/m;
 const PERCENT_LINE = /^[ \t]*Percent Used[ \t]*:[ \t]*(\S+)/m;
 const OVERFLOW_LINE = /^[ \t]*Overflow[ \t]*:[ \t]*(true|false|yes|no)\b/im;
+// What `ipmitool sel list` / `sel elist` prints when the SEL is empty. A
+// whole line only, so the words quoted inside a log line never count (R5-13).
+const SEL_EMPTY_LINE = /^[ \t]*SEL has no entries[ \t]*$/m;
 /** ipmitool rows are well under this; a longer line is not one, and no column regex sees it. */
 const MAX_LINE = 512;
 
@@ -392,7 +395,30 @@ function deriveSelSeverity(event: string, sensorType: string): string {
 const ROUTINE_POWER_SENSOR = /^(?:System Boot Initiated|System ACPI Power State)(?: |$)/;
 const POWER_UNIT_ROUTINE_EVENT = /^(?:Power off\/down|Power cycle)\b/i;
 
+// IPMI sensor-specific fault offsets ipmitool prints as plain text the table
+// above has no keyword for, so a CPU IERR or a faulted drive was a warning or
+// info row and ipmi_sel_critical reported no matching signal (R5-1). Keyed on
+// the SEL sensor type and the whole ipmitool event string, so free text in
+// another sensor's row never matches.
+const SEL_FAULT_OFFSETS: ReadonlyArray<readonly [RegExp, RegExp]> = [
+  [
+    /^Processor(?: |$)/,
+    /^(?:IERR|FRB1\/BIST failure|FRB2\/Hang in POST failure|FRB3\/Processor startup\/init failure|SM BIOS Uncorrectable CPU-complex Error)$/i,
+  ],
+  [/^Memory(?: |$)/, /^(?:Memory Device Disabled|Memory Scrub Failed)$/i],
+  [/^Drive Slot (?:\/ Bay|\(Bay\))(?: |$)/, /^(?:Drive Fault|In Failed Array|Rebuild Aborted)$/i],
+  [/^Critical Interrupt(?: |$)/, /^(?:Bus Fatal Error|Fatal NMI|PCI SERR)$/i],
+];
+// Processor offset 0x0c: a corrected machine check. The table's "machine
+// check" substring made it critical, while the memory equivalent "Correctable
+// ECC" is a warning (R5-6). "Uncorrectable machine check exception" is 0x0b.
+const CORRECTED_MCE = /^Correctable machine check\b/i;
+
 function triageSelSeverity(sensorText: string, eventText: string, sensorType: string): string {
+  for (const [sensor, event] of SEL_FAULT_OFFSETS) {
+    if (sensor.test(sensorText) && event.test(eventText)) return "critical";
+  }
+  if (/^Processor(?: |$)/.test(sensorText) && CORRECTED_MCE.test(eventText)) return "warning";
   if (ROUTINE_POWER_SENSOR.test(sensorText)) return "info";
   if (/^Power Unit(?: |$)/.test(sensorText) && POWER_UNIT_ROUTINE_EVENT.test(eventText)) return "info";
   return deriveSelSeverity(eventText, sensorType);
@@ -531,7 +557,7 @@ function emptyResult(notes: ParseNote[]): ParserResult {
 
 function detectIpmi(text: string): boolean {
   if (typeof text !== "string" || text.length === 0) return false;
-  if (SEL_ROW_SNIFF.test(text) || OEM_ROW_SNIFF.test(text) || SEL_INFO_HEADER.test(text)) return true;
+  if (SEL_ROW_SNIFF.test(text) || OEM_ROW_SNIFF.test(text) || SEL_INFO_HEADER.test(text) || SEL_EMPTY_LINE.test(text)) return true;
   if (ENTRIES_LINE.test(text) && (PERCENT_LINE.test(text) || OVERFLOW_LINE.test(text))) return true;
   if (!text.includes("|")) return false;
   for (const line of text.split(/\r\n|\r|\n/)) {
@@ -552,6 +578,7 @@ function parseIpmi(text: string): ParserResult {
   let partialRows = 0;
   let sawElistCommand = false;
   let sawListCommand = false;
+  let sawEmptySel = false;
   let sdrUsed = false;
   let sensorUsed = false;
   let psuRedundancy: IpmiSlice["psu_redundancy_state"] | null = null;
@@ -611,6 +638,10 @@ function parseIpmi(text: string): ParserResult {
         partialRows++;
         continue;
       }
+    }
+    if (SEL_EMPTY_LINE.test(line)) {
+      sawEmptySel = true;
+      continue;
     }
     // Shell prompt / command echo: tells `sel list` from `sel elist`.
     if (/\bsel\s+elist\b/i.test(line)) sawElistCommand = true;
@@ -678,7 +709,11 @@ function parseIpmi(text: string): ParserResult {
     notes.push({ level: "warning", message: `${partialRows} line(s) looked like SEL rows but were cut off or incomplete, so they were skipped.` });
   }
 
-  const subjects = events.length + fans.length + psus.length + (psuRedundancy ? 1 : 0) + (selInfoUsable ? 1 : 0);
+  // ipmitool read the SEL and it held no entry: a read of an empty log, not
+  // unrecognised output (R5-13).
+  const emptySelRead = sawEmptySel && unique.length === 0;
+  const subjects =
+    events.length + fans.length + psus.length + (psuRedundancy ? 1 : 0) + (selInfoUsable ? 1 : 0) + (emptySelRead ? 1 : 0);
   if (subjects === 0) {
     notes.push({ level: "warning", message: "No ipmitool SEL rows, sel info fields, fan rows or power supply rows were recognised." });
     return emptyResult(notes);
@@ -689,6 +724,8 @@ function parseIpmi(text: string): ParserResult {
     const elist = sawElistCommand || (!sawListCommand && unique.some((r) => !r.numberedSensor || r.extraColumn));
     if (elist) formats.push("ipmitool_sel_elist");
     if (sawListCommand || !elist) formats.push("ipmitool_sel_list");
+  } else if (emptySelRead) {
+    formats.push(sawListCommand && !sawElistCommand ? "ipmitool_sel_list" : "ipmitool_sel_elist");
   }
   if (selInfoUsable) formats.push("ipmitool_sel_info");
   if (sdrUsed && SDR_FORMAT) formats.push(SDR_FORMAT);
@@ -708,7 +745,7 @@ function parseIpmi(text: string): ParserResult {
   if (selInfo?.percent_used != null) ipmi.sel_percent_used = selInfo.percent_used;
   if (selInfo?.overflow != null) ipmi.sel_overflow = selInfo.overflow;
   if (psuRedundancy) ipmi.psu_redundancy_state = psuRedundancy;
-  if (events.length > 0) {
+  if (events.length > 0 || emptySelRead) {
     ipmi.sel_events_recent = kept;
     ipmi.ecc_errors_from_sel = eccFromSel(parsed);
   }
@@ -782,8 +819,14 @@ function parseIpmi(text: string): ParserResult {
       message: `${psuHexRows} power supply ${psuHexRows === 1 ? "row shows" : "rows show"} only a hex state code, which is not decoded here, so the power supply check cannot see a failure in ${psuHexRows === 1 ? "it" : "them"}. ipmitool sdr elist prints that state as text.`,
     });
   }
+  if (emptySelRead) {
+    notes.push({
+      level: "warning",
+      message: "ipmitool reported that the SEL has no entries, so the event log held no event to check. A log cleared recently reads the same way.",
+    });
+  }
   const missing: string[] = [];
-  if (events.length === 0) missing.push("SEL event rows (ipmitool sel elist)");
+  if (events.length === 0 && !emptySelRead) missing.push("SEL event rows (ipmitool sel elist)");
   if (!selInfoUsable) missing.push("SEL fullness (ipmitool sel info)");
   if (fans.length === 0) missing.push("fan rows (ipmitool sdr type Fan)");
   // Not `ipmitool sensor`: it prints a discrete PSU state as a hex mask the
@@ -798,7 +841,7 @@ function parseIpmi(text: string): ParserResult {
   // on an asserted "Log full" row; SEL rows without one say nothing about how
   // full the log is, so the rule is not reported as checked on them (R1-28).
   const rules_checked: string[] = [];
-  if (events.length > 0) rules_checked.push("ecc_errors", "ipmi_sel_critical");
+  if (events.length > 0 || emptySelRead) rules_checked.push("ecc_errors", "ipmi_sel_critical");
   const logFullRow = events.some((e) => e.direction === "Asserted" && isSelLogFullEventText(e.event));
   if (selInfoUsable || logFullRow) rules_checked.push("ipmi_sel_full");
   if (fans.length > 0) rules_checked.push("ipmi_fan_failure");

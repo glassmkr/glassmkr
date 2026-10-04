@@ -98,6 +98,14 @@ export interface ParserResult {
    * claim a zone the output does not state (R4-11).
    */
   zoneless_times?: true;
+  /**
+   * md arrays that are degraded with no failed member, no unnamed empty slot,
+   * and a member attached but not yet in sync: a fresh build, or recovery onto
+   * a replacement already added. The answer must not say a disk has failed or
+   * ask for a replacement (R5-3). `member` is the rebuild target when mdadm
+   * --detail names exactly one; /proc/mdstat cannot.
+   */
+  rebuilding_arrays?: ReadonlyArray<{ device: string; member?: string }>;
 }
 
 export interface TriageParser {

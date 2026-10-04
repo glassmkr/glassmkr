@@ -1036,3 +1036,42 @@ describe("a drive with no device path and no serial (R3-19)", () => {
     expect(noteText(parsed)).toContain("identify it by serial number before acting");
   });
 });
+
+// R5-8: the for-loop list regex was rewritten so a padded run before a
+// missing ';' cannot backtrack; a padded loop still names its devices.
+describe("a for-loop with padded whitespace (R5-8)", () => {
+  it("still names the loop's devices", () => {
+    const text = [
+      "root@web-05.example.invalid:~# for d in      /dev/sdb   /dev/nvme0n1; do sudo smartctl -H $d; done",
+      "sudo: smartctl: command not found",
+      "sudo: smartctl: command not found",
+    ].join("\n");
+    expect(unreadableOf(smartctlParser.parse(text))).toEqual([
+      { device: "/dev/sdb", reason: "no_smartctl_output" },
+      { device: "/dev/nvme0n1", reason: "no_smartctl_output" },
+    ]);
+  });
+});
+
+// R5-7: with the indentation stripped, every nested "{" of a cut-off JSON
+// document sat at column 0 and read as a new top-level value, so the cut was
+// placed at the attribute table and the reallocated count never reached the
+// rule. A "{" right after a line ending in "," "[" "{" or ":" continues the
+// value before it.
+describe("cut-off JSON with its indentation stripped (R5-7)", () => {
+  const strip = (text: string) => text.replace(/^[ \t]+/gm, "");
+
+  it("reads the same fields as the indented paste", () => {
+    const indented = smartctlParser.parse(fixture("synthetic-json-truncated.txt"));
+    const { parsed, results } = runText(strip(fixture("synthetic-json-truncated.txt")));
+    expect(smartOf(parsed)).toEqual(smartOf(indented));
+    expect(fired(results)).toEqual(["smart_failing:critical:/dev/sda"]);
+  });
+
+  it("a cut-off document still does not swallow the complete one after it", () => {
+    const cut = fixture("synthetic-json-truncated.txt").split("\n").filter((l) => !/^root@/.test(l)).join("\n");
+    const whole = fixture("json-sata-failing.json").replace(/"\/dev\/sda"/g, '"/dev/sdb"').replace(/ZC1[A-Z0-9]+/g, "ZC1FAKE99");
+    const parsed = smartctlParser.parse(`${cut}\n${whole}`);
+    expect(smartOf(parsed).map((d) => d.device)).toEqual(["/dev/sda", "/dev/sdb"]);
+  });
+});

@@ -1043,3 +1043,44 @@ describe("the thermal finding states its real trigger (R4-3)", () => {
     expect(msgs.join("\n")).not.toMatch(/GPU Slowdown Temp/);
   });
 });
+
+// R5-7: an nvidia-smi -q paste whose leading whitespace was stripped (an
+// HTML email, a ticket field) kept only each GPU's product name, and the
+// answer said the paste lacked the fields it shows. nvidia-smi pads every key
+// so its ':' lands in one column at every depth, which gives the depth back.
+describe("nvidia-smi -q with its indentation stripped (R5-7)", () => {
+  const strip = (text: string) => text.replace(/^[ \t]+/gm, "");
+  const Q_FIXTURES = [
+    "synthetic-a100-remapped-row-q.txt",
+    "synthetic-crlf-l4-q.txt",
+    "synthetic-failing-a100-q.txt",
+    "synthetic-h100-sram-threshold-exceeded-q.txt",
+    "synthetic-healthy-h100x2-q.txt",
+    "synthetic-injection-a100-q.txt",
+    "synthetic-legacy-v100-q.txt",
+    "synthetic-mixed-h100x4-q-nvlink.txt",
+    "synthetic-partial-d-performance.txt",
+    "synthetic-prompt-a100x2-d-ecc-temp.txt",
+    "synthetic-truncated-h100x2-q.txt",
+  ];
+  for (const name of Q_FIXTURES) {
+    it(`${name}: the same GPU readings and findings`, () => {
+      const original = nvidiaSmiParser.parse(fixture(name));
+      const stripped = nvidiaSmiParser.parse(strip(fixture(name)));
+      expect(gpus(stripped)).toEqual(gpus(original));
+      expect(ruleIds(evaluate(stripped))).toEqual(ruleIds(evaluate(original)));
+      expect(stripped.rules_checked).toEqual(original.rules_checked);
+    });
+  }
+
+  it("the failing A100 keeps its two criticals and the PCIe warning, and the answer says the indentation was read from the alignment", () => {
+    const a = analyzeOutput(strip(fixture("synthetic-failing-a100-q.txt")));
+    expect(a.findings.map((f) => `${f.rule_id}:${f.severity}`).sort()).toEqual([
+      "gpu_pcie_link_degraded:warning",
+      "gpu_thermal_critical:critical",
+      "gpu_uncorrected_ecc:critical",
+    ]);
+    expect(a.notes.join("\n")).toMatch(/lost its indentation/);
+    expect(renderAnalysisText(a)).not.toMatch(/none of the fields/);
+  });
+});

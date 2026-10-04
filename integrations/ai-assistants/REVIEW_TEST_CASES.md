@@ -61,7 +61,7 @@ Key outcome to verify:
   sectors (8) may appear as evidence but are not a trigger (removed as a trigger
   on 2026-08-04, see `evaluator.ts`).
 - The prompt line `root@web-01:~# smartctl -a /dev/sda` does not break parsing.
-- No "healthy" wording anywhere; no failure-date prediction.
+- Nothing says the drive or server is healthy (a remediation step may still use the word "healthy" for another disk); no failure-date prediction.
 
 Prompt:
 

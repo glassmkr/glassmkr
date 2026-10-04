@@ -429,10 +429,88 @@ interface QueryBlock {
 const MAX_SECTION_NAME = 64;
 const MAX_FIELD_PATH = 256;
 
-function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: string } {
+const INDENT_STEP = 4;
+// The separator of a `Key<padding>: value` line, with KV_RE's lazy key, so the
+// ':' column is the key's length plus its padding.
+const KV_SEP_RE = /^(\S(?:.*?\S)?)(\s+):/;
+// A -q section name: "MIG Mode", "GPU Link Info", "Clocks Event Reasons".
+const SECTION_NAME_RE = /^[A-Za-z][A-Za-z0-9 ()\/.,+_-]{0,63}$/;
+
+/**
+ * The indent of every line. A paste whose leading whitespace was stripped (an
+ * HTML email, a ticket field) put every key at column 0, so each GPU block
+ * ended at its first section name and kept only the product name (R5-7).
+ * nvidia-smi pads every key so its ':' lands in one column at every depth,
+ * which gives the depth back: the alignment column (read from a top-level key
+ * such as Timestamp, or one step past the widest key in the block) minus the
+ * key's ':' column. A section name takes one step less than the key below it.
+ */
+function queryIndents(lines: string[]): { indents: number[]; stripped: number } {
+  const indents = lines.map(leadingWidth);
+  let align: number | null = null;
+  let stripped = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i].trim();
+    if (!text) continue;
+    if (indents[i] === 0) {
+      const sep = KV_SEP_RE.exec(text);
+      if (sep && sep[2].length >= 2 && TOP_LEVEL_KEYS.has(normKey(sep[1]))) {
+        align = sep[1].length + sep[2].length;
+        continue;
+      }
+    }
+    if (!GPU_HEADER_RE.test(text)) continue;
+    const head = indents[i];
+    const block: Array<{ line: number; col: number | null; padded: boolean }> = [];
+    let widest = 0;
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const t = lines[j].trim();
+      if (!t) continue;
+      // An indented line: the block kept its indentation, or this is not it.
+      if (indents[j] > head || GPU_HEADER_RE.test(t)) break;
+      const sep = KV_SEP_RE.exec(t);
+      if (sep) {
+        if (TOP_LEVEL_KEYS.has(normKey(sep[1]))) break;
+        const col = sep[1].length + sep[2].length;
+        const padded = sep[2].length >= 2;
+        if (padded) widest = Math.max(widest, col);
+        block.push({ line: j, col, padded });
+      } else if (SECTION_NAME_RE.test(t)) {
+        block.push({ line: j, col: null, padded: false });
+      } else break;
+    }
+    if (block.length === 0 || widest === 0) continue;
+    stripped++;
+    const alignCol = align ?? widest + INDENT_STEP;
+    let last = head + INDENT_STEP;
+    let sections: number[] = [];
+    for (const b of block) {
+      if (b.col === null) {
+        sections.push(b.line);
+        continue;
+      }
+      // A key too long for its padding has no depth to read; it sits beside the key before it.
+      let indent = b.padded ? head + alignCol - b.col : last;
+      if (indent < head + INDENT_STEP) indent = last;
+      sections.forEach((line, k) => {
+        indents[line] = Math.max(head + INDENT_STEP, indent - INDENT_STEP * (sections.length - k));
+      });
+      sections = [];
+      indents[b.line] = indent;
+      last = indent;
+    }
+    for (const line of sections) indents[line] = last;
+    i = j - 1;
+  }
+  return { indents, stripped };
+}
+
+function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: string; stripped: number } {
   let driver: string | undefined;
   let gpus = 0;
   let cur: QueryBlock | null = null;
+  const { indents, stripped } = queryIndents(lines);
   const finish = () => {
     if (!cur) return;
     table.upsert(gpuFromQuery(cur.fields, cur.bdf));
@@ -440,10 +518,10 @@ function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: 
     cur = null;
   };
 
-  for (const line of lines) {
-    const text = line.trim();
+  for (let li = 0; li < lines.length; li++) {
+    const text = lines[li].trim();
     if (!text) continue;
-    const indent = leadingWidth(line);
+    const indent = indents[li];
     const header = text.match(GPU_HEADER_RE);
     if (header) {
       finish();
@@ -453,9 +531,9 @@ function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: 
     const kv = text.match(KV_RE);
     const key = kv ? normKey(kv[1]) : null;
     if (cur && indent <= cur.indent) {
-      // A paste whose leading whitespace was stripped still carries the
-      // padded `Key    : value` lines; keep those (flat) and end the block on
-      // anything else, such as a prompt or another tool's output.
+      // A stripped paste whose depth queryIndents could not read still
+      // carries the padded `Key    : value` lines; keep those (flat) and end
+      // the block on anything else, such as a prompt or another tool's output.
       const continues = kv !== null && PADDED_KV_RE.test(text) && !TOP_LEVEL_KEYS.has(key ?? "");
       if (!continues) finish();
     }
@@ -480,7 +558,7 @@ function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: 
     }
   }
   finish();
-  return { gpus, driver };
+  return { gpus, driver, stripped };
 }
 
 function gpuFromQuery(f: Map<string, string>, bdf: string): RawGpu {
@@ -1223,6 +1301,12 @@ function parseUnsafe(text: string): ParserResult {
   const n = gpus.length;
   const downLinks = n < 2 ? gpus.flatMap((g) => g.nvlink_links.filter((l) => l.state === "down").map((l) => l.link_id)) : [];
   const notes = buildNotes(n, counts, nvlink.gpus, nvlink.unmatched, table.dropped, downLinks);
+  if (query.stripped > 0) {
+    notes.push({
+      level: "info",
+      message: "The nvidia-smi -q output lost its indentation; its sections were read from the column its ':' separators line up in.",
+    });
+  }
   if (unopened > 0) notes.push(unopenedNote(unopened));
   if (nvlink.counterRows > 0) notes.push({ level: "info", message: NVLINK_COUNTERS_NOTE });
   // A rule is checked only when some GPU carries what it reads; a memory-only

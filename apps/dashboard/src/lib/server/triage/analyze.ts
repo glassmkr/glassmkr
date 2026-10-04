@@ -155,8 +155,11 @@ const SEVERITY_RANK: Record<AlertResult["severity"], number> = { critical: 0, wa
 // feeds, or a prediction. The YAML stays the dashboard's source; a paste answer
 // is read by someone with one paste and no dashboard (R1-29, R1-10).
 const TRIAGE_SUMMARY: Record<string, string> = {
+  // The SEL names the sensor an event was logged against, not a cause: a
+  // watchdog reset, a lost AC feed or an OS critical stop was blamed on
+  // DIMM, PSU, fan, voltage or temperature hardware (R5-5).
   ipmi_sel_critical:
-    "The pasted BMC System Event Log contains one or more critical-severity asserted events, pointing at DIMM, PSU, fan, voltage or temperature hardware. This check counts events of any age: the dates are under observed, and an event that is old or was later deasserted records a past fault, not necessarily a current one.",
+    "The pasted BMC System Event Log contains one or more critical-severity asserted events. sensor_types and affected_components under observed name the sensor each event was logged against; the event names the sensor, not a cause. This check counts events of any age: the dates are under observed, and an event that is old or was later deasserted records a past fault, not necessarily a current one.",
   ecc_errors:
     "The memory controller or the BMC reported one or more uncorrectable ECC errors in this output. An uncorrectable error is a hardware fault in memory; check when it happened (the dates in the paste), then identify the DIMM and plan its replacement.",
   zfs_scrub_errors:
@@ -203,6 +206,11 @@ const TRIAGE_SUMMARY: Record<string, string> = {
   // text (shapeFinding).
   gpu_pcie_link_degraded:
     "The GPU's PCIe link is running below the card's maximum generation or width, so host-to-GPU bandwidth is capped below what the card supports.",
+  // The YAML says sync-write durability is compromised; ZFS writes the intent
+  // log to the main pool while a log device is out, so sync writes slow down
+  // but stay durable (R5-10).
+  zfs_slog_faulted:
+    "A separate log (SLOG) device in this pool is FAULTED or REMOVED. ZFS writes the intent log to the main pool devices while it is out, so sync writes stay durable but lose the SLOG's latency benefit. The device is named under observed.",
   // Shorter than the YAML so the text block carries it whole (R2b-14).
   nvme_critical_warning:
     "An NVMe drive's Critical Warning byte is non-zero. Each set bit is a condition the NVMe specification flags for immediate attention: available spare below threshold, temperature threshold exceeded, reliability degraded, read-only mode, or a failed volatile memory backup.",
@@ -292,11 +300,50 @@ export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string,
       "# Check each event's date and whether a Deasserted row follows it;\n# ipmitool sdr elist shows each sensor's current reading.\n# Focused workflows",
     ],
     ["Leads with the failed component the SEL already named", "Leads with the sensors the critical SEL events name"],
+    // No paste rule is named cpu_temperature_high, and nothing in the answer
+    // runs it (R5-10).
+    ["#    Temperature -> see cpu_temperature_high workflow", "#    Temperature -> check every temperature sensor\n#               sudo ipmitool sdr type Temperature"],
+    ["#               often correlates with cpu_temperature_high.", "#               check CPU temperatures too\n#               (sudo ipmitool sdr type Temperature)."],
+    // "The clear is safe" before a live `sel clear`: the clear cannot be
+    // undone, and for a paste-only reader the SEL may be the only record of
+    // the event (R5-2). Export first, as ipmi_sel_full does.
+    [
+      "# 4. After acting on each event type, clear the SEL so\n#    future critical events stand out. The clear is safe;\n#    SEL is per-host log only.\nsudo ipmitool sel clear",
+      "# 4. Export the SEL before any clear: clearing it cannot be\n#    undone, and vendor support may ask for these events.\nsudo ipmitool sel elist > /root/sel-$(date +%F).txt\n#    Then, once each event type has been acted on, clear it so\n#    future critical events stand out:\n# sudo ipmitool sel clear",
+    ],
+  ],
+  ipmi_fan_failure: [
+    [
+      "check cpu_temperature_high before / during this fix",
+      "check CPU temperatures (sudo ipmitool sdr type Temperature) before / during this fix",
+    ],
+    [
+      "# If CPU temps are above warning -> cpu_temperature_high\n# workflow runs in parallel; prioritise fan swap.",
+      "# If CPU temps are above warning, keep watching them while\n# you work; prioritise fan swap.",
+    ],
+  ],
+  // A roadmap note (R5-10).
+  gpu_thermal_critical: [["# On HGX hosts, baseboard temp via Redfish (tier 3 once that\n# ships):", "# On HGX hosts, baseboard temp via Redfish:"]],
+  // `zpool status -x` prints a one-line message when no pool has a problem;
+  // it is not silent (R5-10).
+  zfs_pool_unhealthy: [["prints only pools that are not healthy (silent when all good)", "prints only the pools that have a problem, or one line saying there are none"]],
+  // Clearing the pool's error counters cannot be undone (R5-2).
+  zfs_scrub_errors: [
+    [
+      "# 4. After replacement, clear pool errors + re-scrub",
+      "# 4. After replacement, note the error counts (clearing them\n#    cannot be undone), then clear pool errors + re-scrub",
+    ],
   ],
   psu_redundancy_loss: [
     [
       "# 4. Plan replacement at next maintenance window; no\n#    emergency. Degraded means \"watch this PSU, it's\n#    likely the next to fail\".",
       "# 4. Plan replacement at next maintenance window; no\n#    emergency. Degraded means the BMC reports this\n#    PSU's redundancy as reduced.",
+    ],
+    // The per-PSU path pointed at the Dell variant's sections 3-6, which a
+    // paste answer never carries (R5-10).
+    [
+      "# 4. Physical check + replacement (same as Dell critical\n#    path, sections 3-6).",
+      "# 4. Physical check of each supply that is not ok:\n#    - Status LED (typically amber/red for fault)\n#    - Both power cords seated and AC present on its feed\n#    An AC failure on one feed is a facility issue, not a\n#    hardware swap.\n\n# 5. Hot-swap the failed PSU (enterprise chassis), wait for\n#    its status LED to turn green, then re-check:\nsudo ipmitool sdr type 'Power Supply' 2>/dev/null",
     ],
   ],
   nvme_critical_warning: [
@@ -305,6 +352,12 @@ export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string,
   ],
   disk_io_errors: [
     ["Recent backup verified (the affected drive may be on the verge of total failure)", "Recent backup verified before working on a drive that reports errors"],
+    // `dmesg -C` empties the whole kernel ring buffer, the output the reader
+    // would paste next; it is not an error counter (R5-2).
+    [
+      "# 5. Once root cause is addressed, clear the kernel error\n#    counter (informational; the underlying issue must be\n#    fixed first):\nsudo dmesg -C",
+      "# 5. Keep the kernel log: it is the record of these errors.\n#    dmesg -C empties the whole ring buffer (it is not a\n#    counter) and cannot be undone; save it first if you\n#    ever clear it:\n#    sudo dmesg -T > /root/dmesg-$(date +%F).txt",
+    ],
   ],
   gpu_corrected_ecc_storm: [
     [
@@ -328,6 +381,19 @@ const NEVER_SCRUBBED = {
   title: "ZFS pool has never been scrubbed",
   summary:
     "The pool shows no record of a scrub. A scrub reads every block and finds silent corruption; a just-created pool simply needs its first one. This is a maintenance gap reported at info, not a fault.",
+};
+
+// raid_degraded on an md array the reader saw rebuilding with no failed
+// member: a fresh build, or recovery onto a replacement already added. The
+// YAML says disks have failed and walks through triaging the failed member
+// and adding a replacement (R5-3).
+const REBUILDING_TITLE = "RAID array degraded while it rebuilds";
+const REBUILDING_SUMMARY =
+  "The array is degraded while it rebuilds onto a member that is attached but not yet in sync; this output names no failed member. Until the rebuild finishes, the array has less redundancy than it was built with. Check /proc/mdstat again later for the rebuild's progress.";
+const REBUILDING_QUICK_CHECK = {
+  command: "cat /proc/mdstat",
+  explanation:
+    "The recovery line shows the rebuild's progress and estimated finish. Run it again later: the rebuild is done when the array's slot map shows every member as U (for example [UU] or [UUUU]) and no recovery line is left.",
 };
 
 const PCIE_WIDTH_ONLY_EXPLANATION =
@@ -372,7 +438,8 @@ const TRIAGE_RENAME_OBSERVED: Record<string, Readonly<Record<string, string>>> =
 };
 
 // The evaluator's stand-in for a value it could not find, not a reading.
-const PLACEHOLDER_OBSERVED = new Set(["gpu_uuid", "gpu_name"]);
+// smartctl's reader writes "unknown" for a paste with no model line (R5-15).
+const PLACEHOLDER_OBSERVED = new Set(["gpu_uuid", "gpu_name", "model"]);
 
 // ---------------------------------------------------------------------------
 // Output contract (also the MCP tool's outputSchema)
@@ -837,6 +904,8 @@ interface ShapedFinding {
 interface FixAdjust {
   /** gpu_pcie_link_degraded narrower than the card at the same generation. */
   widthOnly: boolean;
+  /** raid_degraded on an array that is rebuilding with no failed member (R5-3). */
+  rebuildingOnly?: boolean;
   /** A branch whose prior differs from the rule's YAML default. */
   verdictPrior?: "recoverable" | "investigation";
 }
@@ -856,6 +925,12 @@ function findingFix(ruleId: string, safeEvidence: Observed, locator: ServerLocat
   // or firmware issue", beside a summary that calls it expected in a slot
   // wired for fewer lanes (R4-10).
   if (adjust.widthOnly && fix.quick_check) fix.quick_check.explanation = PCIE_WIDTH_ONLY_EXPLANATION;
+  // No failed member to triage and no replacement to add: the read-only
+  // state check is the whole workflow.
+  if (adjust.rebuildingOnly) {
+    fix.quick_check = { ...REBUILDING_QUICK_CHECK };
+    fix.steps = (fix.steps ?? []).filter((s) => s.title === "Confirm the current state (read-only)");
+  }
   if (adjust.verdictPrior) fix.verdict_prior = adjust.verdictPrior;
   return fix;
 }
@@ -865,6 +940,7 @@ function shapeFinding(
   ruleDomain: TriageDomain | undefined,
   locator: ServerLocator,
   zonelessSel = false,
+  rebuilding: ReadonlyMap<string, string | undefined> = new Map(),
 ): ShapedFinding {
   const meta = getRuleMetadata(alert.type);
   const safeEvidence = sanitizeEvidence(alert.evidence ?? {});
@@ -963,8 +1039,38 @@ function shapeFinding(
     summary = PSU_AGGREGATE_SUMMARY;
     investigation = true;
   }
+  let rebuildingOnly = false;
+  if (
+    alert.type === "raid_degraded" &&
+    observed.raid_kind === "mdadm" &&
+    subject.id !== undefined &&
+    rebuilding.has(subject.id) &&
+    observed.failed_disks === undefined
+  ) {
+    observed.rebuilding = true;
+    const member = rebuilding.get(subject.id);
+    if (member) observed.rebuilding_member = member;
+    title = REBUILDING_TITLE;
+    summary = REBUILDING_SUMMARY;
+    recoverable = true;
+    rebuildingOnly = true;
+  }
+  // Watchdog and "other" sensors (a watchdog reset, a Power Unit AC loss, an
+  // OS critical stop) record what the host went through, not a part the BMC
+  // found failed, so the rule's vendor-side prior does not fit (R5-5).
+  if (
+    alert.type === "ipmi_sel_critical" &&
+    typeof observed.sensor_types === "string" &&
+    observed.sensor_types.split(",").every((t) => t === "watchdog" || t === "other")
+  ) {
+    investigation = true;
+  }
 
-  const adjust: FixAdjust = { widthOnly, verdictPrior: investigation ? "investigation" : recoverable ? "recoverable" : undefined };
+  const adjust: FixAdjust = {
+    widthOnly,
+    rebuildingOnly,
+    verdictPrior: investigation ? "investigation" : recoverable ? "recoverable" : undefined,
+  };
   return {
     finding: {
       rule_id: alert.type,
@@ -1202,7 +1308,15 @@ const CONTINUOUS_MONITORING = {
  * (R2b-1). They become ordinary line breaks before any reader runs.
  */
 function readerText(text: string): string {
-  return text.replace(/[\u2028\u2029]/g, "\n");
+  // An email, chat or web copy turns runs of spaces into no-break spaces, and
+  // can carry a byte-order mark or zero-width spaces; the readers' patterns
+  // match ASCII space, so 39 of 106 recognised fixtures read as nothing
+  // (R5-12). Every horizontal Unicode space separator becomes a space, one
+  // for one, and the zero-width characters go.
+  return text
+    .replace(/[\u2028\u2029]/g, "\n")
+    .replace(/[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g, " ")
+    .replace(/[\u200b\ufeff]/g, "");
 }
 
 /** Analyze pasted command output with Glassmkr's alert rules. */
@@ -1302,7 +1416,9 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     };
   });
   const zonelessSel = active.some(({ result }) => result.domain === "ipmi_sel" && result.zoneless_times === true);
-  const deduped = dedupeFindings(timed.map((a) => shapeFinding(a, ruleDomain.get(a.type), locator, zonelessSel)));
+  const rebuilding = new Map<string, string | undefined>();
+  for (const { result } of active) for (const r of result.rebuilding_arrays ?? []) rebuilding.set(r.device, r.member);
+  const deduped = dedupeFindings(timed.map((a) => shapeFinding(a, ruleDomain.get(a.type), locator, zonelessSel, rebuilding)));
   const fixOf = new Map(deduped.map((s) => [s.finding, s.fix]));
   const ordered = deduped
     .map((s, i) => ({ f: s.finding, i }))
@@ -1427,7 +1543,8 @@ function nextCapture(
 
   const domains = new Set(active.map((r) => r.domain));
   const formats = new Set(active.flatMap((r) => r.formats));
-  const fired = new Set(findings.map((f) => f.rule_id));
+  // An array rebuilding with no failed member has no failing disk behind it (R5-3).
+  const fired = new Set(findings.filter((f) => f.observed.rebuilding !== true).map((f) => f.rule_id));
 
   for (const r of detected) {
     if (!domains.has(r.domain)) {

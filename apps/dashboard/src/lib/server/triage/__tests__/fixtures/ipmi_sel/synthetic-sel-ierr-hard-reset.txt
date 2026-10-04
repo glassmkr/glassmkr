@@ -1,0 +1,5 @@
+root@node-f7:~# ipmitool sel elist
+   1 | 07/01/2026 | 08:00:01 | Event Logging Disabled #0x07 | Log area reset/cleared | Asserted
+   2 | 10/02/2026 | 23:51:17 | Processor CPU1 Status | IERR | Asserted
+   3 | 10/02/2026 | 23:51:18 | System Event #0x83 | OEM System Boot Event | Asserted
+   4 | 10/02/2026 | 23:53:40 | System Boot Initiated #0x1f | Initiated by hard reset | Asserted

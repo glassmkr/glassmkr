@@ -234,19 +234,42 @@ describe("JSON-RPC over POST: initialize -> tools/list -> tools/call", () => {
 });
 
 describe("HTTP guards", () => {
-  it("413s a body over 256 KB without parsing it", async () => {
+  it("413s a body over 512 KB without parsing it, and says what the limit is", async () => {
     const big = JSON.stringify({
       jsonrpc: "2.0", id: 1, method: "tools/call",
-      params: { name: "analyze_server_output", arguments: { output: "x".repeat(300 * 1024) } },
+      params: { name: "analyze_server_output", arguments: { output: "x".repeat(600 * 1024) } },
     });
     const res = await post(big);
     expect(res.status).toBe(413);
-    expect((await res.json()).error.message).toBe("Request body is too large");
+    expect((await res.json()).error.message).toBe(
+      "Request body is too large: analyze_server_output accepts at most 200,000 characters in output; pass the section for the affected device.",
+    );
   });
 
   it("413s on a declared Content-Length over the cap", async () => {
-    const res = await post("{}", { "Content-Length": String(300 * 1024) });
+    const res = await post("{}", { "Content-Length": String(600 * 1024) });
     expect(res.status).toBe(413);
+  });
+
+  // R5-14: the 256 KB cap sat below the JSON encoding of pastes near the
+  // character limit, so they got a transport 413 the client shows as a
+  // connector failure instead of the tool's own error.
+  it("a 240,000-character smartctl -j paste gets the tool's own length error, not a 413", async () => {
+    const unit = '{\n  "smart_status": {\n    "passed": true\n  },\n  "device": {\n    "name": "/dev/sda"\n  }\n}\n';
+    const output = unit.repeat(Math.ceil(240_000 / unit.length)).slice(0, 240_000);
+    expect(new TextEncoder().encode(JSON.stringify(output)).length).toBeGreaterThan(256 * 1024);
+    const { res, body } = await rpc("tools/call", { name: "analyze_server_output", arguments: { output } });
+    expect(res.status).toBe(200);
+    expect(body.result.isError).toBe(true);
+    expect(JSON.stringify(body.result.content)).toMatch(/200000/);
+  });
+
+  it("a 200,000-character paste of short CRLF lines is read, not refused", async () => {
+    const output = "ab\r\n".repeat(50_000);
+    expect(output.length).toBe(200_000);
+    const { res, body } = await rpc("tools/call", { name: "analyze_server_output", arguments: { output } });
+    expect(res.status).toBe(200);
+    expect(body.result.isError).toBeFalsy();
   });
 
   it("400s malformed JSON with a JSON-RPC parse error", async () => {

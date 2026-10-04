@@ -34,6 +34,8 @@ interface ArrayFacts {
   unnamedSlot: boolean;
   /** A member is attached to a slot but not yet in sync (rebuild target). */
   rebuilding: boolean;
+  /** Rebuild targets mdadm --detail names ("spare rebuilding"); mdstat names none. */
+  rebuildTargets: string[];
   /** A failed or missing device the output does not name (truncated table). */
   unnamedFailed: boolean;
   /** A resync, recovery, check or reshape is running or queued. */
@@ -212,6 +214,7 @@ function readMdstatArray(lines: string[], start: number, match: RegExpExecArray)
       },
       unnamedSlot: missing > rebuildingCount + failed.length,
       rebuilding: rebuildingCount > 0,
+      rebuildTargets: [],
       unnamedFailed: false,
       syncActive,
       // Cut off before the "[n/m] [UU]" line: a missing slot is invisible.
@@ -330,6 +333,7 @@ function readDetailBlock(lines: string[], start: number, rawName: string): { fac
       },
       unnamedSlot: removedSlots > detachedFaulty,
       rebuilding: rows.some((r) => r.rebuilding),
+      rebuildTargets: [...new Set(rows.filter((r) => r.rebuilding && r.name).map((r) => r.name))],
       unnamedFailed,
       syncActive,
       statusMissing: stateRaw === undefined && rows.length === 0,
@@ -349,6 +353,7 @@ function mergeFacts(into: ArrayFacts, add: ArrayFacts): void {
   a.degraded = a.degraded || b.degraded;
   into.unnamedSlot = into.unnamedSlot || add.unnamedSlot;
   into.rebuilding = into.rebuilding || add.rebuilding;
+  for (const t of add.rebuildTargets) if (!into.rebuildTargets.includes(t) && into.rebuildTargets.length < MAX_MEMBERS) into.rebuildTargets.push(t);
   // One source naming the failed member (mdstat's (F)) settles a truncated
   // table in the other; two sources that both leave it unnamed do not.
   into.unnamedFailed =
@@ -494,10 +499,12 @@ function parse(text: string): ParserResult {
       message: `${arrays(inactive, "is", "are")} inactive (not running); this output cannot show whether all of its members are present.`,
     });
   }
+  // A warning so the text block carries it: without it, a degraded array
+  // rebuilding onto an attached member read as a failed disk (R5-3).
   const rebuilding = count((a) => a.rebuilding);
   if (rebuilding > 0) {
     notes.push({
-      level: "info",
+      level: "warning",
       message: `${arrays(rebuilding, "has", "have")} a member attached but not yet in sync (rebuilding or waiting to rebuild); it is not counted as a failed disk.`,
     });
   }
@@ -535,6 +542,18 @@ function parse(text: string): ParserResult {
     subjects: merged.length,
     notes,
   };
+  const rebuildingOnly = merged
+    .filter(
+      (a) =>
+        a.entry.degraded &&
+        a.entry.failed_disks.length === 0 &&
+        a.rebuilding &&
+        !a.unnamedSlot &&
+        !a.unnamedFailed &&
+        a.entry.status === "active",
+    )
+    .map((a) => (a.rebuildTargets.length === 1 ? { device: a.entry.device, member: a.rebuildTargets[0] } : { device: a.entry.device }));
+  if (rebuildingOnly.length > 0) result.rebuilding_arrays = rebuildingOnly;
   // A whole mdstat with no arrays (a host with hardware RAID or none) is the
   // answer, not a cut-off paste to capture again (R2-16).
   if (merged.length === 0 && mdstatEnd && formats.has("proc_mdstat") && !formats.has("mdadm_detail")) {
