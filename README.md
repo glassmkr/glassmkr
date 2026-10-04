@@ -41,9 +41,9 @@ asks the npm registry which agent version is current. Both are lookups.
 ## In an AI assistant
 
 Glassmkr's alert rules can also read command output you paste into ChatGPT,
-Claude or another MCP client, with no account and nothing installed: add
-`https://app.glassmkr.com/api/triage/mcp` as a remote MCP server. Setup steps and
-what happens to the pasted text:
+Claude or another MCP client, with no account and nothing installed on your
+servers: add `https://app.glassmkr.com/api/triage/mcp` as a remote MCP server.
+Setup steps and what happens to the pasted text:
 [glassmkr.com/docs/ai-assistants](https://glassmkr.com/docs/ai-assistants). The
 server code lives in `apps/dashboard/src/lib/server/triage/`, the directory
 submission package in [integrations/ai-assistants](integrations/ai-assistants/README.md).

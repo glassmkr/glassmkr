@@ -4,16 +4,23 @@
 // (integrations/ai-assistants/scripts/validate-openai-plugin.mjs), and the
 // instructions, tool descriptions, capture and setup results are checked at
 // runtime in their own tests, but nothing covered the rest of this server:
-// finding text, notes, the fix-workflow rewrites, error messages. This reads
-// every string literal in the server code (not comments, not tests), so upsell
-// text cannot reach a tool result from anywhere in it. The website may state
-// the hosted node cap; this code may not.
+// the strings it authors for findings, notes, the fix-workflow rewrites and
+// error messages. The first case reads every string literal in the triage
+// server code and its route (not comments, not tests). Finding titles,
+// summaries and fix workflows also come from the rule YAMLs, which feed the
+// site's rule pages too, where the node cap is allowed; the second case reads
+// the YAML text a paste answer can carry, with a narrower list, since that
+// text legitimately says "upgrade", "plan" and "free space". The website may
+// state the hosted node cap; a tool result may not.
 
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { getRuleMetadata } from "$lib/server/alerts/fix-workflow/loader";
+import { TRIAGE_QUICK_CHECK, TRIAGE_TEXT_REPLACE, triageRuleCopy } from "../analyze";
+import { TRIAGE_PARSERS } from "../registry";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_SRC = join(HERE, "..", "..", "..", "..");
@@ -23,7 +30,7 @@ const SCANNED_DIRS = [
 ];
 
 // Pricing, plan, trial and node-cap words: the listing check's list plus the
-// sibling runtime tests' (tier, billing, paid).
+// sibling runtime tests' (tier, billing), and paid.
 const UPSELL =
   /\b(?:pric(?:e|es|ed|ing)|free|trials?|plans?|tiers?|upgrades?|discounts?|subscri(?:be|bed|bes|ption|ptions)|billing|billed|paid|promo(?:s|tion|tions)?|unlimited)\b|\bnode[- ](?:cap|limit)s?\b|\b\d+[- ]?nodes?\b/gi;
 
@@ -111,4 +118,49 @@ describe("paste-triage server code carries no upsell text", () => {
     const hits = files.flatMap((f) => findings(readFileSync(f, "utf8"), relative(DASHBOARD_SRC, f)));
     expect(hits).toEqual([]);
   });
+});
+
+describe("rule YAML text a paste answer can carry has no upsell text", () => {
+  const rules = [...new Set(TRIAGE_PARSERS.flatMap((p) => p.rules))];
+
+  // Commercial words only. The broad list above flags firmware upgrades,
+  // "plan its replacement" and "free space" all through the YAMLs.
+  const COMMERCIAL =
+    /\b(?:pric(?:e|es|ed|ing)|trials?|subscri(?:be|bed|bes|ption|ptions)|billing|billed|paid|promo(?:s|tion|tions)?|discounts?)\b|\bnode[- ](?:cap|limit)s?\b|\b\d+[- ]?nodes?\b|\bfree (?:up to|tier|plan|accounts?)\b|\bhosted (?:is|accounts? are) free\b/i;
+
+  it("the narrower matcher catches a planted node cap and ignores remediation wording", () => {
+    for (const s of ["The hosted dashboard tracks this for free up to 10 nodes.", "Start a trial", "see pricing"]) {
+      expect(s, s).toMatch(COMMERCIAL);
+    }
+    for (const s of ["Upgrade the BMC firmware, then plan its replacement.", "Free space on the pool is low."]) {
+      expect(s, s).not.toMatch(COMMERCIAL);
+    }
+  });
+
+  it("covers the rules the parsers can return", () => {
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) expect(getRuleMetadata(rule), rule).toBeTruthy();
+  });
+
+  for (const rule of rules) {
+    it(`${rule}: title, summary and every fix variant carry no pricing or node-cap text`, () => {
+      const meta = getRuleMetadata(rule)!;
+      const pairs = TRIAGE_TEXT_REPLACE[rule] ?? [];
+      const text = (t: string | null | undefined) => pairs.reduce((acc, [from, to]) => acc.split(from).join(to), t ?? "");
+      const qc = TRIAGE_QUICK_CHECK[rule];
+      const copy = triageRuleCopy(rule);
+      const all = [
+        meta.title,
+        copy.summary,
+        JSON.stringify(copy.fix),
+        qc ? qc.command : text(meta.fix.quick_check.command),
+        qc ? qc.explanation : text(meta.fix.quick_check.description),
+        ...meta.fix.prerequisites.map(text),
+        text(meta.fix.safe_mode?.command),
+        text(meta.fix.validation?.command),
+        ...meta.fix.variants.map((v) => text(v.command)),
+      ].join("\n");
+      expect(all.match(COMMERCIAL)?.[0] ?? null).toBeNull();
+    });
+  }
 });

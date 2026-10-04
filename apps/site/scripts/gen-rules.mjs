@@ -209,7 +209,7 @@ function writeLlmsFull(rules, docs) {
   lines.push("A separate anonymous MCP endpoint, https://app.glassmkr.com/api/triage/mcp,");
   lines.push("runs the alert rules that apply to command output a user pastes into an AI");
   lines.push("assistant (smartctl, zpool status, mdadm, dmesg, ipmitool, nvidia-smi), with");
-  lines.push("no account and nothing installed.");
+  lines.push("no account and nothing installed on the user's servers.");
   lines.push("");
 
   // Guide pages: the full Markdown of each static docs page (derived from the

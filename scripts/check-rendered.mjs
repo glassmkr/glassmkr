@@ -472,10 +472,12 @@ if (EXPLICIT) {
 
 // 2d. the binary install path must be documented. A blind onboarding round on
 // AlmaLinux found that the README and the docs both advertise "any
-// distribution", install.sh refuses everything except Ubuntu and Debian, and the
-// binary we point those users at had no install commands anywhere on the live
+// distribution", install.sh then refused everything except Ubuntu and Debian, and
+// the binary we point those users at had no install commands anywhere on the live
 // site: zero occurrences of releases/download across every docs page. Five of
 // the seven distributions we advertise were stranded at the first step.
+// install.sh has since gained dnf/yum (8cded2f), so the page must say which
+// families the installer covers; the binary is the path for the rest.
 {
   const gs = rendered["/docs/getting-started"];
   if (gs) {
@@ -483,11 +485,11 @@ if (EXPLICIT) {
     if (!/releases\/download/.test(gs.html)) {
       problems.push("no binary install command (releases/download) on /docs/getting-started");
     }
-    if (!/only|Ubuntu and Debian/i.test(gs.body)) {
-      problems.push("the installer's Ubuntu and Debian limit is not stated");
+    if (!/apt and dnf\/yum/i.test(gs.body)) {
+      problems.push("the installer's distro coverage (apt and dnf/yum) is not stated");
     }
     if (problems.length) fail("binarypath", problems.join("; "));
-    else ok("binarypath", "binary install documented and the installer's distro limit is stated");
+    else ok("binarypath", "binary install documented and the installer's distro coverage is stated");
   }
 }
 
