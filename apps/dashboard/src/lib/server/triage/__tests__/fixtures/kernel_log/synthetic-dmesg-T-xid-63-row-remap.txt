@@ -1,0 +1,1 @@
+[Sat Oct  4 03:02:19 2026] NVRM: Xid (PCI:0000:3b:00): 63, pid='<unknown>', name=<unknown>, Row Remapper: New row (0x0000000000000a2c) marked for remapping, reset gpu to activate.

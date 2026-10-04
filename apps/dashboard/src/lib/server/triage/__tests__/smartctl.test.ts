@@ -14,6 +14,7 @@ import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/ale
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { decodeNvmeCriticalWarning, smartctlParser, unpackSeagateCounter } from "../parsers/smartctl";
 import { DOMAIN_SNAPSHOT_KEYS, type ParserResult } from "../types";
+import { analyzeOutput, renderAnalysisText } from "../analyze";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "smart");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -809,11 +810,11 @@ describe("software block devices are not unreadable disks (R2-13)", () => {
   });
 });
 
-// R2-2: the wear loop kept the most-worn of every candidate. SandForce
+// R2b-2: the wear loop kept the most-worn of every candidate. SandForce
 // counters that always read 000 (177 Wear_Range_Delta, 233 SandForce_Internal,
 // 241 Lifetime_Writes_GiB) and a WD Blue whose 230 counts up both came back as
 // a critical "replace immediately" on a healthy drive.
-describe("SATA SSD wear attributes (R2-2)", () => {
+describe("SATA SSD wear attributes (R2b-2)", () => {
   it("reads a SandForce drive's SSD_Life_Left, not its zeroed counters", () => {
     const { parsed, results } = run("synthetic-sandforce-sv300-healthy.txt");
     expect(smartOf(parsed)[0]).toMatchObject({ health: "PASSED", reallocated_sectors: 0, percentage_used: 0 });
@@ -858,8 +859,8 @@ describe("SATA SSD wear attributes (R2-2)", () => {
   });
 });
 
-// R2-8: the header regexes must keep matching what they matched before.
-describe("loop header shapes (R2-8)", () => {
+// R2b-8: the header regexes must keep matching what they matched before.
+describe("loop header shapes (R2b-8)", () => {
   const block = "smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.8.0-45-generic] (local build)\n=== START OF READ SMART DATA SECTION ===\nSMART overall-health self-assessment test result: PASSED\n";
   it.each([
     ["=== /dev/sda ===", "/dev/sda"],
@@ -874,8 +875,8 @@ describe("loop header shapes (R2-8)", () => {
   });
 });
 
-// R2-9 and R2-11: hostile shapes that stay bounded (timed in adversarial.test.ts).
-describe("JSON bounds (R2-9, R2-11)", () => {
+// R2b-9 and R2b-11: hostile shapes that stay bounded (timed in adversarial.test.ts).
+describe("JSON bounds (R2b-9, R2b-11)", () => {
   it("still repairs a truncated smartctl JSON document", () => {
     const { parsed } = run("synthetic-json-truncated.txt");
     expect(parsed.formats).toContain("smartctl_json");
@@ -886,5 +887,106 @@ describe("JSON bounds (R2-9, R2-11)", () => {
     const parsed = smartctlParser.parse('{"smart_status":{"passed":true}}\n'.repeat(1500));
     expect(smartOf(parsed).length + unreadableOf(parsed).length).toBeLessThanOrEqual(1024);
     expect(noteText(parsed)).toContain("Only the first 1024 drive reads in this paste were read.");
+  });
+});
+
+// R3-7: a drive that reports unrecoverable data while its health line says
+// PASSED came back as a bare "No rule matched". The R2-3 notes covered only
+// 197/198 and a failed self-test.
+describe("unrecovered-data counters no single-paste rule reads (R3-7)", () => {
+  const warnings = (r: ParserResult) => r.notes.filter((n) => n.level === "warning").map((n) => n.message);
+
+  it.each([
+    ["NVMe smartctl -a", "synthetic-nvme-media-errors-a.txt"],
+    ["NVMe smartctl -j", "synthetic-json-nvme-media-errors.json"],
+  ])("%s: Media and Data Integrity Errors are a warning note", (_form, name) => {
+    const { parsed, results } = run(name);
+    expect(smartOf(parsed)[0].media_errors).toBe(37);
+    expect(results).toEqual([]);
+    expect(warnings(parsed)).toEqual([
+      "1 NVMe drive reports 37 Media and Data Integrity Errors: data the controller found but could not recover. Glassmkr judges these over days of readings, so one paste raised no finding on its own.",
+    ]);
+    const text = renderAnalysisText(analyzeOutput(fixture(name)));
+    expect(text).toContain("No rule matched");
+    expect(text).toContain("37 Media and Data Integrity Errors");
+  });
+
+  it("an NVMe error-log count with no media errors raises no note", () => {
+    const { parsed } = run("synthetic-nvme-error-log-entries-no-media-errors-a.txt");
+    expect(smartOf(parsed)[0].num_err_log_entries).toBe(4182);
+    expect(warnings(parsed)).toEqual([]);
+  });
+
+  it("ATA 187 Reported_Uncorrect is a warning note", () => {
+    const { parsed, results } = run("synthetic-ata-reported-uncorrect-a.txt");
+    expect(smartOf(parsed)[0].reported_uncorrectable).toBe(56);
+    expect(results).toEqual([]);
+    expect(warnings(parsed)).toEqual([
+      "1 drive reports 56 reported-uncorrectable errors (SMART 187): reads the drive could not correct. Glassmkr judges these over days of readings, so one paste raised no finding on its own.",
+    ]);
+  });
+
+  it("SAS total uncorrected errors in the error counter log are a warning note", () => {
+    const { parsed } = run("sas-failing-a.txt");
+    expect(parsed.notes).toContainEqual({
+      level: "warning",
+      message: "1 SAS drive reports 16 total uncorrected errors in its error counter log (read, write and verify). Glassmkr's rules do not evaluate this SCSI counter, so it raised no finding on its own.",
+    });
+    // The healthy SAS drive's counters are all 0.
+    expect(warnings(run("sas-healthy-a.txt").parsed)).toEqual([]);
+  });
+
+  it("reads the same counter from smartctl -j", () => {
+    const doc = {
+      json_format_version: [1, 0],
+      smartctl: { version: [7, 4] },
+      device: { name: "/dev/sdf", type: "scsi", protocol: "SCSI" },
+      scsi_vendor: "HGST",
+      scsi_product: "HUH721212AL5200",
+      serial_number: "8HFAKE0001",
+      smart_status: { passed: true },
+      scsi_error_counter_log: {
+        read: { total_uncorrected_errors: 14 },
+        write: { total_uncorrected_errors: 0 },
+        verify: { total_uncorrected_errors: 2 },
+      },
+    };
+    expect(warnings(smartctlParser.parse(JSON.stringify(doc)))).toContain(
+      "1 SAS drive reports 16 total uncorrected errors in its error counter log (read, write and verify). Glassmkr's rules do not evaluate this SCSI counter, so it raised no finding on its own.",
+    );
+  });
+});
+
+// R3-19: a `smartctl -H -A` paste names neither a device nor a serial, yet the
+// note said to identify the drive by its serial number.
+describe("a drive with no device path and no serial (R3-19)", () => {
+  it("does not send the reader to a serial the paste does not have", () => {
+    const { parsed, results } = run("synthetic-ata-H-A-no-identity.txt");
+    expect(fired(results)).toEqual(["smart_failing:critical:unknown-device"]);
+    expect(smartOf(parsed)[0].serial).toBeUndefined();
+    const text = noteText(parsed);
+    expect(text).not.toMatch(/by serial number/);
+    expect(text).toContain(
+      "1 drive has no device path or serial number in the paste and is labeled unknown-device: match it by the counters shown, or rerun smartctl -i -H -A /dev/<disk> for each disk.",
+    );
+    const qc = analyzeOutput(fixture("synthetic-ata-H-A-no-identity.txt")).findings[0].fix?.quick_check?.command ?? "";
+    expect(qc).not.toMatch(/SERIAL from the alert evidence/);
+  });
+
+  it("a loop of -H -A blocks says the drives are matched by order or counters", () => {
+    const block = fixture("synthetic-ata-H-A-no-identity.txt");
+    const parsed = smartctlParser.parse(`${block}\n${block}`);
+    expect(smartOf(parsed).map((d) => d.device)).toEqual(["unknown-device-1", "unknown-device-2"]);
+    const text = noteText(parsed);
+    expect(text).not.toMatch(/by serial number/);
+    expect(text).toContain(
+      "2 drives have no device path in the paste and are labeled unknown-device-N by their order among the drives in the paste; 2 show no serial number either: match those by that order or the counters shown.",
+    );
+  });
+
+  it("a drive with a serial but no path still says to match the serial", () => {
+    const parsed = smartctlParser.parse(fixture("ata-hdd-healthy-a.txt"));
+    expect(smartOf(parsed).map((d) => [d.device, d.serial])).toEqual([["unknown-device", "ZC1FAKE01"]]);
+    expect(noteText(parsed)).toContain("identify it by serial number before acting");
   });
 });

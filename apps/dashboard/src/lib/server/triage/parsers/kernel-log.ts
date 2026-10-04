@@ -53,7 +53,7 @@ const RELATIVE_RE = /^\[\s*(\d{1,10}\.\d{1,9})\]\s?(.*)$/;
 // minute (strftime "%b%e %H:%M", so "[Oct14 06:51]" for days 10 to 31), then
 // "[  +0.000012] msg" or "[ +12.345678] msg" deltas. Neither dates an event.
 // Left in the message, the prefix hid the anchored 6.x NVMe media-error lines
-// and the paste was not recognised (R2-7).
+// and the paste was not recognised (R2b-7).
 const RELTIME_RE = new RegExp(`^\\[(?:${MON} {0,2}\\d{1,2} \\d{2}:\\d{2}|\\s{0,8}[+-]\\d{1,10}\\.\\d{1,9})\\]\\s?(.*)$`);
 // `grep -H` (or grep over several files) puts the file name first:
 // "/var/log/kern.log:Oct  4 06:51:00 host kernel: msg".
@@ -64,6 +64,20 @@ const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([,.]\d{1,9})?(Z
 const BSD_RE = new RegExp(`^${MON} ( ?\\d{1,2}) (\\d{2}:\\d{2}:\\d{2})(?:\\.\\d{1,9})?\\s+(.*)$`);
 // journalctl short-full: "Fri 2026-10-03 10:00:00 CEST host kernel: msg"
 const FULL_RE = new RegExp(`^${DOW} (\\d{4})-(\\d{2})-(\\d{2}) (\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})? [A-Za-z][A-Za-z0-9+-]{0,9}\\s+(.*)$`);
+// `dmesg -T` and `journalctl -k` follow the caller's locale (util-linux
+// formats the stamp with strftime, and sudo keeps LANG and LC_*), so a German
+// host prints "[Sa Okt  4 02:11:41 2026]" or "Okt 04 03:20:12 host kernel:".
+// Those lines were not recognised at all, and the next capture asked for the
+// same command (R3-6). These shapes are tried only after the English ones
+// fail: a weekday token, then a month token and the day (or the day, an
+// optional dot and the month), then the time and year. Month names are not
+// translated back, so such a line is undated.
+const LTOKEN = "[^\\s\\][]{1,12}";
+const LOCAL_CTIME_RE = new RegExp(
+  `^\\[(${LTOKEN} {1,2}(?:${LTOKEN} {1,2}\\d{1,2}|\\d{1,2}\\.? {1,2}${LTOKEN}) \\d{2}:\\d{2}:\\d{2} \\d{4})\\]\\s?(.*)$`,
+);
+// A localized journal month; the line counts only when "host kernel:" follows.
+const LOCAL_BSD_RE = /^([^\s\d\][]{2,12}) ( ?\d{1,2}) (\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?\s+(.*)$/;
 // "host ident[pid]: msg" after a journal / syslog timestamp
 const HOST_IDENT_RE = /^(\S+)\s+([^\s:[\]]+)(?:\[\d+\])?:\s?(.*)$/;
 // rsyslog keeps the kernel's own relative stamp after "kernel: "
@@ -236,6 +250,22 @@ function classify(rawLine: string): KernelLine {
     return journalLine(j, syslog ? "syslog_kernel" : "journalctl_kernel", "", "unknown", `bsd:${mon} ${day.trim()} ${time}`);
   }
 
+  const lct = line.match(LOCAL_CTIME_RE);
+  if (lct) {
+    return { format: "dmesg", time: "", timeKind: "unknown", stampKey: `lctime:${lct[1]}`, fromKernel: true, message: lct[2] };
+  }
+
+  const lbsd = line.match(LOCAL_BSD_RE);
+  if (lbsd) {
+    const [, mon, day, time, rest] = lbsd;
+    const j = splitJournal(rest);
+    // Only the kernel ident: anything else stays an unrecognised line.
+    if (j.origin === "kernel") {
+      const syslog = j.embeddedStamp || !/^\d{2}$/.test(day);
+      return journalLine(j, syslog ? "syslog_kernel" : "journalctl_kernel", "", "unknown", `lbsd:${mon} ${day.trim()} ${time}`);
+    }
+  }
+
   return { format: null, time: "", timeKind: "unknown", stampKey: null, fromKernel: true, message: line };
 }
 
@@ -308,6 +338,22 @@ const XID_CRITICAL = new Set([
   154, // "GPU Reset Required" recovery action
 ]);
 const XID_WARNING = new Set([8, 14, 22, 25, 32, 38, 39, 42, 44, 46, 60, 67]);
+// Where this reader departs from that table (R3-2). NVIDIA's Xid catalog
+// (docs.nvidia.com/deploy/xid-errors) has no severity column; its resolution
+// buckets say these codes are not a GPU fault of their own, yet the table
+// above classes them critical, so a crashed CUDA job came back as four
+// critical, vendor-side GPU faults. The live agent is unchanged.
+//   - 43 (GPU stopped processing) and 63 (row remapping event): IGNORE. 63 is
+//     the remapper working; its failure is 64, which stays critical.
+//   - 45 (preemptive cleanup): logged when the application is torn down
+//     (Ctrl-C, sigkill, a reset).
+const XID_NOT_GPU_FAULT = new Set([43, 45, 63]);
+//   - 13 (graphics engine exception) and 31 (MMU fault) logged against a
+//     named process: RESTART_APP, "general user application faults". With no
+//     process (pid='<unknown>') they stay critical, since NVIDIA notes that
+//     hardware can rarely surface as either.
+const XID_APP_FAULT = new Set([13, 31]);
+const XID_APP_CONTEXT_RE = /^,\s*pid=\d{1,10},\s*name=(?!<unknown>)[^,]{1,64}(?:,|$)/;
 
 // Ported from Crucible src/lib/privileged.ts "dmesg-io" grep and
 // src/collect/io-errors.ts device extraction.
@@ -330,11 +376,11 @@ const IO_ON_DEVICE_RE = /\bon device\s+([A-Za-z0-9_-]{1,32})/;
 // Floppy (fd0 on most VMs), optical and loop devices are not disks, and
 // network or virtual block devices (nbd, Ceph rbd, zram, ram, DRBD) have no
 // local media: probing an unconnected /dev/nbdN logs I/O errors by design
-// (R2-15). An I/O error on them says nothing about storage hardware. dm-N and
+// (R2b-15). An I/O error on them says nothing about storage hardware. dm-N and
 // md devices stay counted: their errors come with the member disk's.
 const NON_DISK_RE = /^(?:fd|sr|loop|nbd|rbd|zram|ram|drbd)\d+(?:p\d+)?$/;
 // Distinct device names kept for disk_io_errors, which joins each one against
-// every SMART entry in the paste. The count stays exact (R2-11).
+// every SMART entry in the paste. The count stays exact (R2b-11).
 const MAX_IO_DEVICES = 256;
 
 // EDAC core report (drivers/edac/edac_mc.c): "EDAC MC0: 1 CE <msg> on <label> (<location> ...)".
@@ -378,7 +424,7 @@ function matchesUnevaluated(message: string): boolean {
 // excerpt) counts only when it starts the way the kernel prints an event a
 // matcher below reads. Matched anywhere in the line, a pasted command
 // ("dmesg | grep -i 'I/O error'"), a sentence about one, or a grep under a
-// prompt no prompt pattern knows came back as a critical disk error (R2-3).
+// prompt no prompt pattern knows came back as a critical disk error (R2b-3).
 const BARE_KERNEL_LINE_RE =
   /^(?:(?:blk_update_request|print_req_error|end_request): |(?:I\/O|critical medium|critical target|device offline) error, dev |Buffer I\/O error on dev|lost page write due to I\/O error|(?:EXT[234]-fs|XFS|BTRFS|JBD2|F2FS-fs|FAT-fs)\b[^:]{0,80}: |sd \d{1,4}:\d{1,4}:\d{1,4}:\d{1,9}: |nvme nvme\d|nvme\d{1,4}n\d{1,4}: |NVRM: Xid |EDAC MC\d|mce: |(?:\{\d{1,3}\})?\[Hardware Error\]:|Kernel panic - not syncing: |ata\d{1,3}(?:\.\d{2})?: )/;
 
@@ -491,6 +537,8 @@ export const kernelLogParser: TriageParser = {
     let libataUncLines = 0;
     let ioDevicesCapped = false;
     const nvmeMediaByDevice = new Map<string, number>();
+    // Xid events counted but not raised, by code, in paste order (R3-2).
+    const notRaisedXids = new Map<number, number>();
 
     try {
       const rawLines = splitLines(typeof text === "string" ? text : "");
@@ -577,11 +625,18 @@ export const kernelLogParser: TriageParser = {
           const key = line.stampKey === null ? null : `${line.stampKey}|${bdf}|${code}`;
           if (key === null || !xidSeen.has(key)) {
             if (key !== null) xidSeen.add(key);
+            const appFault = XID_APP_FAULT.has(code) && XID_APP_CONTEXT_RE.test(msg.slice((xid.index ?? 0) + xid[0].length));
+            const notRaised = appFault || XID_NOT_GPU_FAULT.has(code);
+            if (notRaised) notRaisedXids.set(code, (notRaisedXids.get(code) ?? 0) + 1);
             xids.push({
               timestamp_iso: line.time,
               xid_code: code,
               pci_bdf: bdf,
-              severity: XID_CRITICAL.has(code) ? "critical" : XID_WARNING.has(code) ? "warning" : "info",
+              severity: appFault
+                ? "warning"
+                : notRaised
+                  ? "info"
+                  : XID_CRITICAL.has(code) ? "critical" : XID_WARNING.has(code) ? "warning" : "info",
               raw_message: "",
             });
           }
@@ -718,6 +773,9 @@ export const kernelLogParser: TriageParser = {
     if (fsFailLines > 0 && !events.some((e) => e.event_type === "ext4_remount_readonly")) unread.add("filesystem_readonly");
     const diskInput = ioCount > 0 || events.some((e) => e.event_type !== "ext4_remount_readonly");
     if (libataUncLines > 0 && !diskInput) unread.add("disk_io_errors");
+    // Xid events that are all application or informational codes: the rule
+    // read them and none is its signal, which "no matching signal" would hide.
+    if (notRaisedXids.size > 0 && !xids.some((x) => x.severity === "critical")) unread.add("gpu_xid_critical");
 
     if (formats.size === 0) {
       notes.push({ level: "info", message: "No kernel log lines were recognised." });
@@ -743,6 +801,14 @@ export const kernelLogParser: TriageParser = {
       notes.push({
         level: "warning",
         message: `${plural(libataUncLines, "libata uncorrectable read (UNC) line was", "libata uncorrectable read (UNC) lines were")} seen but not evaluated: the disk I/O check reads SCSI sense and block I/O error lines, which this excerpt does not have. Paste the full dmesg, or run smartctl -a on the disk.`,
+      });
+    }
+    if (notRaisedXids.size > 0) {
+      const n = [...notRaisedXids.values()].reduce((sum, k) => sum + k, 0);
+      const codes = [...notRaisedXids.keys()];
+      notes.push({
+        level: "warning",
+        message: `${plural(n, "NVIDIA Xid event", "NVIDIA Xid events")} (${codes.length === 1 ? "code" : "codes"} ${codes.join(", ")}) ${n === 1 ? "was" : "were"} not raised as a finding: NVIDIA's Xid catalog lists 13 and 31 from a named process as application faults, and 43, 45 and 63 as events that are not a GPU fault on their own.`,
       });
     }
     if (unknownTimeLines > 0) {

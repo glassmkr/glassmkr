@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { kernelLogParser } from "../parsers/kernel-log";
-import { DISK_IO_GREP, analyzeOutput } from "../analyze";
+import { DISK_IO_GREP, analyzeOutput, renderAnalysisText } from "../analyze";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(__dirname, "fixtures", "kernel_log");
@@ -789,13 +789,14 @@ function quietAnalyze(text: string) {
   }
 }
 
-// R2-3: a line with no kernel prefix counted on any "I/O error" or EDAC text,
+// R2b-3: a line with no kernel prefix counted on any "I/O error" or EDAC text,
 // so the answer's own quick check pasted back, or a sentence about it, came
 // back as a critical disk error.
 describe("commands and prose that mention a kernel error", () => {
   const GREP = "dmesg -T | grep -i 'I/O error'";
   it.each([
     `sudo dmesg -T | grep -iE '${DISK_IO_GREP}' | tail -40`,
+    `sudo env LC_ALL=C dmesg -T | grep -iE '${DISK_IO_GREP}' | tail -40`,
     'dmesg | grep -i "I/O error"',
     "I ran dmesg -T | grep -iE 'I/O error' and it printed nothing.",
     "No I/O errors in dmesg.",
@@ -841,7 +842,7 @@ describe("commands and prose that mention a kernel error", () => {
   });
 });
 
-// R2-7: `dmesg -H` / --reltime prints "[Oct 4 06:51]" and "[  +0.000012]"
+// R2b-7: `dmesg -H` / --reltime prints "[Oct 4 06:51]" and "[  +0.000012]"
 // prefixes. Left in the message, they hid the anchored 6.x NVMe media-error
 // lines and the paste was not recognised at all.
 describe("dmesg -H (reltime) prefixes", () => {
@@ -874,7 +875,7 @@ describe("dmesg -H (reltime) prefixes", () => {
   });
 });
 
-// R2-15: network and virtual block devices have no local media.
+// R2b-15: network and virtual block devices have no local media.
 describe("network and virtual block devices", () => {
   it.each(["nbd0", "rbd0", "zram0", "drbd1", "loop0p1"])("does not count I/O errors on %s", (dev) => {
     const text = [
@@ -889,7 +890,7 @@ describe("network and virtual block devices", () => {
   });
 });
 
-// R2-11: the device list rules join against every SMART entry is bounded; the
+// R2b-11: the device list rules join against every SMART entry is bounded; the
 // count stays exact.
 describe("I/O errors on many devices", () => {
   it("keeps the count and lists at most 256 device names", () => {
@@ -898,5 +899,117 @@ describe("I/O errors on many devices", () => {
     expect(r.snapshot.io_errors?.count).toBe(300);
     expect(r.snapshot.io_errors?.devices).toHaveLength(256);
     expect(r.notes.map((n) => n.message)).toContain("I/O errors name more than 256 devices; the count covers all of them and the first 256 are listed.");
+  });
+});
+
+// R3-2: Crucible's Xid table classes 13, 31, 43, 45 and 63 critical. NVIDIA's
+// Xid catalog lists 13 and 31 from a named process as application faults
+// (RESTART_APP), 43 and 63 as IGNORE, and 45 as the application being torn
+// down, so a crashed CUDA job or a row remap came back as four critical,
+// vendor-side GPU faults.
+describe("Xid codes NVIDIA does not treat as a GPU fault (R3-2)", () => {
+  const XID_NOTE = /NVIDIA Xid events? \(codes? [\d, ]+\) (?:was|were) not raised as a finding: NVIDIA's Xid catalog lists/;
+
+  it("a crashed CUDA job's 13, 43, 31 and 45 raise no critical finding, and the answer says what was seen", () => {
+    const text = fixture("synthetic-dmesg-T-xid-app-crash.txt");
+    const r = kernelLogParser.parse(text);
+    // The second Xid 13 line repeats the first's stamp, GPU and code.
+    expect(tier1(r.snapshot).xid_events.map((x) => [x.xid_code, x.severity])).toEqual([
+      [13, "warning"],
+      [43, "info"],
+      [31, "warning"],
+      [45, "info"],
+    ]);
+    expect(types(evaluate(r.snapshot).alerts)).toEqual([]);
+    const a = quietAnalyze(text);
+    expect(a.findings).toEqual([]);
+    const note = a.notes.find((n) => XID_NOTE.test(n))!;
+    expect(note).toMatch(/^4 NVIDIA Xid events \(codes 13, 43, 31, 45\) were not raised/);
+    // It ran on the events and they are not its signal: not "no matching signal".
+    expect(a.checked_no_signal.map((c) => c.rule_id)).not.toContain("gpu_xid_critical");
+    expect(renderAnalysisText(a)).toContain(note);
+  });
+
+  it("a lone Xid 63 row remap is not a critical, vendor-side finding", () => {
+    const a = quietAnalyze(fixture("synthetic-dmesg-T-xid-63-row-remap.txt"));
+    expect(a.findings).toEqual([]);
+    expect(a.notes.find((n) => XID_NOTE.test(n))).toMatch(/^1 NVIDIA Xid event \(code 63\) was not raised/);
+  });
+
+  it("a lone Xid 45 (the application torn down) is not critical", () => {
+    const a = quietAnalyze("[ 9001.000001] NVRM: Xid (PCI:0000:3b:00): 45, pid=1234, name=python3, Ch 00000010\n");
+    expect(a.findings).toEqual([]);
+  });
+
+  it("13 or 31 with no process named stays critical, and real faults beside them still fire", () => {
+    const text = [
+      "[ 9001.000001] NVRM: Xid (PCI:0000:3b:00): 13, pid='<unknown>', name=<unknown>, Graphics Exception: ESR 0x404600=0x80000002",
+      "[ 9001.000002] NVRM: Xid (PCI:0000:af:00): 79, pid='<unknown>', name=<unknown>, GPU has fallen off the bus.",
+      "[ 9001.000003] NVRM: Xid (PCI:0000:af:00): 31, pid=4242, name=python3, Ch 00000010, intr 00000000. MMU Fault",
+      "[ 9001.000004] NVRM: Xid (PCI:0000:5e:00): 48, pid=4243, name=python3, An uncorrectable double bit error (DBE) has been detected on GPU in the framebuffer at partition 6, subpartition 0.",
+    ].join("\n");
+    const a = quietAnalyze(`${text}\n`);
+    expect(a.findings.map((f) => [f.rule_id, f.severity, f.observed.xid_code]).sort()).toEqual([
+      ["gpu_xid_critical", "critical", 13],
+      ["gpu_xid_critical", "critical", 48],
+      ["gpu_xid_critical", "critical", 79],
+    ]);
+    expect(a.notes.find((n) => XID_NOTE.test(n))).toMatch(/^1 NVIDIA Xid event \(code 31\) was not raised/);
+  });
+
+  it("the summary no longer says NVIDIA classes the code critical", () => {
+    const a = quietAnalyze("[ 9001.000002] NVRM: Xid (PCI:0000:af:00): 79, pid='<unknown>', name=<unknown>, GPU has fallen off the bus.\n");
+    const f = a.findings.find((x) => x.rule_id === "gpu_xid_critical")!;
+    expect(f.summary).not.toMatch(/NVIDIA's Xid table classes/);
+    expect(f.summary).toMatch(/Glassmkr's agent classes/);
+  });
+});
+
+// R3-6: `dmesg -T` formats its stamp with strftime in the caller's locale,
+// and sudo keeps LANG and LC_*. A German, French or Spanish stamp (or a
+// German `journalctl -k` month) left the line unrecognised: a dead GPU and a
+// failing disk came back "No supported command output was recognised", and
+// the next capture was the same command.
+describe("localized dmesg -T and journalctl -k stamps (R3-6)", () => {
+  const body = [
+    "NVRM: Xid (PCI:0000:18:00): 79, pid='<unknown>', name=<unknown>, GPU has fallen off the bus.",
+    "sd 2:0:0:0: [sdc] tag#12 Sense Key : Medium Error [current]",
+    "sd 2:0:0:0: [sdc] tag#12 Add. Sense: Unrecovered read error",
+    "blk_update_request: I/O error, dev sdc, sector 1953520 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0",
+  ];
+  const verdict = (text: string) =>
+    quietAnalyze(text)
+      .findings.map((f) => `${f.rule_id}:${f.severity}`)
+      .sort();
+  const english = verdict(body.map((l, i) => `[Sat Oct  4 02:11:4${i} 2026] ${l}`).join("\n"));
+
+  it("the English control gives three critical findings", () => {
+    expect(english).toEqual(["disk_io_errors:critical", "disk_io_errors:critical", "gpu_xid_critical:critical"]);
+  });
+
+  it.each([
+    ["de_DE", (i: number) => `[Sa Okt  4 02:11:4${i} 2026] `],
+    ["de_DE, day first", (i: number) => `[Sa  4. Okt 02:11:4${i} 2026] `],
+    ["de_DE, English month", (i: number) => `[Mi Nov  4 02:11:4${i} 2026] `],
+    ["fr_FR", (i: number) => `[sam. oct.  4 02:11:4${i} 2026] `],
+    ["es_ES", (i: number) => `[sáb oct  4 02:11:4${i} 2026] `],
+    ["ja_JP", (i: number) => `[土 10月  4 02:11:4${i} 2026] `],
+    ["de_DE journalctl -k", (i: number) => `Okt 04 03:20:1${i} host-example kernel: `],
+  ])("%s gives the same findings, with times unknown", (_locale, stamp) => {
+    const text = body.map((l, i) => stamp(i) + l).join("\n");
+    expect(kernelLogParser.detect(text)).toBe(true);
+    const r = kernelLogParser.parse(text);
+    expect(tier1(r.snapshot).xid_events[0].timestamp_iso).toBe("");
+    expect(verdict(text)).toEqual(english);
+  });
+
+  it("a localized journal line from a process other than the kernel is not counted", () => {
+    const text = "Okt 04 03:20:12 host-example myapp[42]: NVRM: Xid (PCI:0000:18:00): 79, pid=1, name=x, GPU has fallen off the bus.\n";
+    expect(kernelLogParser.detect(text)).toBe(false);
+    expect(quietAnalyze(text).findings).toEqual([]);
+  });
+
+  it("an application log with a bracketed time is not a kernel log", () => {
+    expect(kernelLogParser.detect("[INFO 12:00:00 2026] worker started\n[WARN 12:00:01 2026] retrying\n")).toBe(false);
   });
 });

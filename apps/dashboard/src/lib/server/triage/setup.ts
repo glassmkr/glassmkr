@@ -79,9 +79,11 @@ function installerStep(target: SetupTarget): SetupStep {
   commands.push("curl -fsSL https://glassmkr.com/install.sh | sudo -E bash", UNSET_KEY);
   return {
     title: "Install and start the agent with the one-line installer",
+    // install.sh adds Node.js only when `node` is not on PATH and never checks
+    // its version, so an older distro node makes init stop (R3-21).
     detail:
       `For ${INSTALLER_FAMILIES}. The first command waits for you to paste the collector key and press Enter; the key is not echoed and does not enter shell history. ` +
-      "The installer adds Node.js 24 if it is missing, installs smartmontools and ipmitool where available, installs @glassmkr/crucible, writes /etc/glassmkr/crucible.yaml (mode 0600) and starts the glassmkr-crucible service as the non-root glassmkr user." +
+      "The installer adds Node.js 24 only when no node is installed (an older node already on PATH makes init stop with a Node.js version error), installs smartmontools and ipmitool where available, installs @glassmkr/crucible, writes /etc/glassmkr/crucible.yaml (mode 0600) and starts the glassmkr-crucible service as the non-root glassmkr user." +
       (target === "self_hosted"
         ? " GLASSMKR_INGEST_URL points the agent at your own dashboard: replace the host and port with your DASHBOARD_PUBLIC_URL (the address you set in DASHBOARD_BIND, or your reverse proxy)."
         : ""),
@@ -99,7 +101,7 @@ function binaryStep(target: SetupTarget, family: DistroFamily): SetupStep {
       ? "Other distributions: install the single-file binary"
       : "Install the single-file binary",
     detail:
-      `For distributions without apt or dnf (for example Arch or Alpine). The binary bundles its own runtime, so no Node.js is needed; use glassmkr-crucible-linux-arm64 on arm64. ` +
+      `For distributions without apt or dnf (for example Arch) that use glibc and systemd. The binary bundles its own runtime, so no Node.js is needed; use glassmkr-crucible-linux-arm64 on arm64. ` +
       "Install smartmontools and ipmitool with your package manager for SMART and IPMI data. init reads the collector key from stdin, validates it, writes /etc/glassmkr/crucible.yaml and installs the systemd unit.",
     commands: [
       `curl -fsSLO ${base}/glassmkr-crucible-linux-x64`,
@@ -112,6 +114,16 @@ function binaryStep(target: SetupTarget, family: DistroFamily): SetupStep {
     ],
   };
 }
+
+// The release binaries are built for glibc and init installs a systemd unit.
+// Alpine has musl and OpenRC, and BusyBox sha256sum has no --ignore-missing,
+// so every command the binary step gave failed there (R3-20).
+const ALPINE_STEP: SetupStep = {
+  title: "Alpine Linux is not supported yet",
+  detail:
+    "The packaged agent does not run on Alpine: the single-file binary is built for glibc and its init installs a systemd unit, while Alpine uses musl and OpenRC, and the one-line installer supports apt and dnf only. The agent's source and issue tracker are at https://github.com/glassmkr/crucible.",
+  commands: [],
+};
 
 function keyStep(target: SetupTarget): SetupStep {
   if (target === "self_hosted") {
@@ -152,10 +164,14 @@ export function monitoringSetup(input: { distro?: string | null; target: SetupTa
   const target = input.target;
   const family = distroFamily(input.distro);
 
+  const alpine = (input.distro ?? "").trim().toLowerCase() === "alpine";
   const steps: SetupStep[] = [];
   if (target === "self_hosted") steps.push(SELF_HOSTED_STACK);
-  steps.push(keyStep(target));
-  if (family === "apt" || family === "dnf") {
+  if (alpine) steps.push(ALPINE_STEP);
+  else steps.push(keyStep(target));
+  if (alpine) {
+    // Nothing to install, so nothing to verify.
+  } else if (family === "apt" || family === "dnf") {
     steps.push(installerStep(target));
   } else if (family === "other") {
     steps.push(binaryStep(target, family));
@@ -168,7 +184,7 @@ export function monitoringSetup(input: { distro?: string | null; target: SetupTa
     target === "self_hosted"
       ? "Outbound access from the server to your dashboard's ingest URL. No inbound ports on the monitored server."
       : "Outbound HTTPS (port 443) from the server to app.glassmkr.com. No inbound ports.",
-    "Node.js 22.19.0 or newer only if you install with npm; the one-line installer adds Node.js 24 where it is missing, and the single-file binary needs no Node.js.",
+    "Node.js 22.19.0 or newer for the one-line installer and npm installs. The installer adds Node.js 24 only when no node is installed; if node -v shows an older version, install a newer one first or use the single-file binary, which needs no Node.js.",
     "smartmontools and ipmitool for SMART and IPMI data (the one-line installer adds them).",
   ];
   if (target === "self_hosted") {
@@ -184,16 +200,18 @@ export function monitoringSetup(input: { distro?: string | null; target: SetupTa
     distro_family: family,
     prerequisites,
     steps,
-    verify: [
-      {
-        command: "sudo systemctl status glassmkr-crucible --no-pager",
-        expect: "active (running)",
-      },
-      {
-        command: `sudo journalctl -u glassmkr-crucible --since "5 min ago" --no-pager`,
-        expect: "A \"Push successful\" line after the first collection. The server then appears on the dashboard within one collection interval (about five minutes).",
-      },
-    ],
+    verify: alpine
+      ? []
+      : [
+          {
+            command: "sudo systemctl status glassmkr-crucible --no-pager",
+            expect: "active (running)",
+          },
+          {
+            command: `sudo journalctl -u glassmkr-crucible --since "5 min ago" --no-pager`,
+            expect: "A \"Push successful\" line after the first collection. The server then appears on the dashboard within one collection interval (about five minutes).",
+          },
+        ],
     key_handling:
       "Never paste an API key or collector key into this chat. The commands read the key on the server at a hidden prompt, so it is not echoed, does not enter shell history, and never reaches this conversation.",
     docs,
@@ -214,7 +232,7 @@ export function renderSetupText(result: SetupResult): string {
     lines.push(`   ${step.detail}`);
     for (const c of step.commands) lines.push(`   ${c}`);
   });
-  lines.push("Verify:");
+  if (result.verify.length > 0) lines.push("Verify:");
   for (const v of result.verify) {
     lines.push(`   ${v.command}`);
     lines.push(`   Expect: ${v.expect}`);

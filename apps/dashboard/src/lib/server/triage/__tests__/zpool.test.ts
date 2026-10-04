@@ -99,7 +99,7 @@ describe("healthy", () => {
             errors_text: "No known data errors",
             scrub_errors: 0,
             scrub_repaired: "0B",
-            vdevs: [{ name: "mirror-0", state: "ONLINE", redundancy_class: "mirror_2way" }],
+            vdevs: [{ name: "mirror-0", state: "ONLINE", redundancy_class: "mirror_2way", degraded_disks_count: 0 }],
             slog_vdevs: [],
             l2arc_vdevs: [],
           },
@@ -144,7 +144,7 @@ describe("failing", () => {
         errors_text: "No known data errors",
         scrub_errors: 0,
         scrub_repaired: "0B",
-        vdevs: [{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2" }],
+        vdevs: [{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2", degraded_disks_count: 1 }],
         slog_vdevs: [],
         l2arc_vdevs: [],
       },
@@ -158,12 +158,30 @@ describe("failing", () => {
   it("degraded-raidz2-spare-resilvering: spare-N with an ONLINE leaf sets spare_in_progress, demoting to warning", () => {
     const r = zpoolParser.parse(fixture("degraded-raidz2-spare-resilvering.txt"));
     const [p] = pools(fixture("degraded-raidz2-spare-resilvering.txt"));
-    expect(p.vdevs).toEqual([{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2", spare_in_progress: true }]);
+    // The spare-1 slot is the one non-ONLINE member, as the agent counts it.
+    expect(p.vdevs).toEqual([{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2", degraded_disks_count: 1, spare_in_progress: true }]);
     // A resilver hides earlier scrubs: neither "never scrubbed" nor an error count.
     expect(p.scrub_never_run).toBeUndefined();
     expect(p.scrub_errors).toBeUndefined();
     expect(summary(evaluate(r.snapshot))).toEqual(["zfs_pool_unhealthy:warning"]);
     expect(r.notes.some((n) => n.message.includes("most recent scan"))).toBe(true);
+  });
+
+  // R3-4: the spare covers one failed member; with a second one down the
+  // raidz2 has no parity left until the rebuild finishes. The dashboard
+  // demotes only on degraded_disks_count <= 1, which this parser never sent.
+  it("a raidz2 resilvering onto a spare with a second failed member stays critical", () => {
+    const text = fixture("synthetic-degraded-raidz2-spare-and-second-fault.txt");
+    const [p] = pools(text);
+    expect(p.vdevs).toEqual([{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2", degraded_disks_count: 2 }]);
+    expect(summary(evaluate(zpoolParser.parse(text).snapshot))).toEqual(["zfs_pool_unhealthy:critical"]);
+  });
+
+  it("does not demote a raidz2 whose spare slot was cut off before its count is known", () => {
+    const text = fixture("degraded-raidz2-spare-resilvering.txt").split("\n").slice(0, 17).join("\n");
+    const [p] = pools(text);
+    expect(p.vdevs).toEqual([{ name: "raidz2-0", state: "DEGRADED", redundancy_class: "raidz2" }]);
+    expect(summary(evaluate(zpoolParser.parse(text).snapshot))).toEqual(["zfs_pool_unhealthy:critical"]);
   });
 
   it("degraded-mirror-unavail-never-scrubbed: 2-way mirror is critical and 'none requested' is the never-scrubbed info", () => {
@@ -174,7 +192,7 @@ describe("failing", () => {
         state: "DEGRADED",
         errors_text: "No known data errors",
         scrub_never_run: true,
-        vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way" }],
+        vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way", degraded_disks_count: 1 }],
         slog_vdevs: [],
         l2arc_vdevs: [],
       },
@@ -192,8 +210,8 @@ describe("failing", () => {
       scrub_errors: 2,
       scrub_repaired: "0B",
       vdevs: [
-        { name: "sda", state: "ONLINE", redundancy_class: "stripe" },
-        { name: "sdb", state: "ONLINE", redundancy_class: "stripe" },
+        { name: "sda", state: "ONLINE", redundancy_class: "stripe", degraded_disks_count: 0 },
+        { name: "sdb", state: "ONLINE", redundancy_class: "stripe", degraded_disks_count: 0 },
       ],
       slog_vdevs: [],
       l2arc_vdevs: [],
@@ -236,9 +254,9 @@ describe("failing", () => {
     const r = zpoolParser.parse(fixture("synthetic-slog-cache-special.txt"));
     const [p] = pools(fixture("synthetic-slog-cache-special.txt"));
     expect(p.vdevs).toEqual([
-      { name: "mirror-0", state: "ONLINE", redundancy_class: "mirror_2way" },
-      { name: "mirror-1", state: "ONLINE", redundancy_class: "mirror_2way" },
-      { name: "mirror-2", state: "ONLINE", redundancy_class: "mirror_2way" },
+      { name: "mirror-0", state: "ONLINE", redundancy_class: "mirror_2way", degraded_disks_count: 0 },
+      { name: "mirror-1", state: "ONLINE", redundancy_class: "mirror_2way", degraded_disks_count: 0 },
+      { name: "mirror-2", state: "ONLINE", redundancy_class: "mirror_2way", degraded_disks_count: 0 },
     ]);
     expect(p.slog_vdevs).toEqual([{ name: "nvme-FAKE_NVME_SLOG_A-part1", state: "FAULTED" }]);
     expect(p.l2arc_vdevs).toEqual([{ name: "nvme-FAKE_NVME_L2ARC_A-part2", state: "UNAVAIL" }]);
@@ -258,7 +276,7 @@ describe("failing", () => {
         errors_text: "List of errors unavailable",
         scrub_errors: 0,
         scrub_repaired: "0B",
-        vdevs: [{ name: "usb-WD_Elements_25A3_FAKE0001-0:0", state: "FAULTED", redundancy_class: "stripe" }],
+        vdevs: [{ name: "usb-WD_Elements_25A3_FAKE0001-0:0", state: "FAULTED", redundancy_class: "stripe", degraded_disks_count: 0 }],
         slog_vdevs: [],
         l2arc_vdevs: [],
       },
@@ -276,9 +294,9 @@ describe("mixed, partial, CRLF", () => {
     expect(r.subjects).toBe(5);
     const byName = Object.fromEntries(pools(text).map((p) => [p.name, p]));
     expect(Object.keys(byName)).toEqual(["rpool", "tank", "backup", "bulk", "scratch"]);
-    expect(byName.tank.vdevs).toEqual([{ name: "raidz1-0", state: "DEGRADED", redundancy_class: "raidz1" }]);
-    expect(byName.backup.vdevs).toEqual([{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_3way" }]);
-    expect(byName.bulk.vdevs).toEqual([{ name: "draid2:4d:7c:1s-0", state: "DEGRADED", redundancy_class: "draid" }]);
+    expect(byName.tank.vdevs).toEqual([{ name: "raidz1-0", state: "DEGRADED", redundancy_class: "raidz1", degraded_disks_count: 1 }]);
+    expect(byName.backup.vdevs).toEqual([{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_3way", degraded_disks_count: 1 }]);
+    expect(byName.bulk.vdevs).toEqual([{ name: "draid2:4d:7c:1s-0", state: "DEGRADED", redundancy_class: "draid", degraded_disks_count: 1 }]);
     // OpenZFS 2.2+ prints no scan line for a never-scanned pool.
     expect(byName.scratch.scrub_never_run).toBe(true);
     expect(byName.rpool.scrub_never_run).toBeUndefined();
@@ -309,7 +327,7 @@ describe("mixed, partial, CRLF", () => {
       errors_text: "",
       scrub_never_run: true,
       vdevs: [
-        { name: "mirror-0", state: "ONLINE", redundancy_class: "mirror_2way" },
+        { name: "mirror-0", state: "ONLINE", redundancy_class: "mirror_2way", degraded_disks_count: 0 },
         { name: "mirror-1", state: "DEGRADED", redundancy_class: "mirror" },
       ],
       slog_vdevs: [],
@@ -356,7 +374,7 @@ describe("mixed, partial, CRLF", () => {
         name: "tank",
         state: "DEGRADED",
         errors_text: "No known data errors",
-        vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way" }],
+        vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way", degraded_disks_count: 1 }],
         slog_vdevs: [],
         l2arc_vdevs: [],
       },
@@ -446,7 +464,7 @@ describe("hostile input", () => {
         errors_text: "No known data errors",
         scrub_errors: 3,
         scrub_repaired: "0B",
-        vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way" }],
+        vdevs: [{ name: "mirror-0", state: "DEGRADED", redundancy_class: "mirror_2way", degraded_disks_count: 1 }],
         slog_vdevs: [],
         l2arc_vdevs: [],
       },
@@ -477,7 +495,7 @@ describe("hostile input", () => {
       "errors: No known data errors",
     ].join("\n");
     const [p] = pools(text);
-    expect(p.vdevs).toEqual([{ name: "rebootcurlIFSxsh", state: "FAULTED", redundancy_class: "stripe" }]);
+    expect(p.vdevs).toEqual([{ name: "rebootcurlIFSxsh", state: "FAULTED", redundancy_class: "stripe", degraded_disks_count: 0 }]);
     const alerts = evaluate({ zfs: { pools: [p] } });
     // No scan line in a complete block: also the never-scrubbed info.
     expect(summary(alerts)).toEqual(["zfs_pool_unhealthy:critical", "zfs_scrub_errors:info"]);

@@ -21,7 +21,7 @@
 //
 // Usage: node integrations/ai-assistants/scripts/validate-openai-plugin.mjs
 
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync, statSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -362,4 +362,16 @@ function main() {
   process.exitCode = 1;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+// Realpath on both sides: import.meta.url is already resolved, and argv[1]
+// keeps the path as typed, so through a symlink (/tmp on macOS, a linked
+// checkout) main() never ran and the check passed silently (R3-22).
+function invokedDirectly() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) main();

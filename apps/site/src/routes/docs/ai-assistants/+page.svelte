@@ -109,7 +109,7 @@
         <li>"Is this drive failing?" followed by the output of <code>sudo smartctl -a /dev/sda</code>.</li>
         <li>"One of my arrays looks degraded. Which disk do I replace?" with <code>cat /proc/mdstat</code> and <code>sudo mdadm --detail /dev/md0</code>.</li>
         <li>"Is this pool OK to keep running?" with <code>zpool status -v</code>.</li>
-        <li>"Anything in here I should worry about?" with <code>sudo dmesg -T</code> or <code>sudo journalctl -k -b -o short-iso</code>.</li>
+        <li>"Anything in here I should worry about?" with <code>sudo env LC_ALL=C dmesg -T</code> or <code>sudo journalctl -k -b -o short-iso</code>.</li>
         <li>"What do these BMC events mean?" with <code>sudo ipmitool sel elist</code>.</li>
         <li>"Is one of these GPUs unhealthy?" with <code>nvidia-smi -q</code> and <code>nvidia-smi nvlink --status</code>.</li>
         <li>"What should I run to check my NVMe drives?" The assistant asks Glassmkr for the exact capture command, which you run and paste back.</li>

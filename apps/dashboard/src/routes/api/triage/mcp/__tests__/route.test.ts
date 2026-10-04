@@ -117,7 +117,7 @@ describe("JSON-RPC over POST: initialize -> tools/list -> tools/call", () => {
     const tools = body.result.tools as Array<Record<string, any>>;
     expect(tools.map((t) => t.name)).toEqual(["analyze_server_output", "get_capture_command", "get_monitoring_setup"]);
     for (const tool of tools) {
-      expect(tool.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+      expect(tool.annotations).toEqual({ title: tool.title, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
       expect(tool._meta.securitySchemes).toEqual([{ type: "noauth" }]);
       expect(tool._meta["openai/toolInvocation/invoking"].length).toBeLessThanOrEqual(64);
       expect(tool._meta["openai/toolInvocation/invoked"].length).toBeLessThanOrEqual(64);

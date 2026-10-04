@@ -3,7 +3,8 @@
 // portal rejects only at final submission (upload accepts it), which is the
 // gap this checker exists to close. The good-package case runs last so a
 // checker that returns [] for everything cannot pass.
-import { readFileSync, mkdtempSync, copyFileSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, copyFileSync, mkdirSync, writeFileSync, rmSync, symlinkSync, cpSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -108,6 +109,24 @@ expectCode((p, ui, ext) => { ext.review.test_cases.positive[2].prompt += "\n"; }
 // --- Helpers ----------------------------------------------------------------
 check(Math.abs(contrast("#FFFFFF", "#000000") - 21) < 1e-9, "contrast(white, black) is 21:1");
 check(codeBlocks("a\n```\nx\ny\n```\nb\n```text\nz\n```\n").join("|") === "x\ny|z", "codeBlocks returns fenced bodies verbatim");
+
+// --- Run through a symlinked path, the way a checkout under /tmp or a linked
+// ~/code is reached: the entry guard compared a realpath with argv[1] as typed,
+// so the validator printed nothing and exited 0 and the build script zipped a
+// package it never checked (R3-22). -------------------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), "gm-plugin-link-"));
+  const pkg = join(dir, "real");
+  mkdirSync(pkg);
+  cpSync(resolve(here, ".."), pkg, { recursive: true, filter: (src) => !/[\\/]dist(?:[\\/]|$)/.test(src) });
+  const badPlugin = clone(good);
+  badPlugin.extensions["com.openai"].interface.displayName = "Glassmkr Server Hardware Triage";
+  writeFileSync(join(pkg, "openai-plugin", "plugin.json"), JSON.stringify(badPlugin, null, 2));
+  symlinkSync(pkg, join(dir, "link"), "dir");
+  const run = spawnSync(process.execPath, [join(dir, "link", "scripts", "validate-openai-plugin.mjs")], { encoding: "utf8" });
+  check(run.status === 1 && /submission_display_name_too_long/.test(run.stderr), `known-bad package run through a symlink exits 1 (got ${run.status})`);
+  rmSync(dir, { recursive: true, force: true });
+}
 
 // --- The real package passes -------------------------------------------------
 {

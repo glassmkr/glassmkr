@@ -99,6 +99,10 @@ interface RawGpu {
   remapUnc?: Reading;
   remapPending?: Reading;
   remapFailure?: boolean;
+  /** "SRAM Threshold Exceeded: Yes", NVIDIA's RMA flag for uncorrectable SRAM errors. */
+  sramThreshold?: boolean;
+  /** GPU Reset Status: Reset Required or Drain and Reset Recommended is Yes. */
+  resetRequired?: boolean;
   fan?: Reading;
   reasons?: string[];
   links?: NvLinkBasic[];
@@ -395,8 +399,20 @@ interface QueryBlock {
   bdf: string;
   indent: number;
   stack: Array<{ indent: number; name: string }>;
+  /** Length of the stack's names joined with ">", plus one: kept as the stack changes. */
+  pathLen: number;
   fields: Map<string, string>;
 }
+
+// Bounds on the key each field line builds from its section stack. Every key
+// gpuFromQuery reads is under 80 characters and real section names are under
+// 40. Section names were bounded only by the line cap, so ten nested
+// 4,000-character names made every key 40 KB, past the 16,383 characters V8
+// hashes: the field Map compared whole keys on each lookup and one anonymous
+// 200 KB paste held the process for 42 s (R3-1). The length is tracked as the
+// stack changes, so a deep stack is never joined only to be thrown away.
+const MAX_SECTION_NAME = 64;
+const MAX_FIELD_PATH = 256;
 
 function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: string } {
   let driver: string | undefined;
@@ -416,7 +432,7 @@ function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: 
     const header = text.match(GPU_HEADER_RE);
     if (header) {
       finish();
-      cur = { bdf: header[1], indent, stack: [], fields: new Map() };
+      cur = { bdf: header[1], indent, stack: [], pathLen: 0, fields: new Map() };
       continue;
     }
     const kv = text.match(KV_RE);
@@ -434,12 +450,18 @@ function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: 
     }
     const block: QueryBlock = cur;
     const eff = Math.max(indent, block.indent + 1);
-    while (block.stack.length > 0 && block.stack[block.stack.length - 1].indent >= eff) block.stack.pop();
+    while (block.stack.length > 0 && block.stack[block.stack.length - 1].indent >= eff) {
+      block.pathLen -= block.stack.pop()!.name.length + 1;
+    }
     if (kv && key !== null) {
-      const path = [...block.stack.map((s) => s.name), key].join(">");
-      if (!block.fields.has(path)) block.fields.set(path, kv[2] ?? "");
+      if (block.pathLen + key.length <= MAX_FIELD_PATH) {
+        const path = [...block.stack.map((s) => s.name), key].join(">");
+        if (!block.fields.has(path)) block.fields.set(path, kv[2] ?? "");
+      }
     } else {
-      block.stack.push({ indent: eff, name: normKey(text) });
+      const name = normKey(text).slice(0, MAX_SECTION_NAME);
+      block.stack.push({ indent: eff, name });
+      block.pathLen += name.length + 1;
     }
   }
   finish();
@@ -533,6 +555,11 @@ function gpuFromQuery(f: Map<string, string>, bdf: string): RawGpu {
   set("remapPending", countReading(get("remapped rows>pending")));
   const failure = get("remapped rows>remapping failure occurred");
   if (failure !== undefined) g.remapFailure = /^yes\b/i.test(failure.trim());
+  // RMA and recovery flags no rule reads, reported in notes (R3-11).
+  const sram = get("ecc errors>aggregate>sram threshold exceeded");
+  if (sram !== undefined) g.sramThreshold = /^yes\b/i.test(sram.trim());
+  const reset = [get("gpu reset status>reset required"), get("gpu reset status>drain and reset recommended")];
+  if (reset.some((v) => v !== undefined)) g.resetRequired = reset.some((v) => v !== undefined && /^yes\b/i.test(v.trim()));
 
   // Throttle / event reasons. Driver 535- prints "Clocks Throttle Reasons",
   // 550+ "Clocks Event Reasons" (Crucible matches the same rename in the
@@ -731,7 +758,7 @@ function parseCsv(lines: string[], table: GpuTable): { gpus: number; driver?: st
 // fault bucket.
 function classifyLink(linkId: number, value: string): NvLinkBasic {
   // Bounded, and never starting inside a number: "\d+" retried from every
-  // digit of a long run cost 0.3 s per 200 KB paste (R2-10).
+  // digit of a long run cost 0.3 s per 200 KB paste (R2b-10).
   const bw = value.match(/(?<![\d.])(\d{1,7}(?:\.\d{1,6})?)\s*GB\/s/i);
   if (bw) {
     const speed = Number(bw[1]);
@@ -793,6 +820,8 @@ interface BuildCounts {
   remapCorrectable: number;
   remapPending: number;
   remapFailure: number;
+  sramThreshold: number;
+  resetRequired: number;
   vbiosSkipped: number;
   /** GPUs whose link width is below the card's max while the generation is not. */
   widthOnly: number;
@@ -847,6 +876,8 @@ function buildGpus(raws: RawGpu[], counts: BuildCounts): SnapshotGpu[] {
       if (remapPending) counts.remapPending++;
     }
     if (r.remapFailure) counts.remapFailure++;
+    if (r.sramThreshold) counts.sramThreshold++;
+    if (r.resetRequired) counts.resetRequired++;
 
     const eccNumbers = [
       r.eccCorrVol, r.eccCorrAgg, r.eccUncVol, r.eccUncAgg, sbe, dbe, pending, r.remapCorr, r.remapUnc, r.remapPending,
@@ -972,7 +1003,7 @@ function buildNotes(
   }
   if (counts.widthOnly > 0) {
     // Two notes: analyze.ts cuts a note at 240 characters, and one note cut
-    // this command off mid-quote (R2-14).
+    // this command off mid-quote (R2b-14).
     notes.push({
       level: "info",
       message: `The PCIe link width is below the card's maximum on ${gpuCount(counts.widthOnly)}. nvidia-smi's maximum is the card's, not the slot's, so this output cannot tell a slot wired for fewer lanes from a link that trained down.`,
@@ -993,7 +1024,7 @@ function buildNotes(
       level: "info",
       message: `Remapped rows on ${gpuCount(counts.remapGpus)}: ${counts.remapUncorrectable} uncorrectable and ${counts.remapCorrectable} correctable in total. A successful remap retires the faulty memory row; no rule in this check reads remapped-row counts, so they are listed here rather than as a finding.`,
     });
-    // Its own note, so the 240-character cut cannot drop it (R2-14).
+    // Its own note, so the 240-character cut cannot drop it (R2b-14).
     if (counts.remapPending > 0) {
       notes.push({
         level: "info",
@@ -1007,9 +1038,23 @@ function buildNotes(
       message: `Remapping Failure Occurred: Yes on ${gpuCount(counts.remapFailure)}. No rule in this check reads that field, so it is listed here rather than as a finding.`,
     });
   }
+  // The ECC rule saw only the counters, and called the GPU's uncorrected
+  // errors historical at info (R3-11).
+  if (counts.sramThreshold > 0) {
+    notes.push({
+      level: "warning",
+      message: `SRAM Threshold Exceeded: Yes on ${gpuCount(counts.sramThreshold)}. NVIDIA treats this as meeting its RMA criteria for uncorrectable SRAM errors; no rule in this check reads that field, so it is listed here rather than as a finding.`,
+    });
+  }
+  if (counts.resetRequired > 0) {
+    notes.push({
+      level: "warning",
+      message: `GPU Reset Status shows Reset Required or Drain and Reset Recommended: Yes on ${gpuCount(counts.resetRequired)}. No rule in this check reads that field, so it is listed here rather than as a finding.`,
+    });
+  }
   if (nvlinkGpus > 0 && total < 2 && downLinks.length > 0) {
     // A warning, so the text block prints it: the rule never looked at these
-    // links, and the answer must not read like a clean NVLink (R2-5).
+    // links, and the answer must not read like a clean NVLink (R2b-5).
     const ids = downLinks.slice(0, 8).join(", ") + (downLinks.length > 8 ? ` and ${downLinks.length - 8} more` : "");
     notes.push({
       level: "warning",
@@ -1100,6 +1145,8 @@ function parseUnsafe(text: string): ParserResult {
     remapCorrectable: 0,
     remapPending: 0,
     remapFailure: 0,
+    sramThreshold: 0,
+    resetRequired: 0,
     vbiosSkipped: 0,
     widthOnly: 0,
     thermalBlind: 0,
@@ -1113,7 +1160,7 @@ function parseUnsafe(text: string): ParserResult {
   // A rule is checked only when some GPU carries what it reads; a memory-only
   // CSV said six GPU rules "ran and found no matching signal" while its own
   // notes said each check was skipped (R2-17). nvlink_link_down returns
-  // without reading any link below two GPUs in total (R2-5).
+  // without reading any link below two GPUs in total (R2b-5).
   const fed: Record<(typeof RULES)[number], boolean> = {
     nvlink_link_down: nvlink.gpus > 0 && n >= 2,
     gpu_uncorrected_ecc: counts.eccSkipped < n,

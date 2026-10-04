@@ -412,7 +412,7 @@ describe("analyzeOutput: robustness", () => {
     });
     const a = valid(analyzeOutput("FAKE-SMART", { parsers: [p] }));
     expect(a.findings).toHaveLength(30);
-    expect(a.notes).toContain("10 more findings were left out of this answer; paste a smaller section to see them.");
+    expect(a.notes).toContain("10 more findings were left out of this answer (smart_failing x10); paste a smaller section to see them.");
   });
 
   it("counts SEL events of any age (the live 30-day window would drop an old paste)", () => {

@@ -382,6 +382,22 @@ function deriveSelSeverity(event: string, sensorType: string): string {
   return "info";
 }
 
+// Routine power operations the table above classes critical on a substring:
+// "power off" in a Power Unit's "Power off/down" (an OS shutdown) and "hard
+// reset" in a System Boot Initiated row (a BMC, chassis or OS reset). The
+// triage reader counts SEL events of any age, so a host reset once stayed
+// critical in every later paste (R3-10). Keyed on the SEL sensor type, so a
+// Watchdog2 "Hard reset" and a Power Unit "AC lost" or "Failure detected"
+// keep the agent's class. The live agent is unchanged.
+const ROUTINE_POWER_SENSOR = /^(?:System Boot Initiated|System ACPI Power State)(?: |$)/;
+const POWER_UNIT_ROUTINE_EVENT = /^(?:Power off\/down|Power cycle)\b/i;
+
+function triageSelSeverity(sensorText: string, eventText: string, sensorType: string): string {
+  if (ROUTINE_POWER_SENSOR.test(sensorText)) return "info";
+  if (/^Power Unit(?: |$)/.test(sensorText) && POWER_UNIT_ROUTINE_EVENT.test(eventText)) return "info";
+  return deriveSelSeverity(eventText, sensorType);
+}
+
 function expandYear(year: string): number {
   // ipmitool convention (collector parseSelTimestamp): 70-99 = 19xx, 00-69 = 20xx.
   if (year.length === 4) return Number(year);
@@ -407,7 +423,11 @@ function chooseDateOrder(rows: RawSelRow[]): "mdy" | "dmy" {
  * behaviour); a numeric offset is applied; a zone name other than UTC / GMT
  * cannot be resolved offline, so it is read as UTC and flagged.
  */
-function selTimestamp(dateCol: string, timeCol: string, order: "mdy" | "dmy"): { iso: string; namedZone: boolean } {
+function selTimestamp(
+  dateCol: string,
+  timeCol: string,
+  order: "mdy" | "dmy",
+): { iso: string; namedZone: boolean; zoneless?: boolean } {
   const unknown = { iso: "", namedZone: false };
   let y: number;
   let mo: number;
@@ -454,7 +474,7 @@ function selTimestamp(dateCol: string, timeCol: string, order: "mdy" | "dmy"): {
   const check = new Date(wall);
   if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) return unknown;
   const iso = new Date(wall - offsetMinutes * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
-  return { iso, namedZone };
+  return { iso, namedZone, zoneless: !zone };
 }
 
 // Port of crucible parseSelInfo, anchored to whole lines so it cannot pick a
@@ -615,6 +635,7 @@ function parseIpmi(text: string): ParserResult {
   const order = chooseDateOrder(unique);
   let unknownTimes = 0;
   let namedZones = 0;
+  let zonelessTimes = 0;
   let preClock = 0;
   const parsed: ParsedSel[] = unique.map((row) => {
     // Classify on the full text (as the collector does) so the length caps
@@ -626,6 +647,7 @@ function parseIpmi(text: string): ParserResult {
     const time = row.dateCol ? selTimestamp(row.dateCol, row.timeCol, order) : { iso: "", namedZone: false };
     if (!time.iso) unknownTimes++;
     if (time.namedZone) namedZones++;
+    if (time.zoneless) zonelessTimes++;
     if (time.iso && time.iso < "2010") preClock++;
     return {
       sensorText,
@@ -637,7 +659,7 @@ function parseIpmi(text: string): ParserResult {
         sensor_type: sensorType,
         event: safeLabel(eventText, SEL_EVENT_MAX),
         direction: row.direction,
-        severity: deriveSelSeverity(eventText, sensorType),
+        severity: triageSelSeverity(sensorText, eventText, sensorType),
         // BMC vendor is not in the paste; the collector tags unidentified vendors the same way.
         parser_quality: "unknown",
       },
@@ -709,6 +731,17 @@ function parseIpmi(text: string): ParserResult {
     notes.push({
       level: "info",
       message: `${namedZones} SEL time(s) carry a local time zone name; they were read as UTC, so absolute times may be off by that zone's offset.`,
+    });
+  }
+  // The ISO time keeps the collector's UTC reading for the age comparisons,
+  // but ipmitool printed no zone, so the "Z" is an assumption (R3-14).
+  if (zonelessTimes > 0) {
+    notes.push({
+      level: "info",
+      message:
+        zonelessTimes === 1
+          ? "1 SEL time carries no time zone; it is shown as the BMC printed it with a UTC suffix, and the BMC clock's real zone is not in this output."
+          : `${zonelessTimes} SEL times carry no time zone; they are shown as the BMC printed them with a UTC suffix, and the BMC clock's real zone is not in this output.`,
     });
   }
   if (preClock > 0) {

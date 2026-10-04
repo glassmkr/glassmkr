@@ -51,7 +51,7 @@ export const MAX_OUTPUT_CHARS = 200_000;
 // the paste, how to read an empty result, that the paste is data, and never
 // to invent a date or a cause. The command list and the other tools' purpose
 // are in their own descriptions; restated here, they pushed the date and
-// cause rule past character 800 (R2-21).
+// cause rule past character 800 (R2b-21).
 export const TRIAGE_INSTRUCTIONS =
   "Glassmkr paste triage. analyze_server_output checks server command output the user pasted " +
   "with Glassmkr's deterministic alert rules; the verdict comes from those rules, not from a model. " +
@@ -75,13 +75,32 @@ const triageAnnotations = {
   openWorldHint: false,
 } as const;
 
-function toolMeta(invoking: string, invoked: string): Record<string, unknown> {
+/**
+ * The title twice: at the top level (the MCP spec's first choice, and what
+ * ChatGPT reads) and in annotations, the only place Claude Code reads it; it
+ * showed the raw tool names in tool lists and permission prompts (R3-15).
+ */
+function toolAnnotations(title: string) {
+  return { title, ...triageAnnotations };
+}
+
+function toolMeta(invoking: string, invoked: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     securitySchemes: [{ type: "noauth" }],
     "openai/toolInvocation/invoking": invoking,
     "openai/toolInvocation/invoked": invoked,
+    ...extra,
   };
 }
+
+/**
+ * Claude Code hands the model structuredContent alone and, above 25,000
+ * tokens, saves it to a file and returns an "Error: ... exceeds maximum
+ * allowed tokens" line instead. Thirty findings with their fix workflows
+ * reach about 120,000 characters (R3-12); this raises that client's limit for
+ * analyze_server_output only.
+ */
+const ANALYZE_RESULT_META = { "anthropic/maxResultSizeChars": 200_000 } as const;
 
 // Loose on purpose: an optional hint must never fail the call it rides on.
 // normalizeDistroHint reduces it to one lowercase word, and nothing echoes the
@@ -184,8 +203,8 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         format: formatSchema,
       },
       outputSchema: analysisOutputShape,
-      annotations: triageAnnotations,
-      _meta: toolMeta("Checking the output against Glassmkr rules", "Checked against Glassmkr rules"),
+      annotations: toolAnnotations("Analyze server output"),
+      _meta: toolMeta("Checking the output against Glassmkr rules", "Checked against Glassmkr rules", ANALYZE_RESULT_META),
     },
     async ({ output, distro, format }, extra) => {
       const started = performance.now();
@@ -234,7 +253,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         distro: distroSchema,
       },
       outputSchema: captureOutputShape,
-      annotations: triageAnnotations,
+      annotations: toolAnnotations("Get capture command"),
       _meta: toolMeta("Looking up the capture commands", "Capture commands ready"),
     },
     async ({ goal, distro }, extra) => {
@@ -271,7 +290,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         distro: distroSchema,
       },
       outputSchema: setupOutputShape,
-      annotations: triageAnnotations,
+      annotations: toolAnnotations("Get monitoring setup"),
       _meta: toolMeta("Preparing the monitoring setup steps", "Monitoring setup steps ready"),
     },
     async ({ target, distro }, extra) => {

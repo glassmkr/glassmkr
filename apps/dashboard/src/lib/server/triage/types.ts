@@ -80,7 +80,7 @@ export interface ParserResult {
    * but the command's options left out what the rules read (`zpool status -x`
    * prints one summary line). Constant text, like a note. analyze.ts uses it
    * in place of "could not be read in full", which told the user a complete
-   * paste was cut off (R2-17).
+   * paste was cut off (R2b-17).
    */
   recapture_why?: string;
 }

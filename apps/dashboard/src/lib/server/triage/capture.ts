@@ -160,8 +160,10 @@ const GOALS: Record<CaptureGoal, GoalSpec> = {
         // No --level filter. The lines the rules read are logged at several
         // levels: SCSI sense data at info, an ext4 read-only remount at crit,
         // an EDAC uncorrected error at emerg. `--level=err,warn` dropped all
-        // three, so the paste could never show them.
-        command: "sudo dmesg -T",
+        // three, so the paste could never show them. LC_ALL=C: -T prints its
+        // stamp in the caller's locale, and a German or French one was not
+        // read at all (R3-6).
+        command: "sudo env LC_ALL=C dmesg -T",
         purpose: "The kernel log of the current boot, with wall-clock times. Hardware errors are logged at several levels, so it is not filtered by level.",
         needs_root: true,
       },

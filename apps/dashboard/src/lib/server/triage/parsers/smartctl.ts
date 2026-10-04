@@ -107,6 +107,8 @@ interface DeviceRead {
   selfTest?: SelfTestRow[];
   selfTestErrorCount?: number;
   grownDefects?: number;
+  /** SCSI error counter log: total uncorrected errors, read + write + verify. */
+  scsiUncorrected?: number;
   smartSupport?: "available" | "unavailable" | "disabled";
   usbBridge: boolean;
   usbVendor?: string;
@@ -161,6 +163,15 @@ interface Counters {
   pendingDrives: number;
   maxPending: number;
   maxOfflineUncorrectable: number;
+  /** Drives reporting unrecovered data no single-paste rule reads, and the largest count (R3-7). */
+  mediaErrorDrives: number;
+  maxMediaErrors: number;
+  reportedUncorrectableDrives: number;
+  maxReportedUncorrectable: number;
+  scsiUncorrectedDrives: number;
+  scsiUncorrectedTotal: number;
+  /** Drives with neither a device path nor a serial in the paste (R3-19). */
+  unknownNoSerial: number;
   vdSuppressed: number;
   hypervisorDisk: number;
   softwareBlock: number;
@@ -198,7 +209,7 @@ const WINDOWS_PROMPT_RE = /^\s*(?:PS )?[A-Za-z]:\\[^>\n]{0,200}>\s?(.*)$/;
 // "/dev/sda:", "Device: /dev/sda". A bare "/dev/sda" line only counts when a
 // smartctl banner follows it. Each whitespace run has one owner: two
 // quantifiers that could split the same run cost 10 ms per padded 4 KB line,
-// 400 ms per paste (R2-8).
+// 400 ms per paste (R2b-8).
 const DECORATED_HEADER_RE = /^\s*[=#*>-]+\s*(\/dev\/[A-Za-z0-9_\/.+:-]{1,120})\s*(?:[=#*<-]+\s*)?$/;
 const COLON_HEADER_RE = /^\s*(\/dev\/[A-Za-z0-9_\/.+:-]{1,120}):\s*$/;
 const LABEL_HEADER_RE = /^\s*(?:Device|Disk|Drive)(?:\s*:\s+|\s+)(\/dev\/[A-Za-z0-9_\/.+:-]{1,120})\s*$/i;
@@ -218,6 +229,10 @@ const SELF_TEST_HEADER_RE = /^\s*Num\s+Test_Description\s+Status\s+Remaining\s+L
 const SELF_TEST_ROW_RE = /^\s*#\s*(\d{1,2})\s+(\S.*?)\s+(\d{1,3})%\s+(\d{1,10})\s+(\S+)\s*$/;
 const SMART_SUPPORT_RE = /^\s*SMART support is:\s*(\S.*)$/;
 const POWER_ON_SCSI_RE = /^\s*Accumulated power on time, hours:minutes\s+(\d{1,9}):\d{1,2}\b/;
+// SCSI "Error counter log" rows (smartctl scsiPrintErrorCounterLog): read,
+// write and verify, ending in the total uncorrected errors. Seven counter
+// columns, the sixth the gigabytes processed.
+const SCSI_ERROR_COUNTER_ROW_RE = /^\s*(?:read|write|verify):(?:\s+\d{1,20}){5}\s+\d{1,20}(?:\.\d{1,6})?\s+(\d{1,20})\s*$/;
 const KV_RE = /^\s*([A-Za-z][A-Za-z0-9 \/().,_-]{0,60}?)\s*:\s+(\S.*)$/;
 
 const USB_BRIDGE_RE = /\bUSB bridge\b/i;
@@ -672,7 +687,7 @@ function extractJson(text: string, counters: Counters): { values: JsonValue[]; m
       } else if (scan.kind === "truncated") {
         // Only what the scan read: keys past the cut cannot reach the
         // repaired value, and testing to the region's end re-read the rest of
-        // the paste once per indented "{" line, outside the budget (R2-9).
+        // the paste once per indented "{" line, outside the budget (R2b-9).
         const slice = text.slice(start, Math.min(regionEnd, start + scan.cost + 1));
         if (SMARTCTL_JSON_KEY_RE.test(slice)) {
           const repaired = repairJson(text, start, scan.cuts);
@@ -806,6 +821,14 @@ function readJsonDevice(o: Record<string, unknown>, offset: number, truncated: b
 
   const grown = num(o.scsi_grown_defect_list);
   if (grown !== undefined) d.grownDefects = grown;
+  const counterLog = isObj(o.scsi_error_counter_log) ? o.scsi_error_counter_log : undefined;
+  if (counterLog) {
+    for (const op of ["read", "write", "verify"] as const) {
+      const row = counterLog[op];
+      const n = isObj(row) ? num(row.total_uncorrected_errors) : undefined;
+      if (n !== undefined) d.scsiUncorrected = (d.scsiUncorrected ?? 0) + n;
+    }
+  }
 
   if (isObj(o.smart_support)) {
     if (o.smart_support.available === false) d.smartSupport = "unavailable";
@@ -1077,6 +1100,12 @@ function applyLine(d: DeviceRead, line: string): void {
     d.powerOnHours = Number(poh[1]);
     return;
   }
+  const counterRow = SCSI_ERROR_COUNTER_ROW_RE.exec(line);
+  if (counterRow) {
+    d.scsiUncorrected = (d.scsiUncorrected ?? 0) + Number(counterRow[1]);
+    d.hasContent = true;
+    return;
+  }
   if (applyMessage(d, line)) {
     d.hasContent = true;
     return;
@@ -1255,7 +1284,7 @@ const UNNAMED_ATTR_RE = /^(?:Unknown_(?:SSD_)?Attribute)?$/i;
 /**
  * WD Blue / Red / Green SATA SSDs. Their 230 Media_Wearout_Indicator counts
  * up from 0 on some firmware and down from 100 on others, and smartctl gives
- * it no defined meaning, so it says nothing reliable about wear (R2-2).
+ * it no defined meaning, so it says nothing reliable about wear (R2b-2).
  */
 function isWdSataSsd(d: DeviceRead): boolean {
   return /\bWD Blue \/ Red \/ Green SSDs\b/i.test(d.family ?? "") || /^WDC\s+WDS/i.test(d.model ?? "");
@@ -1301,7 +1330,7 @@ function toSmartEntry(d: DeviceRead, device: string): SmartEntry {
     // candidate won, and a healthy SandForce drive (177 Wear_Range_Delta,
     // 233 SandForce_Internal and 241 Lifetime_Writes_GiB always 000, 231
     // SSD_Life_Left 100) or a WD Blue whose 230 counts up read as 98-100%
-    // worn, a critical "replace immediately" (R2-2). So the id fallback
+    // worn, a critical "replace immediately" (R2b-2). So the id fallback
     // covers attributes smartctl could not name, counters are never wear, an
     // attribute whose VALUE, WORST and THRESH are all 0 is not reported as a
     // percentage, and a WD Blue / Red / Green SSD's 230 is not read at all.
@@ -1396,8 +1425,14 @@ function buildNotes(c: Counters, subjects: number): ParseNote[] {
   const notes: ParseNote[] = [];
   const info = (message: string) => notes.push({ level: "info", message });
   const warn = (message: string) => notes.push({ level: "warning", message });
-  if (c.unknownDevice === 1) {
+  // A `smartctl -H -A` paste names neither a device nor a serial, so the
+  // serial cannot be what identifies the drive (R3-19).
+  if (c.unknownDevice === 1 && c.unknownNoSerial === 1) {
+    info("1 drive has no device path or serial number in the paste and is labeled unknown-device: match it by the counters shown, or rerun smartctl -i -H -A /dev/<disk> for each disk.");
+  } else if (c.unknownDevice === 1) {
     info("1 drive has no device path in the paste and is labeled unknown-device: identify it by serial number before acting.");
+  } else if (c.unknownDevice > 1 && c.unknownNoSerial > 0) {
+    info(`${c.unknownDevice} drives have no device path in the paste and are labeled unknown-device-N by their order among the drives in the paste; ${c.unknownNoSerial} show no serial number either: match those by that order or the counters shown.`);
   } else if (c.unknownDevice > 1) {
     info(`${c.unknownDevice} drives have no device path in the paste and are labeled unknown-device-N by their order among the drives in the paste: identify them by serial number before acting.`);
   }
@@ -1463,6 +1498,25 @@ function buildNotes(c: Counters, subjects: number): ParseNote[] {
       : `${c.pendingDrives} drives report pending or offline-uncorrectable sectors (SMART 197/198; highest ${c.maxPending} pending, ${c.maxOfflineUncorrectable} offline-uncorrectable)`;
     warn(`${lead}. Glassmkr judges these over days of readings, so one paste raised no finding on its own.`);
   }
+  // Unrecovered data on a drive whose health line can still say PASSED. No
+  // rule reads these from one paste, so the answer said only "no rule
+  // matched" (R3-7). The NVMe note keys on media errors, never on the error
+  // log entry count, which is high on many healthy drives.
+  if (c.mediaErrorDrives > 0) {
+    const lead = c.mediaErrorDrives === 1
+      ? `1 NVMe drive reports ${c.maxMediaErrors} Media and Data Integrity Errors`
+      : `${c.mediaErrorDrives} NVMe drives report Media and Data Integrity Errors (highest ${c.maxMediaErrors})`;
+    warn(`${lead}: data the controller found but could not recover. Glassmkr judges these over days of readings, so one paste raised no finding on its own.`);
+  }
+  if (c.reportedUncorrectableDrives > 0) {
+    const lead = c.reportedUncorrectableDrives === 1
+      ? `1 drive reports ${c.maxReportedUncorrectable} reported-uncorrectable errors (SMART 187)`
+      : `${c.reportedUncorrectableDrives} drives report reported-uncorrectable errors (SMART 187; highest ${c.maxReportedUncorrectable})`;
+    warn(`${lead}: reads the drive could not correct. Glassmkr judges these over days of readings, so one paste raised no finding on its own.`);
+  }
+  if (c.scsiUncorrectedDrives > 0) {
+    warn(`${c.scsiUncorrectedDrives} SAS ${plural(c.scsiUncorrectedDrives, "drive reports", "drives report")} ${c.scsiUncorrectedTotal} total uncorrected errors in ${plural(c.scsiUncorrectedDrives, "its", "their")} error counter log (read, write and verify). Glassmkr's rules do not evaluate this SCSI counter, so it raised no finding on its own.`);
+  }
   if (c.truncatedJson > 0) {
     warn(`${c.truncatedJson} smartctl JSON ${plural(c.truncatedJson, "block was", "blocks were")} cut off: only the fields before the cut were read.`);
   }
@@ -1503,6 +1557,13 @@ function parseSmartctl(input: string): ParserResult {
     pendingDrives: 0,
     maxPending: 0,
     maxOfflineUncorrectable: 0,
+    mediaErrorDrives: 0,
+    maxMediaErrors: 0,
+    reportedUncorrectableDrives: 0,
+    maxReportedUncorrectable: 0,
+    scsiUncorrectedDrives: 0,
+    scsiUncorrectedTotal: 0,
+    unknownNoSerial: 0,
     vdSuppressed: 0,
     hypervisorDisk: 0,
     softwareBlock: 0,
@@ -1517,7 +1578,7 @@ function parseSmartctl(input: string): ParserResult {
   const reads: DeviceRead[] = [];
   // MAX_DEVICES bounds the whole paste, not each JSON value: one small value
   // per line made 10,000 drives, and rules that join other output against
-  // every drive cost the product of the two (R2-11).
+  // every drive cost the product of the two (R2b-11).
   for (const v of values) {
     const docs = Array.isArray(v.value) ? v.value : [v.value];
     let any = false;
@@ -1593,6 +1654,7 @@ function parseSmartctl(input: string): ParserResult {
       : unnamed === 1
         ? "unknown-device"
         : `unknown-device-${i + 1}`;
+    if (!d.path && !serialOf(d)) counters.unknownNoSerial++;
     if (o.kind === "unreadable") {
       unreadable.push({ device, reason: o.reason });
       return;
@@ -1608,6 +1670,20 @@ function parseSmartctl(input: string): ParserResult {
     if (failedTest && failedTest.nibble !== null) {
       counters.failedSelfTestDrives++;
       counters.failedSelfTest ??= { nibble: failedTest.nibble, lba: failedTest.lba, hours: failedTest.lifetime };
+    }
+    const media = entry.media_errors ?? 0;
+    if (media > 0) {
+      counters.mediaErrorDrives++;
+      counters.maxMediaErrors = Math.max(counters.maxMediaErrors, media);
+    }
+    const uncorrectable = entry.reported_uncorrectable ?? 0;
+    if (uncorrectable > 0) {
+      counters.reportedUncorrectableDrives++;
+      counters.maxReportedUncorrectable = Math.max(counters.maxReportedUncorrectable, uncorrectable);
+    }
+    if (d.scsiUncorrected !== undefined && d.scsiUncorrected > 0) {
+      counters.scsiUncorrectedDrives++;
+      counters.scsiUncorrectedTotal += d.scsiUncorrected;
     }
     const pending = entry.pending_sectors ?? 0;
     const offline = entry.offline_uncorrectable ?? 0;

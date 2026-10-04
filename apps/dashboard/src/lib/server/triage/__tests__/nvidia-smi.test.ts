@@ -422,7 +422,7 @@ describe("NVLink fault bucket: 2x A100 identity CSV + nvlink --status", () => {
     expect(r.notes.map((n) => n.message).join("\n")).toMatch(/two or more GPUs/);
   });
 
-  // R2-5: the rule never looks at the links of a one-GPU paste, so it must
+  // R2b-5: the rule never looks at the links of a one-GPU paste, so it must
   // not be reported as having run, and the Down links must be named.
   it("a single GPU with Down links is not listed as checked, and the text names the links", () => {
     const one = [
@@ -817,10 +817,10 @@ describe("rules_checked follows the fields in the paste (R2-17)", () => {
   });
 });
 
-// R2-6: HW Slowdown is NVML's umbrella reason. A power brake sets it too, and
+// R2b-6: HW Slowdown is NVML's umbrella reason. A power brake sets it too, and
 // nvidia-smi lists HW Power Brake Slowdown active under it with HW Thermal
 // Slowdown not active: a power event, not a critical thermal fault.
-describe("HW Slowdown explained by a power brake (R2-6)", () => {
+describe("HW Slowdown explained by a power brake (R2b-6)", () => {
   it("-q at 61 C: power-cap finding, no thermal finding", () => {
     const text = fixture("synthetic-healthy-h100x2-q.txt")
       .replace("GPU Current Temp                  : 45 C", "GPU Current Temp                  : 61 C")
@@ -843,5 +843,29 @@ describe("HW Slowdown explained by a power brake (R2-6)", () => {
     const ids = ruleIds(evaluate(r));
     expect(ids).toContain("gpu_power_cap_throttling");
     expect(ids).not.toContain("gpu_thermal_critical");
+  });
+});
+
+// R3-11: NVIDIA's RMA flag for uncorrectable SRAM errors, and a GPU asking
+// for a reset, were read by nothing: the paste came back as a single info
+// "historical uncorrected ECC" finding.
+describe("SRAM Threshold Exceeded and GPU Reset Status (R3-11)", () => {
+  const SRAM = "SRAM Threshold Exceeded: Yes on 1 GPU. NVIDIA treats this as meeting its RMA criteria for uncorrectable SRAM errors; no rule in this check reads that field, so it is listed here rather than as a finding.";
+  const RESET = "GPU Reset Status shows Reset Required or Drain and Reset Recommended: Yes on 1 GPU. No rule in this check reads that field, so it is listed here rather than as a finding.";
+
+  it("both flags are warning notes, printed in the text block", () => {
+    const text = fixture("synthetic-h100-sram-threshold-exceeded-q.txt");
+    const r = nvidiaSmiParser.parse(text);
+    expect(r.notes).toContainEqual({ level: "warning", message: SRAM });
+    expect(r.notes).toContainEqual({ level: "warning", message: RESET });
+    const rendered = renderAnalysisText(analyzeOutput(text));
+    expect(rendered).toContain(SRAM);
+    expect(rendered).toContain(RESET);
+  });
+
+  it("No on both raises neither note", () => {
+    const msgs = nvidiaSmiParser.parse(fixture("synthetic-healthy-h100x2-q.txt")).notes.map((n) => n.message);
+    expect(msgs).not.toContain(SRAM);
+    expect(msgs.join("\n")).not.toMatch(/SRAM Threshold Exceeded|GPU Reset Status/);
   });
 });

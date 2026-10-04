@@ -1,0 +1,26 @@
+  pool: tank
+ state: DEGRADED
+status: One or more devices is currently being resilvered.  The pool will
+	continue to function, possibly in a degraded state.
+action: Wait for the resilver to complete.
+  scan: resilver in progress since Fri Sep 26 03:14:07 2025
+	1.62T scanned at 1.21G/s, 812G issued at 607M/s, 9.78T total
+	134G resilvered, 8.11% done, 04:18:22 to go
+config:
+
+	NAME                                      STATE     READ WRITE CKSUM
+	tank                                      DEGRADED     0     0     0
+	  raidz2-0                                DEGRADED     0     0     0
+	    ata-WDC_WD100EFAX-68LHPN0_FAKE0001    ONLINE       0     0     0
+	    spare-1                               DEGRADED     0     0     0
+	      ata-WDC_WD100EFAX-68LHPN0_FAKE0002  FAULTED     12   436     0  too many errors
+	      ata-WDC_WD100EFAX-68LHPN0_FAKE0009  ONLINE       0     0     0  (resilvering)
+	    ata-WDC_WD100EFAX-68LHPN0_FAKE0003    FAULTED      3    51     0  too many errors
+	    ata-WDC_WD100EFAX-68LHPN0_FAKE0004    ONLINE       0     0     0
+	    ata-WDC_WD100EFAX-68LHPN0_FAKE0005    ONLINE       0     0     0
+	    ata-WDC_WD100EFAX-68LHPN0_FAKE0006    ONLINE       0     0     0
+	spares
+	  ata-WDC_WD100EFAX-68LHPN0_FAKE0009      INUSE     currently in use
+	  ata-WDC_WD100EFAX-68LHPN0_FAKE0010      AVAIL   
+
+errors: No known data errors

@@ -166,29 +166,31 @@ const TRIAGE_SUMMARY: Record<string, string> = {
   gpu_corrected_ecc_storm:
     "The GPU's corrected-ECC counter is high, or single-bit retired pages are non-zero. Corrected errors were repaired by the GPU; one paste shows the counters, not how fast they are rising, so compare with a reading taken later.",
   // The YAML names the agent version that added per-vdev classes and says
-  // which severities page (R2-22).
+  // which severities page (R2-22). A spare demotes a raidz2 only while it
+  // covers the vdev's one failed member (R3-4).
   zfs_pool_unhealthy:
-    "A ZFS pool in this output is SUSPENDED or has a vdev that is not ONLINE. Severity follows the vdev's redundancy: a SUSPENDED pool, a FAULTED top-level vdev, or a DEGRADED single-disk, raidz1, two-way mirror or raidz2 vdev is critical; a DEGRADED raidz2 already resilvering onto a spare, a raidz3 or a wider mirror is a warning; an OFFLINE vdev or a failed L2ARC cache device is info. A failed log (SLOG) device is reported by zfs_slog_faulted.",
+    "A ZFS pool in this output is SUSPENDED or has a vdev that is not ONLINE. Severity follows the vdev's redundancy: a SUSPENDED pool, a FAULTED top-level vdev, or a DEGRADED single-disk, raidz1, two-way mirror or raidz2 vdev is critical; a DEGRADED raidz2 whose only failed member is resilvering onto a hot spare, a raidz3 or a wider mirror is a warning; an OFFLINE vdev or a failed L2ARC cache device is info. A failed log (SLOG) device is reported by zfs_slog_faulted.",
   drive_smart_unreadable:
     "One or more fixed disks are present but their SMART health cannot be read, so a failure on them would go unseen. This is NOT a drive fault: it is a coverage gap. The usual cause is that smartmontools (the `smartctl` binary) is not installed, or a disk sits behind a RAID/HBA controller that needs a specific `smartctl -d` device type (`smartctl --scan-open` finds it). Some virtual or enclosure devices genuinely expose no SMART.",
   // ecc_errors always fires on the same EDAC UE count, so one event read as
-  // two separate critical problems (R2-16).
+  // two separate critical problems (R2b-16).
   mce_uncorrected:
     "EDAC reports an uncorrected memory error. It is the same event as the ECC memory errors finding in this answer, which reads the same EDAC count: identify the DIMM and replace it.",
   // The YAML speaks of a configured threshold, Crucible's mapping, the rule
-  // id's history and when the drive turns read-only (R2-4).
+  // id's history and when the drive turns read-only (R2b-4).
   nvme_wear_high:
     "A solid-state drive's wear indicator shows how much of its rated write endurance is used: percentage used on NVMe, or a life-remaining attribute such as Percent_Lifetime_Remain or Wear_Leveling_Count on a SATA SSD. 75% used is reported at info, 85% at warning and 95% at critical. Identify the drive by its serial before replacing anything.",
   // The YAML calls every critical code a hardware-witnessed fault; Xid 119
-  // and 120 (GSP) are often driver or firmware (R2-4).
+  // and 120 (GSP) are often driver or firmware (R2b-4). NVIDIA's Xid catalog
+  // has no severity column, so the class is the agent's, not NVIDIA's (R3-2).
   gpu_xid_critical:
-    "The kernel log has an NVIDIA Xid event with a code NVIDIA's Xid table classes as critical. The code names the event, not its cause: capture nvidia-bug-report.sh before resetting or reseating the GPU, and look the code up in NVIDIA's Xid documentation.",
+    "The kernel log has an NVIDIA Xid event with a code Glassmkr's agent classes as critical. The code names the event, not its cause: capture nvidia-bug-report.sh before resetting or reseating the GPU, and look the code up in NVIDIA's Xid catalog for its resolution.",
   // The YAML describes the mount-options branch too, which a paste never
   // feeds: here the finding always comes from the kernel's remount line
-  // (R2-14).
+  // (R2b-14).
   filesystem_readonly:
     "The kernel logged that it remounted a filesystem read-only, which it does when the filesystem fails, usually after I/O errors. Anything that writes to it fails; data already on it stays readable. Check the kernel log lines before the remount for the device's errors.",
-  // Shorter than the YAML so the text block carries it whole (R2-14).
+  // Shorter than the YAML so the text block carries it whole (R2b-14).
   nvme_critical_warning:
     "An NVMe drive's Critical Warning byte is non-zero. Each set bit is a condition the NVMe specification flags for immediate attention: available spare below threshold, temperature threshold exceeded, reliability degraded, read-only mode, or a failed volatile memory backup.",
 };
@@ -205,14 +207,14 @@ export const DISK_IO_GREP =
   "I/O error|critical (medium|target) error|device offline error|Sense Key|Add\\. Sense|nvme[0-9]+: .*(timeout|reset|abort|disabl|remov)|sct 0x2|end_request";
 
 // Quick checks that tell the reader to open the dashboard, or describe it, or
-// call a result healthy (R2-4).
+// call a result healthy (R2b-4).
 export const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: string }> = {
   zfs_scrub_errors: {
     command: "sudo zpool status | grep -E '(pool:|scan:|errors:)' | head -40",
     explanation: "Per-pool scan recency and error count. `errors: No known data errors` means the scrub found nothing; any other phrasing is the signal. `scan: scrub in progress` means a scrub is running now.",
   },
   disk_io_errors: {
-    command: `sudo dmesg -T | grep -iE '${DISK_IO_GREP}' | tail -40`,
+    command: `sudo env LC_ALL=C dmesg -T | grep -iE '${DISK_IO_GREP}' | tail -40`,
     explanation: "Kernel lines for block-device errors, SCSI sense data and NVMe timeouts, resets and aborts, from every log level: SCSI sense data is logged at info, so the log is not filtered by level.",
   },
   gpu_corrected_ecc_storm: {
@@ -232,10 +234,14 @@ export const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: 
  * changes under one of these.
  */
 export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string, string]>> = {
+  // A `smartctl -H -A` paste carries no serial to match (R3-19).
+  smart_failing: [
+    ["Match the SERIAL from the alert evidence before acting", "Match the serial this answer names (or, with none, its counters) before acting"],
+  ],
   nvme_wear_high: [
     ["Match the SERIAL from the alert evidence, not the device letter", "Match the serial this answer names, not the device letter"],
     [" (a validation session compared the wrong twin of an MX500 pair and wrongly concluded the alert overstated wear 25x; the alerted twin really was at 80%)", ""],
-    // Lifetime predictions (R2-4).
+    // Lifetime predictions (R2b-4).
     [
       "# Imminent-replacement workflow (wear >= 95%; critical band).\n# Drive may enter read-only protection mode at 100%. Treat\n# as if failure is hours-to-days away.",
       "# Replacement workflow (wear >= 95%; critical band).\n# Replace the drive as soon as a maintenance window allows.",
@@ -249,12 +255,23 @@ export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string,
       "# 1. Read the current wear and the data written so far.",
     ],
   ],
-  // Causes the code alone does not establish, and a VBIOS reflash (R2-4).
+  // Causes the code alone does not establish, and a VBIOS reflash (R2b-4).
   gpu_xid_critical: [
     [
       "# XID 79 (most severe): GPU fell off the PCIe bus. Reseat the\n# card; if it recurs, RMA.\n# XID 48 / 95: Double-bit ECC / uncontained ECC. VRAM end-of-\n# life; plan replacement.\n# XID 94: contained ECC. Memory region blocked but data is\n# safe; preventive replacement.\n# XID 119 / 120: GSP RPC timeout. Driver/firmware version\n# mismatch; verify and reflash vbios.",
       "# XID 79: the GPU has fallen off the PCIe bus.\n# XID 48 / 95: double-bit ECC error / uncontained ECC error.\n# XID 94: contained ECC error.\n# XID 119 / 120: GSP RPC timeout / GSP error.\n# The code names the event, not its cause: capture\n# nvidia-bug-report.sh before any reset, reseat or reboot.",
     ],
+  ],
+  // The SEL names the sensor an event was logged against; a threshold
+  // crossing or an event deasserted years ago is not a failed part the BMC
+  // has identified (R3-9).
+  ipmi_sel_critical: [
+    ["# This SEL alert names the failed component(s): ", "# Sensors named by the critical SEL events: "],
+    [
+      "# The BMC has already identified the part; the commands below just\n# confirm it and point at the focused workflow",
+      "# Check each event's date and whether a Deasserted row follows it;\n# ipmitool sdr elist shows each sensor's current reading.\n# Focused workflows",
+    ],
+    ["Leads with the failed component the SEL already named", "Leads with the sensors the critical SEL events name"],
   ],
   psu_redundancy_loss: [
     [
@@ -277,6 +294,13 @@ export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string,
   ],
 };
 
+// The aggregate PS Redundancy sensor (Dell) reports that redundancy is gone,
+// not why: a failed supply or feed, or total draw above what the remaining
+// supplies carry. The YAML summary says a PSU is in fault, a cause the
+// evaluator itself declines to state (R3-8).
+const PSU_AGGREGATE_SUMMARY =
+  "The BMC's aggregate PS Redundancy sensor reports redundancy lost or degraded. It does not say why: a supply or its feed has failed, or total draw is above what the remaining supplies can carry. Check each supply's status row before replacing anything.";
+
 // Branches of a rule whose YAML title says something the finding does not:
 // "ZFS scrub found errors" on a pool that was never scrubbed (R2-11). Constant
 // text keyed on sanitized evidence, never built from the paste.
@@ -288,7 +312,7 @@ const NEVER_SCRUBBED = {
 
 // YAML titles that name a source the answer did not read: mce_uncorrected
 // reads the EDAC UE count only, and was titled a machine check beside a note
-// saying machine-check lines were not decoded (R2-16).
+// saying machine-check lines were not decoded (R2b-16).
 const TRIAGE_TITLE: Record<string, string> = {
   mce_uncorrected: "Uncorrected memory error reported by EDAC",
 };
@@ -578,7 +602,7 @@ function sanitizeEvidence(evidence: Record<string, unknown>): Observed {
           // Names the paste chose (GPU products, sensor names): a few whole
           // names and a count, as for affected_components. Sixteen 64-character
           // product names joined into ~1 KB of paste text in the evidence
-          // (R2-13).
+          // (R2b-13).
           const names = value.slice(0, 256).filter(isPlainObject).map((item) => itemName(key, item)).filter(Boolean);
           clean = boundedNameList([...new Set(names)], ",") ?? undefined;
         } else clean = items.join(",");
@@ -804,7 +828,14 @@ function shapeFinding(
     }
   }
 
+  let investigation = false;
+  if (alert.type === "psu_redundancy_loss" && observed.path === "aggregate-redundancy") {
+    summary = PSU_AGGREGATE_SUMMARY;
+    investigation = true;
+  }
+
   if (recoverable && fix) fix.verdict_prior = "recoverable";
+  if (investigation && fix) fix.verdict_prior = "investigation";
 
   return {
     rule_id: alert.type,
@@ -839,6 +870,35 @@ function dedupeFindings(findings: Finding[]): Finding[] {
   return [...byKey.values()].map(({ finding, n }) =>
     n > 1 ? { ...finding, observed: { ...finding.observed, occurrences: n } } : finding,
   );
+}
+
+/**
+ * At most `max` findings in their severity order, with the first of every
+ * fired rule kept before any rule's second. Cut in order, a paste with thirty
+ * critical disk errors hid a GPU that had fallen off the bus, and the note
+ * said only that something was left out (R3-13).
+ */
+function capFindings(ordered: Finding[], max: number): Finding[] {
+  if (ordered.length <= max) return ordered;
+  const keep = new Set<number>();
+  const rules = new Set<string>();
+  ordered.forEach((f, i) => {
+    if (keep.size < max && !rules.has(f.rule_id)) {
+      rules.add(f.rule_id);
+      keep.add(i);
+    }
+  });
+  for (let i = 0; i < ordered.length && keep.size < max; i++) keep.add(i);
+  return ordered.filter((_, i) => keep.has(i));
+}
+
+/** "disk_io_errors x3, gpu_xid_critical x2": the rules a cap left out, most first. */
+function droppedRules(ordered: Finding[], kept: Finding[]): string {
+  const counts = new Map<string, number>();
+  const shown = new Set(kept);
+  for (const f of ordered) if (!shown.has(f)) counts.set(f.rule_id, (counts.get(f.rule_id) ?? 0) + 1);
+  const list = [...counts].sort((a, b) => b[1] - a[1]).map(([rule, n]) => `${safeIdent(rule, 48)} x${n}`);
+  return list.length > 4 ? `${list.slice(0, 4).join(", ")} and ${list.length - 4} more rules` : list.join(", ");
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,7 +1066,7 @@ const CONTINUOUS_MONITORING = {
  * and U+2029, which no reader splits lines on, so any pattern with a
  * whitespace run before a trailing "(.*)$" retried every split of that run on
  * a line holding one: one anonymous 200 KB paste held the process for 40 s
- * (R2-1). They become ordinary line breaks before any reader runs.
+ * (R2b-1). They become ordinary line breaks before any reader runs.
  */
 function readerText(text: string): string {
   return text.replace(/[\u2028\u2029]/g, "\n");
@@ -1113,9 +1173,9 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     .map((f, i) => ({ f, i }))
     .sort((a, b) => SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] || a.i - b.i)
     .map(({ f }) => f);
-  const findings = ordered.slice(0, MAX_FINDINGS);
+  const findings = capFindings(ordered, MAX_FINDINGS);
   if (ordered.length > findings.length) {
-    const note = `${ordered.length - findings.length} more findings were left out of this answer; paste a smaller section to see them.`;
+    const note = `${ordered.length - findings.length} more findings were left out of this answer (${droppedRules(ordered, findings)}); paste a smaller section to see them.`;
     notes.push(note);
     warnings.add(note);
   }
@@ -1165,7 +1225,7 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
     next_capture: nextCapture(
       parsed.filter(({ detected, result }) => detected || result.subjects > 0).map(({ result }) => result),
       active.map(({ result }) => result),
-      findings,
+      ordered,
     ),
     notes,
   };
@@ -1248,7 +1308,7 @@ function nextCapture(
     add("bmc_events", "ipmitool sel info shows whether the BMC event log is full and has stopped recording.");
   }
   if (domains.has("nvidia_gpu") && !formats.has("nvidia_smi_nvlink_status")) add("nvlink", captureWhy("nvlink"));
-  // NVLink output for one GPU: the check needs every GPU's (R2-5).
+  // NVLink output for one GPU: the check needs every GPU's (R2b-5).
   if (gpuRules && formats.has("nvidia_smi_nvlink_status") && !gpuRules.includes("nvlink_link_down")) {
     add("nvlink", "The NVLink check runs only on output covering two or more GPUs, so it needs nvidia-smi nvlink --status for every GPU on the host.");
   }
@@ -1285,7 +1345,7 @@ const TEXT_OBSERVED_KEYS = 12;
 const TEXT_WARNINGS = 4;
 const TEXT_NOTES = 6;
 // A backstop. Every summary a finding can carry fits (a test holds it): at
-// 300, the caveats added on purpose were cut mid-word (R2-14).
+// 300, the caveats added on purpose were cut mid-word (R2b-14).
 export const TEXT_SUMMARY_CHARS = 480;
 
 function captureLines(analysis: TriageAnalysis): string[] {

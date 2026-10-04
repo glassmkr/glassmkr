@@ -405,7 +405,7 @@ describe("mixed and messy pastes", () => {
   it("stays fast on 200 KB of distinct member tokens and caps the array count with a note", () => {
     const members = Array.from({ length: 20_000 }, (_, k) => `sd${k}[${k % 100}]`).join(" ");
     let t0 = performance.now();
-    // A 200 KB line is not md output (R2-1 line cap): read fast, not as an array.
+    // A 200 KB line is not md output (R2b-1 line cap): read fast, not as an array.
     const huge = mdraidParser.parse(`md0 : active raid1 ${members}\n      1 blocks [2/2] [UU]\n`);
     expect(performance.now() - t0).toBeLessThan(1000);
     expect(huge.subjects).toBe(0);
@@ -509,7 +509,7 @@ describe("injection inside otherwise matching lines", () => {
 });
 
 describe("review round 2", () => {
-  // R2-1: the device-table row regex ended in "(?:\s+(.*))?$", which retried
+  // R2b-1: the device-table row regex ended in "(?:\s+(.*))?$", which retried
   // every split of a padded run when the line ended in U+2029.
   it("reads a padded device-table row ending in a line separator in linear time", () => {
     const head = "/dev/md0:\n    Raid Level : raid1\n    Number   Major   Minor   RaidDevice State\n";
@@ -527,7 +527,7 @@ describe("review round 2", () => {
     expect(raidOf(r)[0]).toMatchObject({ disks: ["sda1", "sdb1"], failed_disks: ["sdb1"], degraded: true });
   });
 
-  // R2-12: merging one array line pasted again and again with new members
+  // R2b-12: merging one array line pasted again and again with new members
   // grew a single entry without bound, at quadratic cost.
   it("caps the members of an array merged from repeated lines, with a note", () => {
     const line = (i: number) => "md0 : active raid1 " + Array.from({ length: 300 }, (_, k) => `d${i}x${k}[0](F)`).join(" ");

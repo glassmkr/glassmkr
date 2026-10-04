@@ -1,0 +1,5 @@
+[Sat Oct  4 02:11:40 2026] NVRM: Xid (PCI:0000:18:00): 13, pid=482113, name=python3, Graphics SM Warp Exception on (GPC 1, TPC 0, SM 0): Out Of Range Address
+[Sat Oct  4 02:11:40 2026] NVRM: Xid (PCI:0000:18:00): 13, pid=482113, name=python3, Graphics Exception: ESR 0x50c730=0x201000e 0x50c734=0x24 0x50c728=0xf81eb60 0x50c72c=0x1174
+[Sat Oct  4 02:11:41 2026] NVRM: Xid (PCI:0000:18:00): 43, pid=482113, name=python3, Ch 00000008
+[Sat Oct  4 02:14:07 2026] NVRM: Xid (PCI:0000:2a:00): 31, pid=482190, name=python3, Ch 00000010, intr 00000000. MMU Fault: ENGINE GRAPHICS GPCCLIENT_T1_0 faulted @ 0x7f3a_12340000. Fault is of type FAULT_PDE ACCESS_TYPE_VIRT_READ
+[Sat Oct  4 02:14:08 2026] NVRM: Xid (PCI:0000:2a:00): 45, pid=482190, name=python3, Ch 00000010

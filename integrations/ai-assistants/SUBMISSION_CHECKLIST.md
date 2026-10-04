@@ -294,8 +294,9 @@ plugin"]
 - [ ] Authentication "none" (authless) is "Supported by default".
   [connectors-auth "Supported authentication types"]
 - [ ] Every tool has a `title` and a `readOnlyHint` or `destructiveHint`; the
-  portal flags tools missing them. The spec sets titles and all hints on all three
-  tools; confirm after deploy. [connectors-submission "Requirements for every
+  portal flags tools missing them. The server sets each title both at the top level
+  and as `annotations.title` (Claude Code reads only the latter), and all hints, on
+  all three tools; confirm after deploy. [connectors-submission "Requirements for every
   connector"]
 - [ ] Tested as a custom connector in Claude, every tool called from a
   conversation; the **Test & launch** step asks you to confirm this.

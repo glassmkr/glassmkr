@@ -4559,16 +4559,46 @@ const rules: AlertRule[] = [
       // the node name. Same idea as the raid_degraded member join (#360).
       // A suffix must start a new numeric segment ("sda"~"sda1", "nvme0"~
       // "nvme0n1", "nvme0n1"~"nvme0n1p2") so "sda" cannot match "sdaa".
+      //
+      // The SMART names are indexed once per evaluation. One scan of the
+      // inventory per event made this join the product of the two lists: a
+      // pasted log of 5,000 sense lines beside 1,024 SMART entries cost 160 ms
+      // per anonymous paste-triage call (triage review R3-5). The lookup
+      // returns what snap.smart.find(matches) did: the first entry, in
+      // inventory order, whose name equals the event's, extends it by a
+      // segment, or is extended by it.
+      const norm = (s: string) => String(s).replace(/^\/dev\//, "");
+      const isDigit = (c: string | undefined) => c !== undefined && c >= "0" && c <= "9";
+      // True when s.slice(k) starts a new numeric segment: a digit, n<digit> or p<digit>.
+      const segmentAt = (s: string, k: number) =>
+        isDigit(s[k]) || ((s[k] === "n" || s[k] === "p") && isDigit(s[k + 1]));
+      let index: { exact: Map<string, number>; extended: Map<string, number> } | null = null;
+      const buildIndex = (smart: NonNullable<Snapshot["smart"]>) => {
+        const exact = new Map<string, number>();
+        // Every segment-boundary prefix of a name, to the first entry with it.
+        const extended = new Map<string, number>();
+        smart.forEach((d, i) => {
+          const name = norm(d.device ?? "");
+          if (!exact.has(name)) exact.set(name, i);
+          for (let k = 0; k < name.length; k++) {
+            if (segmentAt(name, k) && !extended.has(name.slice(0, k))) extended.set(name.slice(0, k), i);
+          }
+        });
+        return { exact, extended };
+      };
       const resolveDrives = (names: string[]) => {
         if (!snap.smart || snap.smart.length === 0) return [];
-        const norm = (s: string) => String(s).replace(/^\/dev\//, "");
-        const segmentMatch = (long: string, short: string) =>
-          long.startsWith(short) && /^(\d|n\d|p\d)/.test(long.slice(short.length));
-        const matches = (a: string, b: string) => a === b || segmentMatch(a, b) || segmentMatch(b, a);
+        const smart = snap.smart;
+        index ??= buildIndex(smart);
+        const { exact, extended } = index;
         const out: Array<{ device: string; model?: string; serial?: string; firmware?: string }> = [];
         for (const name of names) {
           const n = norm(name);
-          const hit = snap.smart.find((d) => matches(norm(d.device ?? ""), n));
+          let first = Math.min(exact.get(n) ?? Infinity, extended.get(n) ?? Infinity);
+          for (let k = 0; k < n.length; k++) {
+            if (segmentAt(n, k)) first = Math.min(first, exact.get(n.slice(0, k)) ?? Infinity);
+          }
+          const hit = first === Infinity ? undefined : smart[first];
           if (hit && !out.some((o) => o.device === hit.device)) {
             out.push({ device: hit.device, model: hit.model, serial: hit.serial, firmware: hit.firmware });
           }

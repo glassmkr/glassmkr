@@ -61,7 +61,7 @@
         "privacyPolicyURL": "https://glassmkr.com/privacy",
         "termsOfServiceURL": "https://glassmkr.com/terms",
         "defaultPrompt": [
-          "Is this GPU failing? [90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus.",
+          "[90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus. Is this GPU failing?",
           "Which commands should I run so you can check every disk in my Linux server for SMART errors?",
           "How do I monitor SMART, RAID, ZFS and GPU errors on my Linux servers continuously?"
         ],
@@ -77,7 +77,7 @@
               "description": "Failing SATA drive in smartctl -a text output: the overall health line says PASSED but the reallocated sector count is non-zero.",
               "prompt": "Is this drive failing?\n\nroot@web-01:~# smartctl -a /dev/sda\nsmartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.8.0-45-generic] (local build)\n=== START OF INFORMATION SECTION ===\nDevice Model:     ST4000NM0035-1V4107\nSerial Number:    ZC1REVIEW1\nFirmware Version: TN04\nUser Capacity:    4,000,787,030,016 bytes [4.00 TB]\n\n=== START OF READ SMART DATA SECTION ===\nSMART overall-health self-assessment test result: PASSED\n\nSMART Attributes Data Structure revision number: 10\nVendor Specific SMART Attributes with Thresholds:\nID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_FAILED RAW_VALUE\n  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       24\n  9 Power_On_Hours          0x0032   053   053   000    Old_age   Always       -       41234\n194 Temperature_Celsius     0x0022   038   045   000    Old_age   Always       -       38\n197 Current_Pending_Sector  0x0012   100   100   000    Old_age   Always       -       8\n198 Offline_Uncorrectable   0x0010   100   100   000    Old_age   Offline      -       8",
               "tools_triggered": "analyze_server_output",
-              "expected_behavior": "Calls analyze_server_output with the pasted text. Reports one critical smart_failing finding for /dev/sda, serial ZC1REVIEW1, triggered by 24 reallocated sectors, and explains that the reallocated count fired the rule even though the health line says PASSED. Includes the rule's fix steps, starting with confirming the serial before any drive swap. Does not predict when the drive will fail."
+              "expected_behavior": "Calls analyze_server_output with the pasted text. Reports one critical smart_failing finding for /dev/sda, serial ZC1REVIEW1, triggered by 24 reallocated sectors, and explains that the reallocated count fired the rule even though the health line says PASSED. Includes the rule's quick check, which says to match the drive's serial before acting, and its fix steps (prerequisites, a read-only check of /dev/sda, then remediation). Does not predict when the drive will fail."
             },
             {
               "description": "Degraded mdadm RAID 1 array in /proc/mdstat: one member is marked (F) and the status shows [U_].",

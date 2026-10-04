@@ -32,7 +32,7 @@ describe("captureCommands", () => {
     for (const goal of CAPTURE_GOALS) expect(captureCommandText(goal)).not.toMatch(/\/dev\/[a-z]+\[/);
     expect(text("raid_md")).toBe("cat /proc/mdstat\nfor md in $(awk '/^md/{print $1}' /proc/mdstat); do sudo mdadm --detail /dev/$md; done");
     expect(text("zfs")).toBe("sudo zpool status -v");
-    expect(text("kernel_errors")).toBe("sudo dmesg -T\nsudo journalctl -k -b -1 --no-pager -o short-iso");
+    expect(text("kernel_errors")).toBe("sudo env LC_ALL=C dmesg -T\nsudo journalctl -k -b -1 --no-pager -o short-iso");
     // A level filter drops what the rules read: SCSI sense (info), ext4
     // read-only remount (crit), EDAC uncorrected (emerg).
     expect(text("kernel_errors")).not.toContain("--level");

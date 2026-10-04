@@ -50,7 +50,7 @@ Status: TO VERIFY in ChatGPT. Route-level check passed 2026-10-03 (local: a real
 |---|---|
 | description | Failing SATA drive in smartctl -a text output: the overall health line says PASSED but the reallocated sector count is non-zero. |
 | tools_triggered | `analyze_server_output` |
-| expected_behavior | Calls analyze_server_output with the pasted text. Reports one critical smart_failing finding for /dev/sda, serial ZC1REVIEW1, triggered by 24 reallocated sectors, and explains that the reallocated count fired the rule even though the health line says PASSED. Includes the rule's fix steps, starting with confirming the serial before any drive swap. Does not predict when the drive will fail. |
+| expected_behavior | Calls analyze_server_output with the pasted text. Reports one critical smart_failing finding for /dev/sda, serial ZC1REVIEW1, triggered by 24 reallocated sectors, and explains that the reallocated count fired the rule even though the health line says PASSED. Includes the rule's quick check, which says to match the drive's serial before acting, and its fix steps (prerequisites, a read-only check of /dev/sda, then remediation). Does not predict when the drive will fail. |
 
 Key outcome to verify:
 
@@ -283,7 +283,7 @@ submitting.
 
 | # | Prompt | Expected tool | Status |
 |---|---|---|---|
-| S1 | `Is this GPU failing? [90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus.` | `analyze_server_output`: one `gpu_xid_critical` (critical), times unknown | TO VERIFY in ChatGPT. Route-level check 2026-10-03: the single line with a leading question is read as `dmesg` and yields one critical `gpu_xid_critical`, times unknown. |
+| S1 | `[90211.554310] NVRM: Xid (PCI:0000:3b:00): 79, pid=48213, name=python3, GPU has fallen off the bus. Is this GPU failing?` | `analyze_server_output`: one `gpu_xid_critical` (critical), times unknown | TO VERIFY in ChatGPT. Checked 2026-10-04 in plugin-drift.test.ts: the line is read as `dmesg` and yields one critical `gpu_xid_critical`, times unknown. The log line has to come first: with the question in front of it on the same line, nothing is recognised. |
 | S2 | `Which commands should I run so you can check every disk in my Linux server for SMART errors?` | `get_capture_command` with `goal: all_disks` | TO VERIFY |
 | S3 | `How do I monitor SMART, RAID, ZFS and GPU errors on my Linux servers continuously?` | `get_monitoring_setup` | TO VERIFY |
 

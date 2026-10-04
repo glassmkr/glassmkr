@@ -79,7 +79,7 @@ const DETAIL_TABLE_RE = /^\s*Number\s+Major\s+Minor\s+RaidDevice\b/;
 // The four number columns only; the state and device after them are sliced
 // off in code. A "(?:\s+(.*))?$" tail retried every split of a padded run
 // when the line ended in a character "." does not match (U+2028), 40 s for
-// one 200 KB row (R2-1).
+// one 200 KB row (R2b-1).
 const DETAIL_ROW_RE = /^\s*(\d{1,5}|-)\s+(\d{1,5}|-)\s+(\d{1,7}|-)\s+(\d{1,5}|-)(?=\s|$)/;
 const DEV_PATH_RE = /(?:^|\s)\/dev\/([A-Za-z0-9][A-Za-z0-9._\/-]*)/;
 const DETAIL_MAX_LINES = 1024;
@@ -111,7 +111,7 @@ function pushUnique(list: string[], value: string): void {
  * Append the names `list` does not have yet, up to MAX_MEMBERS. Returns true
  * when a name was left out. A Set, not Array.includes: one array line pasted
  * again and again with new members grew a single entry to 28,000 disks at
- * quadratic cost (R2-12).
+ * quadratic cost (R2b-12).
  */
 function addMembers(list: string[], add: readonly string[]): boolean {
   const seen = new Set(list);

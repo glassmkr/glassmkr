@@ -17,9 +17,13 @@
 //      earlier scrub is hidden there, not absent.
 //   4. dRAID vdevs are classified from their real lowercase names
 //      ("draid2:4d:8c:1s-0"); Crucible's startsWith("dRAID") never matches.
-//   5. spare_in_progress (read by the evaluator's raidz2 branch) is set when a
-//      top-level vdev holds a spare-N child with an ONLINE leaf. Crucible does
-//      not emit the field yet.
+//   5. degraded_disks_count and spare_in_progress follow Crucible #151: the
+//      count is a data vdev's non-ONLINE immediate children (a spare-N slot is
+//      one member), and spare_in_progress is set only when one failed spare-N
+//      slot has an ONLINE leaf and is the vdev's only non-ONLINE member. The
+//      evaluator demotes a DEGRADED raidz2 only on both; with a second member
+//      down the raidz2 has no parity left (R3-4). Neither is sent for a vdev
+//      the paste may have cut short.
 //   6. When a pool's state is not ONLINE but no parsed vdev explains it (cut-off
 //      paste, lost indentation), vdevs is omitted so the evaluator falls back
 //      to judging the pool state instead of reporting nothing.
@@ -78,9 +82,12 @@ interface TopVdev {
   /** Depth of this vdev's immediate children, learned from the first child row. */
   childDepth: number | null;
   children: number;
-  /** The most recent immediate child is a spare-N interior vdev. */
-  inSpareChild: boolean;
-  spareWithOnlineLeaf: boolean;
+  /** Immediate children that are not ONLINE; a spare-N slot is one. */
+  degraded: number;
+  /** The most recent immediate child is a spare-N slot that is not ONLINE. */
+  openSpareSlot: boolean;
+  /** Failed spare-N slots with an ONLINE leaf: the hot spare taking over. */
+  coveredSpareSlots: number;
 }
 
 interface Block {
@@ -258,8 +265,9 @@ function readTreeRow(b: Block, line: string): void {
       kind: b.section === "logs" ? "logs" : b.section === "cache" ? "cache" : "data",
       childDepth: null,
       children: 0,
-      inSpareChild: false,
-      spareWithOnlineLeaf: false,
+      degraded: 0,
+      openSpareSlot: false,
+      coveredSpareSlots: 0,
     };
     b.tops.push(top);
     b.current = top;
@@ -276,9 +284,11 @@ function readTreeRow(b: Block, line: string): void {
   if (top.childDepth === null || depth <= top.childDepth) {
     top.childDepth = depth;
     top.children += 1;
-    top.inSpareChild = /^spare-\d+$/.test(tokens[0]);
-  } else if (top.inSpareChild && state === "ONLINE") {
-    top.spareWithOnlineLeaf = true;
+    if (state !== "ONLINE") top.degraded += 1;
+    top.openSpareSlot = /^spare-\d+$/.test(tokens[0]) && state !== "ONLINE";
+  } else if (top.openSpareSlot && state === "ONLINE") {
+    top.coveredSpareSlots += 1;
+    top.openSpareSlot = false;
   }
 }
 
@@ -295,6 +305,8 @@ interface Tally {
   nonzeroCounterRows: number;
   sparesUnusable: number;
   degradedLogs: number;
+  /** Pools whose vdev tree was read with its indentation, so the log section was seen if present. */
+  treesRead: number;
 }
 
 // zfs_slog_faulted fires on these log-vdev states only.
@@ -329,6 +341,7 @@ function finalize(b: Block, tally: Tally): ZfsPool | null {
   if (b.flatRows > 0) {
     tally.flat += 1;
   } else {
+    if (b.section !== "none") tally.treesRead += 1;
     const cutInside = terminated ? null : b.lastRowTop;
     const vdevs: ZfsVdev[] = [];
     for (const t of b.tops) {
@@ -336,7 +349,10 @@ function finalize(b: Block, tally: Tally): ZfsPool | null {
       let cls = classifyVdevType(t.name);
       if (cls === "mirror" && t !== cutInside) cls = mirrorClass(t.children);
       const v: ZfsVdev = { name: t.name, state: t.state, redundancy_class: cls };
-      if (t.spareWithOnlineLeaf) v.spare_in_progress = true;
+      if (t !== cutInside) {
+        v.degraded_disks_count = t.degraded;
+        if (t.coveredSpareSlots === 1 && t.degraded === 1) v.spare_in_progress = true;
+      }
       vdevs.push(v);
     }
     pool.slog_vdevs = b.tops.filter((t) => t.kind === "logs").map((t) => ({ name: t.name, state: t.state }));
@@ -452,7 +468,7 @@ function parse(text: string): ParserResult {
   const tally: Tally = {
     skipped: 0, flat: 0, unexplained: 0, cutOff: 0, scrubDates: 0, hiddenScans: 0,
     scrubsRunning: 0, dataErrors: 0, unrecognizedErrors: 0, nonzeroCounterRows: 0, sparesUnusable: 0,
-    degradedLogs: 0,
+    degradedLogs: 0, treesRead: 0,
   };
   const blocks: Block[] = [];
   let cur: Block | null = null;
@@ -557,12 +573,20 @@ function parse(text: string): ParserResult {
   }
 
   const recognized = pools.length > 0 || xHealthy > 0 || xNoPools > 0;
+  // A rule is reported as checked only when some pool carried its input. A
+  // scrub still running, a resilver or a canceled scrub on the scan line
+  // gives zfs_scrub_errors nothing to read, and it was listed as "ran and
+  // found no matching signal" on a pool mid-scrub (R3-16).
+  const rules_checked = ["zfs_pool_unhealthy"];
+  if (pools.some((p) => p.scrub_errors !== undefined || p.scrub_never_run === true)) rules_checked.push("zfs_scrub_errors");
+  if (tally.treesRead > 0) rules_checked.push("zfs_slog_faulted");
   const result: ParserResult = {
     domain: "zfs",
     formats: recognized ? ["zpool_status"] : [],
     snapshot: pools.length > 0 ? { zfs: { pools } } : {},
     subjects: pools.length,
     notes: buildNotes(tally, pools.length, xHealthy, xNoPools),
+    rules_checked,
   };
   // "no pools available" is the whole answer, not a cut-off paste (R2-16).
   if (xNoPools > 0 && pools.length === 0 && xHealthy === 0 && blocks.length === 0) result.nothing_to_report = true;

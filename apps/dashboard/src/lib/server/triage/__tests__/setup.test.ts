@@ -31,6 +31,8 @@ describe("monitoringSetup: rules that hold for every variant", () => {
     // No pricing, plan, free-tier or node-cap text, and no em-dashes.
     expect(all).not.toMatch(COMMERCIAL);
     expect(all).not.toContain("\u2014");
+    // Alpine gets no install commands at all (R3-20).
+    if (input.distro === "alpine") return;
 
     // The key is never placed on a command line: no literal key argument, and
     // every init reads it from stdin.
@@ -64,7 +66,7 @@ describe("monitoringSetup: install path per distro family", () => {
   });
 
   it("uses the checksummed single-file binary where install.sh has no package manager to use", () => {
-    const r = monitoringSetup({ target: "hosted", distro: "alpine" });
+    const r = monitoringSetup({ target: "hosted", distro: "arch" });
     expect(r.distro_family).toBe("other");
     const cmds = commands(r);
     expect(cmds).not.toContain("curl -fsSL https://glassmkr.com/install.sh | sudo -E bash");
@@ -162,5 +164,43 @@ describe("self-hosted steps make the dashboard reachable from other hosts (R2-20
     expect(setupAt).toBeGreaterThan(-1);
     const install = r.steps.find((s) => s.commands.some((c) => c.includes("GLASSMKR_INGEST_URL")))!;
     expect(install.detail).toMatch(/the address you set in DASHBOARD_BIND|DASHBOARD_PUBLIC_URL/);
+  });
+});
+
+// R3-20: the release binary is linked against glibc and init installs a
+// systemd unit; Alpine has musl and OpenRC, so every command the tool gave
+// for it failed.
+describe("Alpine is not offered an install path that cannot work (R3-20)", () => {
+  it("says the packaged agent does not run there, with no commands to try", () => {
+    const r = valid(monitoringSetup({ target: "hosted", distro: "alpine" }));
+    expect(commands(r)).toEqual([]);
+    expect(r.verify).toEqual([]);
+    expect(r.steps).toHaveLength(1);
+    expect(r.steps[0].title).toBe("Alpine Linux is not supported yet");
+    expect(r.steps[0].detail).toMatch(/glibc/);
+    expect(r.steps[0].detail).toMatch(/systemd/);
+    expect(renderSetupText(r)).not.toMatch(/systemctl|sha256sum/);
+  });
+
+  it("the binary step no longer names Alpine", () => {
+    for (const distro of ["arch", undefined]) {
+      const binary = monitoringSetup({ target: "hosted", distro }).steps.find((s) => s.commands.some((c) => c.includes("releases/download")))!;
+      expect(binary.detail).not.toMatch(/Alpine/);
+      expect(binary.detail).toMatch(/glibc and systemd/);
+    }
+  });
+});
+
+// R3-21: the one-line installer adds Node.js only when no node is on PATH;
+// an older distro node makes init stop with a version error.
+describe("the Node.js prerequisite (R3-21)", () => {
+  it("says an older node on PATH has to be upgraded first", () => {
+    const r = monitoringSetup({ target: "hosted", distro: "ubuntu" });
+    const node = r.prerequisites.find((p) => /Node\.js/.test(p))!;
+    expect(node).not.toMatch(/only if you install with npm/);
+    expect(node).toMatch(/only when no node is installed/);
+    const installer = r.steps.find((s) => s.commands.some((c) => c.includes("install.sh")))!;
+    expect(installer.detail).toMatch(/adds Node\.js 24 only when no node is installed/);
+    expect(installer.detail).not.toMatch(/if it is missing/);
   });
 });

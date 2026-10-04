@@ -62,6 +62,36 @@ describe("OpenAI plugin package matches the server", () => {
     vi.restoreAllMocks();
   });
 
+  // The first starter prompt led with a question, which the kernel reader
+  // stopped accepting before a log line in R2b-3: it came back "No supported
+  // command output was recognised" while the review doc still said it fired
+  // (R3-3). Each starter prompt is a row of the doc's table, and a row that
+  // expects analyze_server_output must get the finding it names.
+  it("every starter prompt is in the review doc, and one that expects a finding gets it", () => {
+    const doc = readFileSync(join(PACKAGE, "REVIEW_TEST_CASES.md"), "utf8");
+    const rows = doc
+      .split("\n")
+      .filter((l) => /^\| S\d+ \|/.test(l))
+      .map((l) => {
+        const cells = l.split(" | ");
+        return { prompt: /^`(.*)`$/.exec(cells[1])?.[1] ?? "", expected: cells[2] };
+      });
+    const prompts: string[] = plugin.extensions["com.openai"].interface.defaultPrompt;
+    expect(rows.map((r) => r.prompt)).toEqual(prompts);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      for (const row of rows) {
+        const want = /^`analyze_server_output`: one `([a-z_]+)` \(([a-z]+)\)/.exec(row.expected);
+        if (!row.expected.startsWith("`analyze_server_output`")) continue;
+        expect(want, row.expected).not.toBeNull();
+        const a = analyzeOutput(row.prompt);
+        expect(a.findings.map((f) => [f.rule_id, f.severity]), row.prompt).toEqual([[want![1], want![2]]]);
+      }
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("the out-of-scope Windows paste is recognised as nothing, as its case says", () => {
     const windows = cases.negative.find((c) => /Windows Event Viewer/.test(c.prompt));
     expect(windows).toBeDefined();

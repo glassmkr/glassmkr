@@ -8,11 +8,15 @@
 # stray .DS_Store or editor backup can never ride along into a public listing.
 set -euo pipefail
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 pkg="$here/../openai-plugin"
 dist="$here/../dist"
 
-node "$here/validate-openai-plugin.mjs"
+# Fail closed: a validator that did not run prints no verdict, and its silence
+# once passed for a clean bill (R3-22).
+report="$(node "$here/validate-openai-plugin.mjs")"
+printf '%s\n' "$report"
+grep -q '^\[openai-plugin\] OK: no findings$' <<<"$report"
 
 version="$(node -p "require('$pkg/plugin.json').version")"
 name="$(node -p "require('$pkg/plugin.json').name")"
