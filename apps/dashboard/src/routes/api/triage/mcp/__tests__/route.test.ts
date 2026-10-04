@@ -10,7 +10,7 @@ const takeMock = vi.hoisted(() =>
     degraded: false,
   })),
 );
-vi.mock("$lib/server/auth/rate-limit.js", () => ({ take: takeMock }));
+vi.mock("$lib/server/auth/rate-limit.js", () => ({ take: takeMock, charge: vi.fn(async () => {}) }));
 
 // HTTP and protocol behaviour only: one fake parser stands in for the registry
 // so this file does not depend on how any real parser reads its format. The
@@ -37,8 +37,12 @@ vi.mock("$lib/server/triage/registry.js", () => ({
 
 import { z } from "zod";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { DELETE, GET, OPTIONS, POST } from "../+server.js";
 import { analysisOutputSchema } from "$lib/server/triage/analyze.js";
+import { TRIAGE_ARGUMENT_KEYS } from "$lib/server/triage/mcp-server.js";
 import { captureOutputSchema } from "$lib/server/triage/capture.js";
 import { setupOutputSchema } from "$lib/server/triage/setup.js";
 import { isCsrfViolation } from "$lib/server/auth/csrf.js";
@@ -264,12 +268,18 @@ describe("HTTP guards", () => {
     expect(JSON.stringify(body.result.content)).toMatch(/200000/);
   });
 
-  it("a 200,000-character paste of short CRLF lines is read, not refused", async () => {
+  // R6-2: every reader re-scans every line, so a paste of 200,000 short lines
+  // cost ten times a realistic one. It still gets the tool's own answer, not a
+  // transport 413 (R5-14), and that answer says what the limit is.
+  it("a 200,000-character paste of short CRLF lines gets the tool's own line-limit error, not a 413", async () => {
     const output = "ab\r\n".repeat(50_000);
     expect(output.length).toBe(200_000);
     const { res, body } = await rpc("tools/call", { name: "analyze_server_output", arguments: { output } });
     expect(res.status).toBe(200);
-    expect(body.result.isError).toBeFalsy();
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toBe(
+      "This output has 50,000 lines; analyze_server_output reads at most 20,000. Pass the section for the affected device.",
+    );
   });
 
   it("400s malformed JSON with a JSON-RPC parse error", async () => {
@@ -392,6 +402,72 @@ describe("HTTP guards", () => {
   });
 });
 
+// R6-1: the SDK validates a message several times with schemas that copy
+// every unknown key, so a 500 KB ping padded with 62,000 keys in params._meta
+// cost about 65 ms of CPU against 0.3 ms for a real one, debited only from the
+// per-IP bucket, and the same padding on a tool call added about 30 ms.
+describe("padded messages (R6-1)", () => {
+  const pad = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i.toString(36)}`, 1]));
+
+  it("413s a large body for any method but tools/call, and leaves a normal one alone", async () => {
+    const keys = pad(40_000);
+    for (const message of [
+      { jsonrpc: "2.0", id: 1, method: "ping", params: { _meta: keys } },
+      { jsonrpc: "2.0", id: 1, method: "tools/list", params: keys },
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { ...INITIALIZE, _meta: keys } },
+      { jsonrpc: "2.0", method: "notifications/initialized", params: { _meta: keys } },
+      { jsonrpc: "2.0", id: 1, method: "no/such/method", params: { _meta: keys } },
+      { jsonrpc: "2.0", id: 1, result: keys },
+      { ...keys, jsonrpc: "2.0", id: 1, method: "ping" },
+    ]) {
+      const res = await post(JSON.stringify(message));
+      expect(res.status, JSON.stringify(message).slice(0, 60)).toBe(413);
+      expect((await res.json()).error.message).toBe("Request body is too large for this method; only tools/call carries pasted output.");
+    }
+    const { res, body } = await rpc("ping");
+    expect(res.status).toBe(200);
+    expect(body.result).toEqual({});
+  });
+
+  it("hands the SDK only the keys a tool call uses", async () => {
+    const spy = vi.spyOn(WebStandardStreamableHTTPServerTransport.prototype, "handleRequest");
+    const keys = pad(10_000);
+    const res = await post(JSON.stringify({
+      ...keys,
+      jsonrpc: "2.0",
+      id: 41,
+      method: "tools/call",
+      params: {
+        ...keys,
+        name: "analyze_server_output",
+        arguments: { ...keys, output: MDSTAT, distro: "debian" },
+        _meta: { ...keys, "openai/subject": "v1/padded", progressToken: 5 },
+        task: { ttl: 1000 },
+      },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(41);
+    expect(analysisOutputSchema.parse(body.result.structuredContent).findings.map((f) => f.rule_id)).toEqual(["raid_degraded"]);
+    expect((spy.mock.calls[0][1] as { parsedBody: unknown }).parsedBody).toEqual({
+      jsonrpc: "2.0",
+      id: 41,
+      method: "tools/call",
+      params: {
+        name: "analyze_server_output",
+        arguments: { output: MDSTAT, distro: "debian" },
+        _meta: { "openai/subject": "v1/padded", progressToken: 5 },
+      },
+    });
+  });
+
+  it("keeps every argument any tool declares", async () => {
+    const { body } = await rpc("tools/list", {});
+    const declared = new Set((body.result.tools as any[]).flatMap((t) => Object.keys(t.inputSchema.properties ?? {})));
+    expect([...declared].sort()).toEqual([...TRIAGE_ARGUMENT_KEYS].sort());
+  });
+});
+
 describe("CORS", () => {
   // R2-6: any https origin used to pass, so any web page could make each
   // visitor's browser spend the global bucket. R2-24: a local inspector in a
@@ -474,13 +550,54 @@ describe("rate limits", () => {
     });
   });
 
-  it("429s when the global bucket is empty", async () => {
+  // R6-5: an empty global bucket was a transport 429 with id null, which the
+  // SDK client throws on, so the model had no result to explain. It is now a
+  // tool error for the request's own id, like the per-user limit.
+  it("answers an empty global bucket with a tool error for the request's id, not a 429", async () => {
     takeMock
       .mockResolvedValueOnce({ allowed: true, remaining: 10, retryAfterSeconds: 0, degraded: false })
-      .mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfterSeconds: 1, degraded: false });
-    const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_capture_command", arguments: { goal: "zfs" } } }));
-    expect(res.status).toBe(429);
+      .mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfterSeconds: 3, degraded: false });
+    const res = await post(JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "get_capture_command", arguments: { goal: "zfs" } } }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(9);
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toBe("Glassmkr's triage service is busy right now. Wait about 3 seconds, then make the same call again.");
     expect(takeMock.mock.calls.map((c) => c[0].namespace)).toEqual(["triage:ip", "triage:global"]);
+  });
+
+  it("an SDK client gets the busy answer as a tool result it can relay", async () => {
+    takeMock.mockImplementation(async (tier) => ({
+      allowed: tier.namespace !== "triage:global",
+      remaining: 0,
+      retryAfterSeconds: 7,
+      degraded: false,
+    }));
+    const handlers: Record<string, (e: any) => Promise<Response>> = { GET, POST, DELETE, OPTIONS } as any;
+    const transport = new StreamableHTTPClientTransport(new URL(URL_), {
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        return await handlers[request.method](eventFor(request));
+      },
+    });
+    const client = new Client({ name: "route-test", version: "1.0.0" });
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({ name: "analyze_server_output", arguments: { output: MDSTAT } });
+      expect(result.isError).toBe(true);
+      expect((result.content as Array<{ text: string }>)[0].text).toBe(
+        "Glassmkr's triage service is busy right now. Wait about 7 seconds, then make the same call again.",
+      );
+    } finally {
+      await client.close();
+      takeMock.mockReset();
+      takeMock.mockImplementation(async () => ({ allowed: true, remaining: 1, retryAfterSeconds: 0, degraded: false }));
+    }
+  });
+
+  it("debits the per-user bucket before the global one", async () => {
+    await rpc("tools/call", { name: "analyze_server_output", arguments: { output: MDSTAT }, _meta: { "openai/subject": "v1/order" } });
+    expect(takeMock.mock.calls.map((c) => c[0].namespace)).toEqual(["triage:ip", "triage:subject", "triage:global"]);
   });
 
   it("turns a per-subject limit into a tool error, not an HTTP error", async () => {

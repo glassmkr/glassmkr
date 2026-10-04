@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // the Redis-backed rate limiter is faked (it fails open without Redis).
 vi.mock("$lib/server/auth/rate-limit.js", () => ({
   take: vi.fn(async () => ({ allowed: true, remaining: 1, retryAfterSeconds: 0, degraded: false })),
+  charge: vi.fn(async () => {}),
 }));
 
 import { POST } from "../+server.js";

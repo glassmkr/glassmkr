@@ -20,8 +20,9 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { analyzeOutput } from "../analyze";
+import { MAX_OUTPUT_LINES } from "../mcp-server";
 import type { TriageFormat } from "../types";
-import { adversarialInputs, gpuXidJoin, raidSmartJoin, roundFourInputs } from "./adversarial-inputs";
+import { adversarialInputs, gpuXidJoin, raidSmartJoin, roundFourInputs, roundSixInputs } from "./adversarial-inputs";
 
 const SIZE = 200_000;
 const BUDGET_RATIO = 20;
@@ -75,7 +76,7 @@ describe("hostile 200 KB pastes stay linear", () => {
     }
   });
 
-  for (const { name, text } of adversarialInputs(SIZE)) {
+  for (const { name, text } of [...adversarialInputs(SIZE), ...roundSixInputs(SIZE, MAX_OUTPUT_LINES)]) {
     it(name, () => {
       expect(text.length).toBeLessThanOrEqual(SIZE + 64);
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -91,6 +92,39 @@ describe("hostile 200 KB pastes stay linear", () => {
       }
     });
   }
+});
+
+// R6-2: six detect lines before 200,000 newlines ran every reader over every
+// line, about ten times a realistic paste and inside the ratio budget above,
+// so 20 calls a second held the dashboard's event loop. The tool refuses a
+// paste over MAX_OUTPUT_LINES (mcp-server.test.ts), and the global bucket
+// charges a call by its time; up to that limit, the worst known shapes cost a
+// few times a realistic paste.
+describe("pastes at the line limit cost a few times a realistic one (R6-2)", () => {
+  const best = (text: string) => {
+    let ms = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const started = performance.now();
+      analyzeOutput(text);
+      ms = Math.min(ms, performance.now() - started);
+    }
+    return ms;
+  };
+
+  it("every reader's detect line, then short lines up to the limit", () => {
+    const unit = BASELINE_FIXTURES.map((f) => readFileSync(new URL(f, FIXTURES), "utf8")).join("\n");
+    const realistic = unit.repeat(Math.ceil(SIZE / unit.length)).slice(0, SIZE);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const baseline = best(realistic);
+      for (const { name, text } of roundSixInputs(SIZE, MAX_OUTPUT_LINES)) {
+        expect(text.split("\n").length, name).toBeLessThanOrEqual(MAX_OUTPUT_LINES);
+        expect(best(text), `${name} (realistic ${baseline.toFixed(1)} ms)`).toBeLessThan(4 * baseline + 5);
+      }
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
 
 // R4-14: the SEL component list was deduplicated with Array.includes, so a

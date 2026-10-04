@@ -296,3 +296,30 @@ export function roundFiveInputs(size: number): AdversarialInput[] {
     { name: "run of no-break spaces in a padded key line", text: fill("Device Model:", "\u00a0", size, "x\n") },
   ];
 }
+
+// Review round 6: one line for each reader's detect(), so every reader scans
+// every line after it. Six detect lines before 200,000 newlines cost about
+// 100 ms against 10 ms for a realistic paste (R6-2); the tool now refuses a
+// paste over its line limit, so these fill the paste up to that limit.
+const EVERY_READER = [
+  "SMART overall-health self-assessment test result: PASSED",
+  "  pool: tank",
+  " state: ONLINE",
+  "Personalities : [raid1]",
+  "md0 : active raid1 sda1[0] sdb1[1]",
+  "[    1.000000] Linux version 6.1.0",
+  "SEL Information",
+  NVSMI_BANNER.trimEnd(),
+].join("\n") + "\n";
+
+export function roundSixInputs(size: number, maxLines: number): AdversarialInput[] {
+  const rows = maxLines - EVERY_READER.split("\n").length;
+  const width = Math.floor((size - EVERY_READER.length) / rows) - 1;
+  const row = (start: string) => (start.slice(0, width).padEnd(width, start.slice(-1)) + "\n").repeat(rows);
+  return [
+    { name: "every reader's detect line, then newlines and one long line", text: fill(EVERY_READER + "\n".repeat(rows - 1), "a", size) },
+    { name: "every reader's detect line, then short lines of a", text: EVERY_READER + row("a") },
+    { name: "every reader's detect line, then short lines of |", text: EVERY_READER + row("|") },
+    { name: "every reader's detect line, then short bracketed lines", text: EVERY_READER + row("[ 1.0] a") },
+  ];
+}

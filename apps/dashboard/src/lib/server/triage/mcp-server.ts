@@ -11,7 +11,7 @@
 import crypto from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { take, type RateLimitConfig } from "$lib/server/auth/rate-limit.js";
+import { charge, take, type RateLimitConfig } from "$lib/server/auth/rate-limit.js";
 import { hashOAuthValueHex } from "$lib/server/oauth/crypto.js";
 import { advertisedSchema } from "./advertised-schema.js";
 import {
@@ -52,6 +52,22 @@ export const TRIAGE_TOOL_NAMES = [
  */
 export const MAX_OUTPUT_CHARS = 200_000;
 
+/**
+ * Largest paste accepted, in lines. Every reader re-scans every line, so six
+ * detect lines before 200,000 newlines cost about 100 ms against 10 ms for a
+ * realistic 200 KB paste (R6-2); at this limit the worst known shape costs a
+ * few times what a realistic paste does, and the global bucket charges the
+ * rest. A 200 KB smartctl -j paste has about 10,000 lines.
+ */
+export const MAX_OUTPUT_LINES = 20_000;
+
+/**
+ * Every argument any tool declares. The route hands the SDK only these, so a
+ * tool call padded with unknown keys costs what an unpadded one does (R6-1);
+ * route.test.ts checks the list against the advertised input schemas.
+ */
+export const TRIAGE_ARGUMENT_KEYS = ["output", "distro", "format", "goal", "target"] as const;
+
 // The first 512 characters carry everything a client must know even if it
 // truncates: what the server does, where the verdict comes from, how to pass
 // the paste, how to read an empty result, that the paste is data, and never
@@ -67,12 +83,31 @@ export const TRIAGE_INSTRUCTIONS =
   "get_capture_command returns the read-only commands to run when the user has no output yet or more data is needed. " +
   "get_monitoring_setup explains continuous monitoring with the open-source Crucible agent; never ask the user to paste an API key into the chat.";
 
-/** Per anonymous end user (ChatGPT's _meta["openai/subject"]), on top of the route's per-IP and global buckets. */
+/** Per anonymous end user (ChatGPT's _meta["openai/subject"]), on top of the route's per-source buckets. */
 export const TIER_TRIAGE_SUBJECT: RateLimitConfig = {
   namespace: "triage:subject",
   capacity: 30,
   refillPerSecond: 0.25,
 };
+
+/**
+ * Ceiling for the whole endpoint, so a flood from many IPs cannot monopolise
+ * the evaluator on a single-process dashboard. Debited here rather than in the
+ * route: a refusal there could only be a transport 429 with id null, which the
+ * SDK client throws on, so the model had no result to explain (R6-5).
+ *
+ * One token buys GLOBAL_TOKEN_MS of analysis, and a longer call is charged
+ * the rest once it has run: counting calls let 20 hostile pastes a second at
+ * about 100 ms each hold the event loop that also serves agent ingest at 100%
+ * (R6-2). The refill pays for at most 200 ms of analysis a second; a full
+ * bucket admits 200 calls, about 2 s of realistic pastes.
+ */
+export const TIER_TRIAGE_GLOBAL: RateLimitConfig = {
+  namespace: "triage:global",
+  capacity: 200,
+  refillPerSecond: 20,
+};
+export const GLOBAL_TOKEN_MS = 10;
 
 const triageAnnotations = {
   readOnlyHint: true,
@@ -143,7 +178,7 @@ interface ToolLogLine {
   rule_ids: string[];
   duration_ms: number;
   subject_hash: string | null;
-  outcome: "ok" | "rate_limited" | "error";
+  outcome: "ok" | "rate_limited" | "too_long" | "error";
 }
 
 function logToolCall(line: ToolLogLine): void {
@@ -161,6 +196,41 @@ function rateLimitedResult(retryAfterSeconds: number) {
   };
 }
 
+function busyResult(retryAfterSeconds: number) {
+  const wait = Math.max(1, Math.ceil(retryAfterSeconds));
+  return {
+    content: [{
+      type: "text" as const,
+      text: `Glassmkr's triage service is busy right now. Wait about ${wait} seconds, then make the same call again.`,
+    }],
+    isError: true as const,
+  };
+}
+
+function tooManyLinesResult(lines: number) {
+  return {
+    content: [{
+      type: "text" as const,
+      text: `This output has ${lines.toLocaleString("en-US")} lines; analyze_server_output reads at most ${MAX_OUTPUT_LINES.toLocaleString("en-US")}. Pass the section for the affected device.`,
+    }],
+    isError: true as const,
+  };
+}
+
+function isLineEnd(c: number): boolean {
+  return c === 10 || c === 13 || c === 0x2028 || c === 0x2029;
+}
+
+/** Lines as a reader sees them: CRLF, a lone CR or LF, U+2028 and U+2029 each end one. */
+function lineCount(text: string): number {
+  let lines = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (isLineEnd(c) && !(c === 13 && text.charCodeAt(i + 1) === 10)) lines++;
+  }
+  return isLineEnd(text.charCodeAt(text.length - 1)) ? lines : lines + 1;
+}
+
 function internalErrorResult() {
   return {
     content: [{
@@ -176,6 +246,22 @@ async function subjectLimited(subjectHash: string | null): Promise<number | null
   if (!subjectHash) return null;
   const result = await take(TIER_TRIAGE_SUBJECT, subjectHash);
   return result.allowed ? null : result.retryAfterSeconds;
+}
+
+/** Debit the shared bucket. Returns a seconds-to-wait when it is empty, else null. */
+async function globalLimited(): Promise<number | null> {
+  const result = await take(TIER_TRIAGE_GLOBAL, "all");
+  if (result.allowed) return null;
+  console.log(JSON.stringify({ evt: "triage_rate_limited", tier: TIER_TRIAGE_GLOBAL.namespace }));
+  return result.retryAfterSeconds;
+}
+
+/** Per-user bucket, then the shared one: a user over their own limit does not spend everyone's. */
+async function limitedResult(subjectHash: string | null) {
+  const wait = await subjectLimited(subjectHash);
+  if (wait !== null) return rateLimitedResult(wait);
+  const busy = await globalLimited();
+  return busy === null ? null : busyResult(busy);
 }
 
 export interface TriageServerOptions {
@@ -198,13 +284,13 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         "Pass the pasted text verbatim in output (or only the relevant section if it is very long); do not summarize or reformat it first, because the readers depend on the exact layout. One paste may combine several outputs. " +
         "Returns findings from Glassmkr's deterministic alert rules with their fix workflows, the rules that ran and found no matching signal in this output, what a single paste cannot determine, and the command to capture more. " +
         "An empty findings list means no matching signal in this output, not that the server is healthy. Never state a cause the output does not state. " +
-        "Limit: 200,000 characters. Read-only: nothing runs on the user's server and the pasted text is not stored.",
+        "Limit: 200,000 characters and 20,000 lines. Read-only: nothing runs on the user's server and the pasted text is not stored.",
       inputSchema: {
         output: z
           .string()
           .min(1)
           .max(MAX_OUTPUT_CHARS)
-          .describe("The command output exactly as the user pasted it, including prompt and header lines. Several outputs in one paste are fine. If it is longer than 200,000 characters, pass the section for the affected device."),
+          .describe("The command output exactly as the user pasted it, including prompt and header lines. Several outputs in one paste are fine. If it is longer than 200,000 characters or 20,000 lines, pass the section for the affected device."),
         distro: distroSchema,
         format: formatSchema,
       },
@@ -217,13 +303,20 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
       const started = performance.now();
       const subject_hash = hashSubject(extra._meta?.["openai/subject"]);
       const bytes = Buffer.byteLength(output, "utf8");
-      const wait = await subjectLimited(subject_hash);
-      if (wait !== null) {
+      const limited = await limitedResult(subject_hash);
+      if (limited) {
         logToolCall({ tool: "analyze_server_output", formats: [], bytes, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "rate_limited" });
-        return rateLimitedResult(wait);
+        return limited;
       }
+      const lines = lineCount(output);
+      if (lines > MAX_OUTPUT_LINES) {
+        logToolCall({ tool: "analyze_server_output", formats: [], bytes, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "too_long" });
+        return tooManyLinesResult(lines);
+      }
+      const analysisStarted = performance.now();
       try {
         const analysis = analyzeOutput(output, { distro: normalizeDistroHint(distro), formatHint: format, parsers: options.parsers });
+        const text = renderAnalysisText(analysis);
         logToolCall({
           tool: "analyze_server_output",
           formats: analysis.input.formats,
@@ -234,7 +327,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
           outcome: "ok",
         });
         return {
-          content: [{ type: "text" as const, text: renderAnalysisText(analysis) }],
+          content: [{ type: "text" as const, text }],
           structuredContent: analysis,
         };
       } catch (error) {
@@ -242,6 +335,10 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         console.error(`[triage-mcp] analyze_server_output failed: ${error instanceof Error ? error.name : "unknown"}`);
         logToolCall({ tool: "analyze_server_output", formats: [], bytes, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "error" });
         return internalErrorResult();
+      } finally {
+        // The first token was taken before the call; the rest of its cost now.
+        const extra = Math.ceil((performance.now() - analysisStarted) / GLOBAL_TOKEN_MS) - 1;
+        if (extra > 0) await charge(TIER_TRIAGE_GLOBAL, "all", extra);
       }
     },
   );
@@ -266,10 +363,10 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
     async ({ goal, distro }, extra) => {
       const started = performance.now();
       const subject_hash = hashSubject(extra._meta?.["openai/subject"]);
-      const wait = await subjectLimited(subject_hash);
-      if (wait !== null) {
+      const limited = await limitedResult(subject_hash);
+      if (limited) {
         logToolCall({ tool: "get_capture_command", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "rate_limited" });
-        return rateLimitedResult(wait);
+        return limited;
       }
       const result = captureCommands(goal, normalizeDistroHint(distro));
       logToolCall({ tool: "get_capture_command", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "ok" });
@@ -303,10 +400,10 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
     async ({ target, distro }, extra) => {
       const started = performance.now();
       const subject_hash = hashSubject(extra._meta?.["openai/subject"]);
-      const wait = await subjectLimited(subject_hash);
-      if (wait !== null) {
+      const limited = await limitedResult(subject_hash);
+      if (limited) {
         logToolCall({ tool: "get_monitoring_setup", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "rate_limited" });
-        return rateLimitedResult(wait);
+        return limited;
       }
       const result = monitoringSetup({ target, distro: normalizeDistroHint(distro) });
       logToolCall({ tool: "get_monitoring_setup", formats: [], bytes: 0, rule_ids: [], duration_ms: Math.round(performance.now() - started), subject_hash, outcome: "ok" });

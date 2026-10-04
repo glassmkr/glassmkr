@@ -98,7 +98,47 @@ redis.call('EXPIRE', key, ttl_s)
 return { allowed, tonumber(string.format('%.4f', tokens)), retry_after_ms }
 `;
 
+// ----------------------------------------------------------------------------
+// Lua script: atomic charge after the fact.
+// ----------------------------------------------------------------------------
+// KEYS[1] = full Redis key; ARGV[1..3] as above; ARGV[4] = tokens to debit.
+//
+// Debits unconditionally and may leave the bucket below zero, so a caller
+// that only learns a request's cost once it has run (the anonymous triage
+// endpoint) can make that request pay for it: take() then refuses until the
+// refill has covered the debt. The TTL covers the time to refill from the
+// debt, so idle expiry never forgives it early.
+const CHARGE_SCRIPT = `
+local key = KEYS[1]
+local capacity = tonumber(ARGV[1])
+local refill = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local cost = tonumber(ARGV[4])
+
+local state = redis.call('HMGET', key, 'tokens', 'ts')
+local tokens = tonumber(state[1])
+local ts = tonumber(state[2])
+
+if tokens == nil then
+  tokens = capacity
+  ts = now
+end
+
+local elapsed_s = (now - ts) / 1000
+if elapsed_s > 0 then
+  tokens = math.min(capacity, tokens + (elapsed_s * refill))
+end
+tokens = tokens - cost
+
+redis.call('HMSET', key, 'tokens', tostring(tokens), 'ts', tostring(now))
+local ttl_s = math.max(60, math.min(86400, math.ceil((capacity - tokens) / refill * 2)))
+redis.call('EXPIRE', key, ttl_s)
+
+return tonumber(string.format('%.4f', tokens))
+`;
+
 let cachedScriptSha: string | null = null;
+let cachedChargeSha: string | null = null;
 
 async function loadScript(redis: Redis): Promise<string> {
   if (cachedScriptSha !== null) return cachedScriptSha;
@@ -113,6 +153,7 @@ async function loadScript(redis: Redis): Promise<string> {
  */
 export function resetRateLimitScriptCacheForTests(): void {
   cachedScriptSha = null;
+  cachedChargeSha = null;
 }
 
 /**
@@ -158,6 +199,33 @@ export async function take(
     cachedScriptSha = null;
     console.error("[rate-limit] degraded open due to Redis error:", (err as Error).message);
     return { allowed: true, remaining: cfg.capacity, retryAfterSeconds: 0, degraded: true };
+  }
+}
+
+/**
+ * Debit `tokens` more from a bucket after the request they pay for has run,
+ * allowing the balance to go below zero (see CHARGE_SCRIPT). Never throws:
+ * without Redis, or on a Redis error, the charge is skipped, as take()
+ * degrades open.
+ */
+export async function charge(cfg: RateLimitConfig, identifier: string, tokens: number): Promise<void> {
+  if (!(tokens > 0)) return;
+  const redis = getRedis();
+  if (redis === null) return;
+  try {
+    if (cachedChargeSha === null) cachedChargeSha = (await redis.script("LOAD", CHARGE_SCRIPT)) as string;
+    await redis.evalsha(
+      cachedChargeSha,
+      1,
+      `rl:${cfg.namespace}:${identifier}`,
+      String(cfg.capacity),
+      String(cfg.refillPerSecond),
+      String(Date.now()),
+      String(tokens),
+    );
+  } catch (err) {
+    cachedChargeSha = null;
+    console.error("[rate-limit] charge skipped due to Redis error:", (err as Error).message);
   }
 }
 

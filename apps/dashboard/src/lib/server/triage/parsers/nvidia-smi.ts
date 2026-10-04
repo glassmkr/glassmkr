@@ -506,8 +506,9 @@ function queryIndents(lines: string[]): { indents: number[]; stripped: number } 
   return { indents, stripped };
 }
 
-function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: string; stripped: number } {
+function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: string; attached?: number; stripped: number } {
   let driver: string | undefined;
+  let attached: number | undefined;
   let gpus = 0;
   let cur: QueryBlock | null = null;
   const { indents, stripped } = queryIndents(lines);
@@ -539,6 +540,10 @@ function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: 
     }
     if (!cur) {
       if (key === "driver version") driver ??= identValue(kv?.[2]);
+      if (key === "attached gpus" && attached === undefined) {
+        const count = /^\d{1,4}$/.exec(kv?.[2]?.trim() ?? "");
+        if (count) attached = Number(count[0]);
+      }
       continue;
     }
     const block: QueryBlock = cur;
@@ -558,7 +563,7 @@ function parseQuery(lines: string[], table: GpuTable): { gpus: number; driver?: 
     }
   }
   finish();
-  return { gpus, driver, stripped };
+  return { gpus, driver, attached, stripped };
 }
 
 function gpuFromQuery(f: Map<string, string>, bdf: string): RawGpu {
@@ -916,6 +921,8 @@ interface BuildCounts {
   reasonsMissing: number;
   pcieSkipped: number;
   eccSkipped: number;
+  /** Skipped GPUs whose output has no ECC mode or counter at all (not off, not N/A). */
+  eccAbsent: number;
   /** GPUs with a non-zero remapped-row count or a pending remap. */
   remapGpus: number;
   remapUncorrectable: number;
@@ -988,6 +995,10 @@ function buildGpus(raws: RawGpu[], counts: BuildCounts): SnapshotGpu[] {
     ].some((n) => typeof n === "number");
     const eccOn = (r.eccMode === true || r.eccMode === undefined) && eccNumbers;
     if (!eccOn) counts.eccSkipped++;
+    const eccPrinted = r.eccMode !== undefined || [
+      r.eccCorrVol, r.eccCorrAgg, r.eccUncVol, r.eccUncAgg, sbe, dbe, pending, r.remapCorr, r.remapUnc, r.remapPending,
+    ].some((n) => n !== undefined);
+    if (!eccOn && !eccPrinted) counts.eccAbsent++;
 
     if (r.temp === undefined) counts.tempMissing++;
     if (r.powerDraw === undefined || r.powerLimit === undefined) counts.powerMissing++;
@@ -1096,7 +1107,9 @@ function buildNotes(
   }
   if (counts.eccSkipped > 0) {
     notes.push({
-      level: "info",
+      // A warning when no GPU's ECC was checked, so the text block says why
+      // the check is missing (R6-10).
+      level: counts.eccSkipped >= total ? "warning" : "info",
       message: `ECC checks skipped for ${gpuCount(counts.eccSkipped)}: ECC is disabled or not supported, or the paste shows no ECC counters for them.`,
     });
   }
@@ -1284,6 +1297,7 @@ function parseUnsafe(text: string): ParserResult {
     reasonsMissing: 0,
     pcieSkipped: 0,
     eccSkipped: 0,
+    eccAbsent: 0,
     remapGpus: 0,
     remapUncorrectable: 0,
     remapCorrectable: 0,
@@ -1354,6 +1368,8 @@ function parseUnsafe(text: string): ParserResult {
     // rule reads fields only -q or the CSV query carry, and only some GPUs or
     // some columns may have them.
     rules_checked: RULES.filter((r) => fed[r]),
+    ...((!fed.gpu_uncorrected_ecc && counts.eccAbsent > 0) || !fed.gpu_thermal_critical ? { gpu_fields_absent: true as const } : {}),
+    ...(query.attached !== undefined ? { host_gpus: query.attached } : {}),
   };
 }
 

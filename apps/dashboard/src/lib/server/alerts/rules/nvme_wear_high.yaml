@@ -72,9 +72,11 @@ fix:
         lsblk {{device}}
         cat /proc/mdstat
 
-        # 3. Establish RAID membership. Read-only; this runs.
-        ARRAY=$(lsblk -no PKNAME,TYPE {{device}} 2>/dev/null | awk '$2 ~ /^raid/ {print "/dev/"$1; exit}')
-        MEMBER=$(lsblk -no NAME,TYPE {{device}} 2>/dev/null | awk '$2=="part"{print "/dev/"$1; exit}')
+        # 3. Establish RAID membership. Read-only; this runs. List mode,
+        #    read from the raid row: its NAME is the array and its PKNAME
+        #    the member (the device itself, or a partition of it).
+        ARRAY=$(lsblk -lno NAME,PKNAME,TYPE {{device}} 2>/dev/null | awk '$3 ~ /^raid/ {print "/dev/"$1; exit}')
+        MEMBER=$(lsblk -lno NAME,PKNAME,TYPE {{device}} 2>/dev/null | awk '$3 ~ /^raid/ {print "/dev/"$2; exit}')
         if [ -n "$ARRAY" ]; then echo "member $MEMBER belongs to $ARRAY"; else echo "not a RAID member: skip the mdadm steps"; fi
         #
         #    The two commands below are commented DELIBERATELY. Failing a disk

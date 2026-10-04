@@ -8,11 +8,11 @@
 // Stateless Streamable HTTP with JSON responses: a fresh McpServer and
 // transport per POST, no sessions, no auth, no cookies, no database. GET and
 // DELETE (SSE stream and session close) do not apply to a stateless server and
-// answer 405. Abuse control is token buckets: per source IP, per IPv6 /64 and
-// /48, and global (tool calls only) here, per anonymous end user inside the
-// tool handlers. Browsers are held to the connector origins plus loopback. The
-// request body is never logged; see $lib/server/triage/mcp-server.ts for the
-// one log line per tool call.
+// answer 405. Abuse control is token buckets: per source IP and per IPv6 /64
+// and /48 here, per anonymous end user and global inside the tool handlers.
+// Browsers are held to the connector origins plus loopback. The request body
+// is never logged; see $lib/server/triage/mcp-server.ts for the one log line
+// per tool call.
 //
 // MCP_TRIAGE_ENABLED="0" turns the endpoint off (404) and "1" turns it on.
 // Unset: on for the hosted deployment, off for self-hosted, so an
@@ -25,7 +25,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { take, type RateLimitConfig } from "$lib/server/auth/rate-limit.js";
 import { getSourceIp } from "$lib/server/auth/source-ip.js";
 import { getMcpPublicOrigin } from "$lib/server/oauth/constants.js";
-import { createTriageMcpServer, MAX_OUTPUT_CHARS } from "$lib/server/triage/mcp-server.js";
+import { createTriageMcpServer, MAX_OUTPUT_CHARS, TRIAGE_ARGUMENT_KEYS } from "$lib/server/triage/mcp-server.js";
 import { SELF_HOSTED } from "$lib/server/self-hosted";
 
 // About twice the JSON encoding of a MAX_OUTPUT_CHARS paste, so a paste over
@@ -34,13 +34,24 @@ import { SELF_HOSTED } from "$lib/server/self-hosted";
 // got a transport 413 that clients show as a connector failure (R5-14).
 const MAX_POST_BODY_BYTES = 512 * 1024;
 const BODY_TOO_LARGE = `Request body is too large: analyze_server_output accepts at most ${MAX_OUTPUT_CHARS.toLocaleString("en-US")} characters in output; pass the section for the affected device.`;
+// The SDK validates a message several times with schemas that copy every key
+// they do not know, so a 500 KB ping padded with 62,000 keys in params._meta
+// cost about 65 ms of CPU against 0.3 ms for a real one, and it never reaches
+// the global bucket (R6-1). Only a tool call carries a paste; a real
+// initialize, tools/list, ping or notification is under 2 KB.
+const MAX_OTHER_BODY_BYTES = 16 * 1024;
+const OTHER_BODY_TOO_LARGE = "Request body is too large for this method; only tools/call carries pasted output.";
+// What a tool call may carry to the SDK; the tools read nothing else, and
+// padding anywhere else cost what it does on a ping (R6-1).
+const TOOL_CALL_KEYS = ["jsonrpc", "id", "method", "params"] as const;
+const TOOL_CALL_META_KEYS = ["progressToken", "openai/subject", "openai/locale", "openai/userAgent", "openai/userLocation"] as const;
 const ALLOW_METHODS = "POST, OPTIONS";
 
 // Generous per IP: a connector platform calls from a small pool of egress IPs
 // shared by many users, and the per-user bucket lives in the tool handler.
 const TIER_TRIAGE_IP: RateLimitConfig = { namespace: "triage:ip", capacity: 60, refillPerSecond: 1 };
 // An IPv6 host usually holds a whole /64, so per-address buckets gave one host
-// 2^64 fresh buckets and it could hold the global bucket below at zero for
+// 2^64 fresh buckets and it could hold the global bucket at zero for
 // every ChatGPT and Claude user (R1-15). One /64 now gets at most a fifth of
 // the global refill. It is a second bucket, not a re-key of the per-IP one: a
 // connector platform calling from many addresses in one /64 keeps more than a
@@ -50,11 +61,10 @@ const TIER_TRIAGE_NET64: RateLimitConfig = { namespace: "triage:net64", capacity
 // of one allocation matched the global refill and eight held it at zero for
 // everyone else (R2-6). The whole /48 gets less than a third of it.
 const TIER_TRIAGE_NET48: RateLimitConfig = { namespace: "triage:net48", capacity: 180, refillPerSecond: 6 };
-// Ceiling for the whole endpoint, so a flood from many IPs cannot monopolise
-// the evaluator on a single-process dashboard. Debited only by tool calls,
-// after the body is read: the evaluator runs there, and a malformed body or a
-// notification spent a token everyone shares (R2-6).
-const TIER_TRIAGE_GLOBAL: RateLimitConfig = { namespace: "triage:global", capacity: 600, refillPerSecond: 20 };
+// The ceiling for the whole endpoint (TIER_TRIAGE_GLOBAL) is debited in the
+// tool handlers, so only a tool call spends it: a malformed body or a
+// notification spent a token everyone shares (R2-6), and a refusal there is a
+// tool result the model can relay (R6-5).
 
 // The connector platforms call from their servers, with no Origin. A browser
 // always sends one, so only these may call from a page: the connector hosts,
@@ -174,11 +184,44 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
+/**
+ * The keys of `source` named in `keys`, looked up by name: the caller's own
+ * keys are never walked, so padding costs nothing here.
+ */
+function pick(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of keys) if (Object.hasOwn(source, key)) out[key] = source[key];
+  return out;
+}
+
+/**
+ * A tools/call rebuilt from the keys the tools use, or null when its
+ * arguments are not an object. Anything else the SDK refuses on its own.
+ */
+function canonicalToolCall(body: Record<string, unknown>): Record<string, unknown> | null {
+  const call = pick(body, TOOL_CALL_KEYS);
+  const params = body.params;
+  if (!isPlainObject(params)) return call;
+  // CallToolRequest.params.arguments is optional in MCP, but the SDK validates
+  // a missing one as a non-object, so a client calling the no-argument tool
+  // without it got an error instead of the result (R1-33). A null is read the
+  // same way; anything else that is not an object is invalid params, not the
+  // SDK's -32603 Internal error with its schema dump.
+  const args = params.arguments;
+  if (args !== undefined && args !== null && !isPlainObject(args)) return null;
+  const next = pick(params, ["name"]);
+  next.arguments = isPlainObject(args) ? pick(args, TRIAGE_ARGUMENT_KEYS) : {};
+  if (isPlainObject(params._meta)) next._meta = pick(params._meta, TOOL_CALL_META_KEYS);
+  else if (Object.hasOwn(params, "_meta")) next._meta = params._meta;
+  call.params = next;
+  return call;
+}
+
 /** Read at most MAX_POST_BODY_BYTES; anything longer is refused without buffering it all. */
-async function readCappedBody(request: Request): Promise<string> {
+async function readCappedBody(request: Request): Promise<{ text: string; bytes: number }> {
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(declared) && declared > MAX_POST_BODY_BYTES) throw new BodyTooLarge();
-  if (!request.body) return "";
+  if (!request.body) return { text: "", bytes: 0 };
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -198,7 +241,7 @@ async function readCappedBody(request: Request): Promise<string> {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(bytes);
+  return { text: new TextDecoder().decode(bytes), bytes: total };
 }
 
 export const POST: RequestHandler = async (event) => {
@@ -217,8 +260,11 @@ export const POST: RequestHandler = async (event) => {
   }
 
   let parsedBody: unknown;
+  let bodyBytes = 0;
   try {
-    parsedBody = JSON.parse(await readCappedBody(event.request));
+    const body = await readCappedBody(event.request);
+    bodyBytes = body.bytes;
+    parsedBody = JSON.parse(body.text);
   } catch (error) {
     if (error instanceof BodyTooLarge) {
       return withHeaders(jsonRpcHttpError(413, -32000, BODY_TOO_LARGE), origin);
@@ -235,21 +281,12 @@ export const POST: RequestHandler = async (event) => {
   if (Array.isArray(parsedBody)) {
     return withHeaders(jsonRpcHttpError(400, -32600, "Batch requests are not supported"), origin);
   }
-  // CallToolRequest.params.arguments is optional in MCP, but the SDK validates
-  // a missing one as a non-object, so a client calling the no-argument tool
-  // without it got an error instead of the result (R1-33). A null is read the
-  // same way; anything else that is not an object is invalid params, not the
-  // SDK's -32603 Internal error with its schema dump.
-  if (isPlainObject(parsedBody) && parsedBody.method === "tools/call" && isPlainObject(parsedBody.params)) {
-    const args = parsedBody.params.arguments;
-    if (args === undefined || args === null) parsedBody.params.arguments = {};
-    else if (!isPlainObject(args)) {
-      return withHeaders(jsonRpcHttpError(400, -32602, "Invalid params: tool arguments must be an object"), origin);
-    }
-  }
   if (isPlainObject(parsedBody) && parsedBody.method === "tools/call") {
-    const globalBlocked = await limited([[TIER_TRIAGE_GLOBAL, "all"]]);
-    if (globalBlocked) return withHeaders(globalBlocked, origin);
+    const call = canonicalToolCall(parsedBody);
+    if (!call) return withHeaders(jsonRpcHttpError(400, -32602, "Invalid params: tool arguments must be an object"), origin);
+    parsedBody = call;
+  } else if (bodyBytes > MAX_OTHER_BODY_BYTES) {
+    return withHeaders(jsonRpcHttpError(413, -32000, OTHER_BODY_TOO_LARGE), origin);
   }
 
   const server = createTriageMcpServer();

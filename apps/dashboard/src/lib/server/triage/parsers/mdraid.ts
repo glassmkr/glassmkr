@@ -468,7 +468,7 @@ function parse(text: string): ParserResult {
   if (unnamedSlot > 0) {
     notes.push({
       level: "warning",
-      message: `${arrays(unnamedSlot, "has", "have")} an empty slot whose former member is not named in this output (the device was removed), so that failed disk cannot be identified from this paste.`,
+      message: `${arrays(unnamedSlot, "has", "have")} an empty slot whose member is not named in this output, so the missing device cannot be identified from this paste.`,
     });
   }
   const unnamedFailed = count((a) => a.unnamedFailed);

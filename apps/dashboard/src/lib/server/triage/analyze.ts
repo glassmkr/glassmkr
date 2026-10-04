@@ -211,6 +211,11 @@ const TRIAGE_SUMMARY: Record<string, string> = {
   // but stay durable (R5-10).
   zfs_slog_faulted:
     "A separate log (SLOG) device in this pool is FAULTED or REMOVED. ZFS writes the intent log to the main pool devices while it is out, so sync writes stay durable but lose the SLOG's latency benefit. The device is named under observed.",
+  // The YAML names hardware RAID controllers no paste feeds and says one more
+  // failure may cause data loss, which is false for a degraded RAID6 or 3-way
+  // RAID1 (R6-6).
+  raid_degraded:
+    "An mdadm software RAID array in this output is running with fewer active members than it has slots, so it has less redundancy than it was built with. How many more failures it can survive depends on its RAID level, shown under observed, and how many members it has.",
   // Shorter than the YAML so the text block carries it whole (R2b-14).
   nvme_critical_warning:
     "An NVMe drive's Critical Warning byte is non-zero. Each set bit is a condition the NVMe specification flags for immediate attention: available spare below threshold, temperature threshold exceeded, reliability degraded, read-only mode, or a failed volatile memory backup.",
@@ -245,6 +250,14 @@ export const TRIAGE_QUICK_CHECK: Record<string, { command: string; explanation: 
   gpu_driver_or_firmware_drift: {
     command: "nvidia-smi --query-gpu=index,uuid,name,driver_version,vbios_version --format=csv",
     explanation: "Per-GPU driver and VBIOS version. GPUs of the same model on one host are expected to run the same VBIOS.",
+  },
+  // The YAML also lists MegaCLI, storcli and perccli for hardware RAID, which
+  // no paste reader feeds (R6-6).
+  raid_degraded: {
+    command:
+      "cat /proc/mdstat\n# Triage the FAILED member before deciding re-add vs replace:\nsudo smartctl -H /dev/sdX 2>/dev/null | grep -i result\nsudo dmesg -T 2>/dev/null | grep -iE 'sdX.*(error|fail|reset)' | tail -5",
+    explanation:
+      "Print the array state, then triage the failed member itself: SMART health and the kernel log for that device (sdX = the failed member's disk). A member can be marked faulty by a transient (a link reset, a controller hiccup, an administrative action) with no fault on the drive: if SMART passes and the kernel log shows no I/O errors for it, `mdadm --manage /dev/<array> --re-add /dev/<member>` restores redundancy, quickly when the array has a write-intent bitmap, with no replacement drive. If it drops out again, or SMART or the kernel log show real errors, take the replacement path below instead.",
   },
 };
 
@@ -324,6 +337,20 @@ export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string,
   ],
   // A roadmap note (R5-10).
   gpu_thermal_critical: [["# On HGX hosts, baseboard temp via Redfish (tier 3 once that\n# ships):", "# On HGX hosts, baseboard temp via Redfish:"]],
+  // An internal roadmap tier and agent version (R6-7).
+  nvlink_link_down: [["#   - Check NVSwitch port faults via DCGM (tier 2 not full\n#     in v0.13.0; use dcgmi directly).", "#   - Check NVSwitch port faults with dcgmi."]],
+  // The dashboard's acknowledge action, and a cause the output does not show:
+  // a power brake is asserted from outside the GPU, but nothing in a paste
+  // says the PSU is too small (R6-7).
+  gpu_power_cap_throttling: [
+    ["This is expected behaviour and ack-as-\n#    benign is the right call.", "This is expected behaviour and needs\n#    no action."],
+    [
+      "#    chassis PSU is under-sized for the workload thermal +\n#    electrical load. Check IPMI dcmi power reading vs PSU\n#    rated capacity.",
+      "#    the brake is asserted from outside the GPU (a PSU or\n#    chassis power event); this output does not show which.\n#    Check IPMI dcmi power reading vs PSU rated capacity.",
+    ],
+  ],
+  // The dashboard's ingest snapshot (R6-7).
+  gpu_uncorrected_ecc: [["# Confirm ECC mode is on (rule won't fire if disabled but\n# verify the snapshot wasn't stale):", "# Confirm ECC mode is on (the rule does not fire if it is off):"]],
   // `zpool status -x` prints a one-line message when no pool has a problem;
   // it is not silent (R5-10).
   zfs_pool_unhealthy: [["prints only pools that are not healthy (silent when all good)", "prints only the pools that have a problem, or one line saying there are none"]],
@@ -1312,11 +1339,14 @@ function readerText(text: string): string {
   // can carry a byte-order mark or zero-width spaces; the readers' patterns
   // match ASCII space, so 39 of 106 recognised fixtures read as nothing
   // (R5-12). Every horizontal Unicode space separator becomes a space, one
-  // for one, and the zero-width characters go.
+  // for one, and every format character goes: a right-to-left chat client or
+  // web console marks each line with a bidi control, and an LRM at each line
+  // start left 74 of 82 fixtures with no finding (R6-11). No reader pattern
+  // matches one, and the identifiers they read are ASCII.
   return text
     .replace(/[\u2028\u2029]/g, "\n")
     .replace(/[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g, " ")
-    .replace(/[\u200b\ufeff]/g, "");
+    .replace(/\p{Cf}/gu, "");
 }
 
 /** Analyze pasted command output with Glassmkr's alert rules. */
@@ -1552,18 +1582,22 @@ function nextCapture(
     }
   }
   // A GPU paste without the ECC or temperature fields (a short --query-gpu
-  // CSV) ran none of those checks (R2-17).
-  const gpuRules = active.find((r) => r.domain === "nvidia_gpu")?.rules_checked;
-  if (gpuRules && !(gpuRules.includes("gpu_uncorrected_ecc") && gpuRules.includes("gpu_thermal_critical"))) {
+  // CSV) ran none of those checks (R2-17). A complete -q from a GPU that
+  // reports ECC off or N/A has nothing more to give (R6-10).
+  const gpuResult = active.find((r) => r.domain === "nvidia_gpu");
+  const gpuRules = gpuResult?.rules_checked;
+  if (gpuResult?.gpu_fields_absent) {
     add("gpu", "nvidia-smi -q carries the ECC, temperature, throttle-reason and PCIe fields this output lacks, so those checks can run.");
   }
+  // A one-GPU host has no NVLink to check (R6-10).
+  const singleGpuHost = gpuResult?.host_gpus === 1;
   if (domains.has("mdraid") && !formats.has("mdadm_detail")) add("raid_md", captureWhy("raid_md"));
   if (domains.has("ipmi_sel") && !formats.has("ipmitool_sel_info")) {
     add("bmc_events", "ipmitool sel info shows whether the BMC event log is full and has stopped recording.");
   }
-  if (domains.has("nvidia_gpu") && !formats.has("nvidia_smi_nvlink_status")) add("nvlink", captureWhy("nvlink"));
+  if (domains.has("nvidia_gpu") && !formats.has("nvidia_smi_nvlink_status") && !singleGpuHost) add("nvlink", captureWhy("nvlink"));
   // NVLink output for one GPU: the check needs every GPU's (R2b-5).
-  if (gpuRules && formats.has("nvidia_smi_nvlink_status") && !gpuRules.includes("nvlink_link_down")) {
+  if (gpuRules && formats.has("nvidia_smi_nvlink_status") && !gpuRules.includes("nvlink_link_down") && !singleGpuHost) {
     add("nvlink", "The NVLink check runs only on output covering two or more GPUs, so it needs nvidia-smi nvlink --status for every GPU on the host.");
   }
 

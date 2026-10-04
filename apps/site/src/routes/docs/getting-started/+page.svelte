@@ -100,7 +100,7 @@
       <p>The legacy <code>--dashboard-key</code> flag is preserved as an alias for <code>--api-key</code> so existing Ansible or Terraform automation keeps working without changes.</p>
 
       <h3>Single-file binary (glibc distributions, no Node required)</h3>
-      <p>The release binaries bundle their own runtime, so a host with no Node can run them. This is the path for RHEL family and Arch, and it works on Debian family too. It needs glibc and systemd, so it does not run on Alpine:</p>
+      <p>The release binaries bundle their own runtime, so a host with no Node can run them. This is the path for Arch and other glibc + systemd hosts without apt or dnf, and it also works on the apt and dnf/yum families. It needs glibc and systemd, so it does not run on Alpine:</p>
       <pre><code>curl -fsSLO https://github.com/glassmkr/crucible/releases/download/v{AGENT_VERSION}/glassmkr-crucible-linux-x64
 curl -fsSLO https://github.com/glassmkr/crucible/releases/download/v{AGENT_VERSION}/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS

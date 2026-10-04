@@ -22,6 +22,8 @@
 //   7. collectd       The parity tally quoted by the site and the announcement
 //                     matches docs/COLLECTD_PARITY.md in the crucible repo.
 //                     Skipped when that repo is not checked out alongside.
+//   3c. installpaths  No copy sends RHEL-family hosts past install.sh, which
+//                     supports apt and dnf/yum (agent_install_paths).
 //   8. openapi        The generated contract and its hand-written descriptions
 //                     carry no invented retention, plan, pricing, rule-count or
 //                     licence claim. Added after a fabricated audit-retention
@@ -125,6 +127,21 @@ if (!only || only === "retention") {
     if (hits.length) fail("retention", `claim(s) contradict the ${ttl[1]}-day schema TTL:\n  ${hits.join("\n  ")}`);
     else ok("retention", `no disk-bound retention claims (schema TTL: ${ttl[1]} days)`);
   }
+}
+
+// 3c. install paths. install.sh supports the apt and dnf/yum families, and the
+// single-file binary is for other glibc + systemd hosts (ground-truth.yaml
+// agent_install_paths). The getting-started page and /about still steered RHEL
+// users away from the one-line installer after that rule changed (R6-12).
+if (!only || only === "installpaths") {
+  const banned = ["path for RHEL", "one command on Ubuntu or Debian"];
+  const hits = [];
+  for (const f of copyFiles(ACTIVE_SKIP)) {
+    const text = fs.readFileSync(f, "utf8");
+    for (const b of banned) if (text.includes(b)) hits.push(`${path.relative(ROOT, f)}: "${b}"`);
+  }
+  if (hits.length) fail("installpaths", `copy contradicts agent_install_paths (install.sh covers apt and dnf/yum):\n  ${hits.join("\n  ")}`);
+  else ok("installpaths", "no surface sends the dnf/yum family past install.sh");
 }
 
 // 4. node-cap literals agree with the configured value

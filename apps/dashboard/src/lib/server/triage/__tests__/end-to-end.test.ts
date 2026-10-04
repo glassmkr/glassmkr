@@ -14,6 +14,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 // each reader; this file pins what the assistant finally receives.
 vi.mock("$lib/server/auth/rate-limit.js", () => ({
   take: vi.fn(async () => ({ allowed: true, remaining: 1, retryAfterSeconds: 0, degraded: false })),
+  charge: vi.fn(async () => {}),
 }));
 
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
@@ -284,9 +285,11 @@ describe("paste triage end to end through the MCP route", () => {
     expect(ecc.severity).toBe("critical");
     expect(ecc.subject).toMatchObject({ kind: "gpu", id: "00000000:07:00.0", model: "NVIDIA A100-SXM4-80GB" });
     expect(sc.notes.some((n) => n.startsWith("Remapping Failure Occurred: Yes"))).toBe(true);
-    // -q has no NVLink link state, so the NVLink rule is neither run nor claimed.
+    // -q has no NVLink link state, so the NVLink rule is neither run nor
+    // claimed; with "Attached GPUs : 1" there is no NVLink to capture (R6-10).
     expect(sc.checked_no_signal.map((c) => c.rule_id)).not.toContain("nvlink_link_down");
-    expect(sc.next_capture.map((n) => n.goal)).toEqual(expect.arrayContaining(["nvlink", "kernel_errors"]));
+    expect(sc.next_capture.map((n) => n.goal)).toContain("kernel_errors");
+    expect(sc.next_capture.map((n) => n.goal)).not.toContain("nvlink");
   });
 
   it("nvidia-smi -q + journalctl -k with Xid events: two readers fill one gpu container and both rule sets fire", async () => {

@@ -12,6 +12,7 @@ vi.mock("$lib/server/auth/rate-limit.js", () => ({
       ? { allowed: true, remaining: 1, retryAfterSeconds: 0, degraded: false }
       : { allowed: false, remaining: 0, retryAfterSeconds: 7, degraded: false },
   ),
+  charge: vi.fn(async () => {}),
 }));
 vi.mock("$lib/server/watchdog-scheduler", () => ({ startWatchdog: () => {} }));
 vi.mock("$lib/server/trend-warnings/scheduler", () => ({ startTrendWarnings: () => {} }));

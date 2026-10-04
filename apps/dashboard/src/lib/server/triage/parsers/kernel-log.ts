@@ -302,6 +302,18 @@ const SCSI_PROBE_FAILED_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+
 const SENSE_COMMAND_LINES = 2;
 /** How many lines after a sense key line to read its Add. Sense and CDB from. */
 const SENSE_DETAIL_LINES = 4;
+// A multipath array's answer that this path is not the one to use: ALUA
+// standby, unavailable or in transition (Not Ready, 04/0B, 04/0C, 04/0A), and
+// an RDAC controller that does not own the LUN (Illegal Request with the
+// vendor ASC 0x94). At boot every such path fails the partition-table read,
+// so a healthy SAN logged critical "I/O errors" (R6-4).
+const ALUA_PATH_STATE_RE = /^Logical unit not accessible, (?:target port in (?:standby|unavailable) state|asymmetric access state transition)\b/i;
+const SCSI_RDAC_UNOWNED_RE = /\bsd \d+:\d+:\d+:\d+:\s+\[([A-Za-z0-9]{1,32})\]\s+(?:tag#\d+\s+)?(?:Add\. Sense:\s*)?(?:<<vendor>>\s*)?ASC=0x94\b/;
+/**
+ * How many lines after a path-state sense report the same device's I/O error
+ * and Buffer I/O error lines belong to it: the CDB line, then those two.
+ */
+const PATH_STATE_IO_LINES = SENSE_DETAIL_LINES + 2;
 
 function senseKeyOf(text: string): string | null {
   const hex = text.match(/^0x([0-9a-fA-F])\b/);
@@ -486,6 +498,19 @@ function isProbeResponse(senseKey: string, device: string, following: string[], 
   return preceding.some((msg) => SCSI_PROBE_FAILED_RE.exec(msg)?.[1] === device);
 }
 
+/** A sense report that is the array saying this path is not the active one (see ALUA_PATH_STATE_RE). */
+function isPathStateAnswer(senseKey: string, device: string, following: string[]): boolean {
+  if (senseKey === "Not Ready") {
+    for (const msg of following) {
+      const detail = msg.match(SCSI_DETAIL_RE);
+      if (detail && detail[1] === device && detail[2] === "Add. Sense") return ALUA_PATH_STATE_RE.test(detail[3]);
+    }
+    return false;
+  }
+  if (senseKey === "Illegal Request") return following.some((msg) => SCSI_RDAC_UNOWNED_RE.exec(msg)?.[1] === device);
+  return false;
+}
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -540,6 +565,10 @@ export const kernelLogParser: TriageParser = {
     let unknownSenseLines = 0;
     let probeSenseLines = 0;
     let probeIoLines = 0;
+    let pathStateSenseLines = 0;
+    let pathStateIoLines = 0;
+    // Device -> last line index its path-state sense report covers.
+    const pathStateUntil = new Map<string, number>();
     let mceLines = 0;
     let fsFailLines = 0;
     let libataUncLines = 0;
@@ -583,7 +612,7 @@ export const kernelLogParser: TriageParser = {
           const device = safeIdent(scsi[1]);
           const following: string[] = [];
           const preceding: string[] = [];
-          if (senseKey === "Recovered Error" || senseKey === "Illegal Request") {
+          if (senseKey === "Recovered Error" || senseKey === "Illegal Request" || senseKey === "Not Ready") {
             for (let j = li + 1; j < rawLines.length && j <= li + SENSE_DETAIL_LINES; j++) following.push(messageAt(j));
           }
           if (senseKey === "Illegal Request") {
@@ -591,6 +620,9 @@ export const kernelLogParser: TriageParser = {
           }
           if (senseKey && (NON_ERROR_SENSE_KEYS.has(senseKey) || isProbeResponse(senseKey, scsi[1], following, preceding))) {
             probeSenseLines++;
+          } else if (senseKey && isPathStateAnswer(senseKey, scsi[1], following)) {
+            pathStateSenseLines++;
+            pathStateUntil.set(scsi[1], li + PATH_STATE_IO_LINES);
           } else if (senseKey) {
             ev = {
               event_type: "scsi_sense",
@@ -671,6 +703,10 @@ export const kernelLogParser: TriageParser = {
             nonDiskIoLines++;
           } else if (PROBE_OP_RE.test(msg)) {
             probeIoLines++;
+          } else if (dev !== null && li <= (pathStateUntil.get(dev.match(/^(sd[a-z]{1,4})\d{0,3}$/)?.[1] ?? dev) ?? -1)) {
+            // The failed command a path-state report just answered, on the
+            // device or a partition of it.
+            pathStateIoLines++;
           } else {
             ioCount++;
             if (dev !== null) {
@@ -872,6 +908,12 @@ export const kernelLogParser: TriageParser = {
       notes.push({
         level: "info",
         message: `${plural(probeIoLines, "block I/O error on a discard or write-zeroes request was", "block I/O errors on discard or write-zeroes requests were")} not counted: a disk or controller that lacks the feature fails the kernel's probe for it.`,
+      });
+    }
+    if (pathStateSenseLines + pathStateIoLines > 0) {
+      notes.push({
+        level: "info",
+        message: `${plural(pathStateSenseLines, "SCSI sense report", "SCSI sense reports")} and ${plural(pathStateIoLines, "I/O error line", "I/O error lines")} on SAN paths in standby or passive state were not counted: the array answered that the path is not the active one (ALUA standby or transition, RDAC unowned LUN).`,
       });
     }
     if (edacLines > 0) {

@@ -438,7 +438,7 @@ describe("warning notes reach the text block (R2-16, R2-3, R2-9)", () => {
     const a = analyzeOutput("Personalities : [raid1]\nmd0 : active raid1 sda1[0]\n      976630336 blocks super 1.2 [2/1] [U_]\n\nunused devices: <none>\n");
     expect(a.findings.map((f) => f.rule_id)).toEqual(["raid_degraded"]);
     const text = renderAnalysisText(a);
-    expect(text).toMatch(/an empty slot whose former member is not named in this output/);
+    expect(text).toMatch(/an empty slot whose member is not named in this output/);
   });
 
   it("a drive with no finding but a failed self-test says so in the text", () => {
@@ -878,6 +878,36 @@ describe("SEL times without a zone (R3-14)", () => {
   });
 });
 
+// R6-9: a time printed with a zone name (CEST, EDT) is read as UTC, and the
+// answer showed it with a "Z", hours off the real UTC time, behind an info
+// caveat the text block leaves out.
+describe("SEL times with a zone name (R6-9)", () => {
+  const sel = (rows: string[]) => ["root@h:~# ipmitool sel elist", ...rows].join("\n");
+
+  for (const time of ["02:23:09 PM EDT", "14:23:09 CEST"]) {
+    it(`${time}: shown as printed, with no UTC suffix`, () => {
+      const a = analyzeOutput(sel([`   2 | 09/28/2026 | ${time} | Memory #0x02 | Uncorrectable ECC | Asserted`]));
+      const f = a.findings.find((x) => x.rule_id === "ipmi_sel_critical")!;
+      expect(f.observed.oldest_critical_event).toBe("2026-09-28T14:23:09");
+      const text = renderAnalysisText(a);
+      expect(text).toContain("oldest_critical_event=2026-09-28T14:23:09,");
+      expect(text).not.toMatch(/T\d{2}:\d{2}:\d{2}Z/);
+    });
+  }
+
+  it("beside a UTC time, the zone-name caveat is a warning the text block shows", () => {
+    const a = analyzeOutput(
+      sel([
+        "   2 | 09/28/2026 | 14:23:09 UTC | Memory #0x02 | Uncorrectable ECC | Asserted",
+        "   3 | 09/28/2026 | 15:00:00 CEST | Power Supply PS1 | Failure detected | Asserted",
+      ]),
+    );
+    const note = a.notes.find((n) => n.includes("local time zone name"))!;
+    expect(note).toMatch(/UTC suffix/);
+    expect(renderAnalysisText(a)).toContain(note);
+  });
+});
+
 describe("zfs_scrub_errors is checked only on a finished scrub (R3-16)", () => {
   const mirror = (scan: string) =>
     [
@@ -1010,7 +1040,10 @@ describe("ipmi_sel_critical names sensors, not a cause (R5-5)", () => {
 // never carries.
 describe("rule copy that is wrong or dangling in a paste answer (R5-10)", () => {
   const rules = [...new Set(TRIAGE_PARSERS.flatMap((p) => p.rules))];
-  const DANGLING = /once that\s*\n?#?\s*ships|sections? \d+-\d+|cpu_temperature_high|silent when all good/i;
+  // R6-7: an internal roadmap tier and agent version, the dashboard's
+  // acknowledge action and its ingest snapshot (a filesystem snapshot is
+  // fine), and a cause stated as fact.
+  const DANGLING = /once that\s*\n?#?\s*ships|sections? \d+-\d+|cpu_temperature_high|silent when all good|\btier \d\b|\bv0\.\d+\.\d+|\back-as\b|\b(?:the|next) snapshot\b|under-sized/i;
   for (const rule of rules) {
     it(`${rule}: no variant points at a workflow, section or release the answer does not carry`, () => {
       const meta = getRuleMetadata(rule)!;
@@ -1080,6 +1113,29 @@ describe("pastes copied through email, chat or Markdown (R5-12)", () => {
     });
   }
 
+  // R6-11: only U+200B and U+FEFF were removed. A bidi or format mark at the
+  // start of each line, as right-to-left chat clients and web consoles add,
+  // made 74 of 82 fixtures that produce findings produce none, and the answer
+  // asked for the same capture again.
+  it("a bidi or format mark at the start of every line changes nothing, on every fixture", () => {
+    const all = readdirSync(FIXTURES, { recursive: true, encoding: "utf8" })
+      .filter((f) => /\.(?:txt|json)$/.test(f))
+      .sort();
+    let checked = 0;
+    for (const file of all) {
+      const text = fixture(file);
+      const want = shape(text);
+      if (want.length === 0) continue;
+      checked++;
+      for (const mark of ["\u200e", "\u200f", "\u2066", "\u2069", "\u202a", "\u2060", "\u00ad", "\u200d", "\u061c"]) {
+        expect(shape(text.replace(/^(?=.)/gm, mark)), `${file} with U+${mark.codePointAt(0)!.toString(16).padStart(4, "0")}`).toEqual(want);
+      }
+    }
+    expect(checked).toBeGreaterThan(60);
+    const one = analyzeOutput("\u200e" + fixture("smart/ata-hdd-failing-a.txt")).findings.find((f) => f.rule_id === "smart_failing")!;
+    expect(one.subject.id).toBe("/dev/sdc");
+  });
+
   for (const file of ["kernel_log/dmesg-T-sata-medium-error.txt", "kernel_log/journalctl-k-xid.txt", "kernel_log/kern-log-edac.txt"]) {
     it(`${file}: a uniform four-space or tab indent changes nothing`, () => {
       const want = shape(fixture(file));
@@ -1088,6 +1144,35 @@ describe("pastes copied through email, chat or Markdown (R5-12)", () => {
       expect(shape(fixture(file).replace(/^/gm, "\t"))).toEqual(want);
     });
   }
+});
+
+// R6-6: the YAML summary told a degraded RAID6 or 3-way RAID1, which survive
+// one more failure, that "One more failure may cause data loss", and named
+// hardware RAID controllers no paste feeds. An empty slot was blamed on a
+// removal the output does not show.
+describe("a degraded md array's summary (R6-6)", () => {
+  const cases: Array<[string, string]> = [
+    ["raid6 [6/5]", "Personalities : [raid6] [raid5] [raid4]\nmd0 : active raid6 sdf1[5] sde1[4] sdd1[3](F) sdc1[2] sdb1[1] sda1[0]\n      7813529600 blocks super 1.2 level 6, 512k chunk, algorithm 2 [6/5] [UUU_UU]\n\nunused devices: <none>\n"],
+    ["3-way raid1 [3/2]", "Personalities : [raid1]\nmd0 : active raid1 sdc1[2](F) sdb1[1] sda1[0]\n      976630336 blocks super 1.2 [3/2] [UU_]\n\nunused devices: <none>\n"],
+    ["2-way raid1 [2/1]", fixture("mdraid/mdstat-raid1-failed.txt")],
+  ];
+  for (const [label, text] of cases) {
+    it(`${label}: no prediction, no hardware RAID controller`, () => {
+      const a = analyzeOutput(text);
+      const f = a.findings.find((x) => x.rule_id === "raid_degraded")!;
+      expect(f.severity).toBe("critical");
+      for (const out of [f.summary, renderAnalysisText(a), JSON.stringify(f.fix?.quick_check)]) {
+        expect(out).not.toMatch(/One more failure may cause data loss|PERC|MegaRAID|Smart Array|Adaptec|megacli|storcli|perccli/);
+      }
+      expect(f.summary).toMatch(/fewer active members/);
+    });
+  }
+
+  it("an empty slot names no cause", () => {
+    const a = analyzeOutput("Personalities : [raid1]\nmd0 : active raid1 sda1[0]\n      976630336 blocks super 1.2 [2/1] [U_]\n");
+    expect(a.notes.join("\n")).toMatch(/empty slot whose member is not named in this output/);
+    expect(a.notes.join("\n")).not.toMatch(/was removed|failed disk/);
+  });
 });
 
 // R5-3: the rebuilding branch of raid_degraded.
@@ -1125,7 +1210,7 @@ describe("a degraded array that is only rebuilding (R5-3)", () => {
     const byId = Object.fromEntries(a.findings.map((f) => [f.subject.id, f]));
     expect(byId.md0.observed.failed_disks).toBe("sdb1");
     expect(byId.md0.observed.rebuilding).toBeUndefined();
-    expect(byId.md0.summary).toBe(getRuleMetadata("raid_degraded")!.summary.trim());
+    expect(byId.md0.summary).toBe(triageRuleCopy("raid_degraded").summary);
     expect(byId.md1.observed.rebuilding).toBe(true);
   });
 });

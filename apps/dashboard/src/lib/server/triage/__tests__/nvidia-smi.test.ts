@@ -1084,3 +1084,43 @@ describe("nvidia-smi -q with its indentation stripped (R5-7)", () => {
     expect(renderAnalysisText(a)).not.toMatch(/none of the fields/);
   });
 });
+
+// R6-10: a complete nvidia-smi -q from a GPU without ECC (a GeForce card, or
+// ECC turned off) was told that nvidia-smi -q "carries the ECC, temperature
+// ... fields this output lacks", and a one-GPU host was sent back to
+// nvidia-smi nvlink --status, which can never run the NVLink check there.
+describe("next capture after a complete nvidia-smi -q (R6-10)", () => {
+  const l4 = fixture("synthetic-crlf-l4-q.txt"); // Attached GPUs : 1
+  const quiet = <T,>(fn: () => T): T => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      return fn();
+    } finally {
+      log.mockRestore();
+    }
+  };
+  const goals = (text: string) => quiet(() => analyzeOutput(text)).next_capture.map((c) => c.goal);
+
+  for (const mode of ["N/A", "Disabled"]) {
+    it(`ECC mode ${mode}: no recapture of the same -q, and the text says why ECC was skipped`, () => {
+      const text = l4.replace(/(Current {27}: )Enabled/, `$1${mode}`).replace(/(Pending {27}: )Enabled/, `$1${mode}`);
+      const r = nvidiaSmiParser.parse(text);
+      expect(r.rules_checked).not.toContain("gpu_uncorrected_ecc");
+      const a = quiet(() => analyzeOutput(text));
+      expect(a.next_capture.map((c) => c.goal)).not.toContain("gpu");
+      expect(renderAnalysisText(a)).toMatch(/ECC checks skipped for 1 GPU: ECC is disabled or not supported/);
+    });
+  }
+
+  it("a one-GPU host is not asked for nvlink --status, with or without it in the paste", () => {
+    expect(goals(l4)).not.toContain("nvlink");
+    const withLinks = `${l4}\nGPU 0: NVIDIA L4 (UUID: GPU-0000feed-0000-4000-8000-000000000300)\n\t Link 0: <inactive>\n\t Link 1: <inactive>\n`;
+    expect(nvidiaSmiParser.parse(withLinks).formats).toContain("nvidia_smi_nvlink_status");
+    expect(goals(withLinks)).not.toContain("nvlink");
+  });
+
+  it("a short CSV still gets the nvidia-smi -q recapture, and a two-GPU host still gets nvlink", () => {
+    expect(goals(fixture("synthetic-csv-memory-only.txt"))).toContain("gpu");
+    expect(goals(fixture("synthetic-healthy-h100x2-q.txt"))).toContain("nvlink");
+  });
+});

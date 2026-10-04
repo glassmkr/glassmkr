@@ -253,15 +253,27 @@ function readSensorRow(cols: string[]): RawSensorRow | null {
   return null;
 }
 
+/** The unit of a numeric reading ("RPM", "percent"), or "" for a state text or no reading. */
+function readingUnit(row: RawSensorRow): string {
+  if (row.layout === "sensor") return row.unit;
+  return READING.exec(row.reading)?.[2] ?? "";
+}
+
+/** HPE iLO reports a fan's speed as a duty-cycle percentage, not RPM (R6-3). */
+function isPercentFan(row: RawSensorRow): boolean {
+  return /fan/i.test(row.name) && /^(?:percent|%)$/i.test(readingUnit(row));
+}
+
 function isFanRow(row: RawSensorRow): boolean {
-  // In the sensor table only RPM rows are fans: a discrete fan sensor there
-  // carries a hex state mask, which the collector's fan parser would misread
-  // as a stopped fan. In sdr output an RPM reading is a fan; so is a
-  // fan-named row with no reading or a state text (`sdr type Fan` lists
-  // those too), but not a fan-named temperature or voltage.
+  // In the sensor table only RPM rows and fan-named percent rows are fans: a
+  // discrete fan sensor there carries a hex state mask, which the collector's
+  // fan parser would misread as a stopped fan. In sdr output an RPM reading is
+  // a fan, as is a fan-named percent reading; so is a fan-named row with no
+  // reading or a state text (`sdr type Fan` lists those too), but not a
+  // fan-named temperature or voltage.
+  if (isPercentFan(row)) return true;
   if (row.layout === "sensor") return /^rpm$/i.test(row.unit);
-  const reading = READING.exec(row.reading);
-  if (reading) return /^rpm$/i.test(reading[2] ?? "");
+  if (READING.test(row.reading)) return /^rpm$/i.test(readingUnit(row));
   return /fan/i.test(row.name);
 }
 
@@ -285,7 +297,9 @@ function fanFrom(row: RawSensorRow): FanStatus {
   else if (WARNING_CODES.has(row.code)) status = "warning";
   else if (row.code === "ns" || noReading) status = "absent";
   else if (row.code === "ok") status = "ok";
-  else if (rpm === 0) status = "critical"; // no status code and no RPM reads as stopped
+  // No status code and no RPM reads as stopped, but a duty percentage is not
+  // a speed: with no code, the BMC has said nothing about that fan.
+  else if (rpm === 0 && !isPercentFan(row)) status = "critical";
   else status = "ok";
   return { name: safeLabel(row.name, NAME_MAX), rpm, status };
 }
@@ -766,17 +780,20 @@ function parseIpmi(text: string): ParserResult {
       message: `Times unknown for ${unknownTimes} SEL event(s) (Pre-Init, undated OEM record, or unreadable date); their age cannot be judged from this output.`,
     });
   }
+  // The ISO time keeps the collector's UTC reading for the age comparisons,
+  // but ipmitool printed no zone, or a zone name this reader cannot convert,
+  // so the "Z" is an assumption (R3-14). When no dated row has a zone it can
+  // convert, the answer shows the times without it (R4-11, R6-9); beside such
+  // rows it cannot, and the caveat is a warning the text block shows.
+  const allZoneless = zonelessTimes + namedZones > 0 && zonelessTimes + namedZones === datedTimes;
   if (namedZones > 0) {
     notes.push({
-      level: "info",
-      message: `${namedZones} SEL time(s) carry a local time zone name; they were read as UTC, so absolute times may be off by that zone's offset.`,
+      level: allZoneless ? "info" : "warning",
+      message: allZoneless
+        ? `${namedZones} SEL time(s) carry a local time zone name; they are shown as the BMC printed them, without the zone name, and not converted to UTC.`
+        : `${namedZones} SEL time(s) carry a local time zone name; they were read as UTC and are shown with a UTC suffix, so they may be off by that zone's offset.`,
     });
   }
-  // The ISO time keeps the collector's UTC reading for the age comparisons,
-  // but ipmitool printed no zone, so the "Z" is an assumption (R3-14). When no
-  // dated row has a zone the answer shows the times without it (R4-11); beside
-  // zoned rows it cannot, and the caveat is a warning the text block shows.
-  const allZoneless = zonelessTimes > 0 && zonelessTimes === datedTimes;
   if (zonelessTimes > 0) {
     const suffix = allZoneless ? "" : " with a UTC suffix";
     notes.push({

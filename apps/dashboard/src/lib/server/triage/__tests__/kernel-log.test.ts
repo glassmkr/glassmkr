@@ -83,6 +83,8 @@ const ALL_FIXTURES = [
   "synthetic-dmesg-T-libata-unc-full.txt",
   "synthetic-journal-usb-sync-cache-illegal.txt",
   "synthetic-dmesg-T-read-capacity-16-illegal.txt",
+  "synthetic-dmesg-alua-standby-boot.txt",
+  "synthetic-dmesg-rdac-unowned-boot.txt",
 ];
 
 describe("kernelLogParser metadata", () => {
@@ -1029,6 +1031,60 @@ describe("localized dmesg -T and journalctl -k stamps (R3-6)", () => {
 
   it("an application log with a bracketed time is not a kernel log", () => {
     expect(kernelLogParser.detect("[INFO 12:00:00 2026] worker started\n[WARN 12:00:01 2026] retrying\n")).toBe(false);
+  });
+});
+
+// R6-4: at boot, every standby path of an ALUA array (Dell EMC Unity, VNX)
+// and every passive path of an RDAC array (NetApp E-Series) fails the
+// partition-table read with the array's "not this path" answer. That is
+// path-state noise on a healthy array, and it came back as critical "Disk I/O
+// errors ... failing storage hardware" with a request for SMART on a SAN LUN.
+describe("I/O errors on SAN standby or passive paths (R6-4)", () => {
+  const alua = fixture("synthetic-dmesg-alua-standby-boot.txt");
+
+  it.each([
+    ["ALUA standby, dmesg", alua],
+    ["ALUA standby, 5.19+ block-layer line", alua.replace(/blk_update_request: /g, "")],
+    ["ALUA unavailable", alua.replace(/target port in standby state/g, "target port in unavailable state")],
+    ["ALUA transition", alua.replace(/target port in standby state/g, "asymmetric access state transition")],
+    ["RDAC unowned", fixture("synthetic-dmesg-rdac-unowned-boot.txt")],
+  ])("%s: not a disk error", (_label, text) => {
+    const r = kernelLogParser.parse(text);
+    expect(r.snapshot.io_errors).toBeUndefined();
+    expect(r.snapshot.dmesg_events?.events).toEqual([]);
+    expect(types(evaluate(r.snapshot).alerts)).toEqual([]);
+    expect(r.notes.map((n) => n.message).join("\n")).toMatch(/on SAN paths .*not counted/);
+    expect(analyzeOutput(text).findings).toEqual([]);
+  });
+
+  it("a Medium Error on another path in the same burst is still critical", () => {
+    const text = alua + [
+      "[    4.840000] sd 7:0:0:0: [sdr] tag#2 FAILED Result: hostbyte=DID_OK driverbyte=DRIVER_OK cmd_age=0s",
+      "[    4.840003] sd 7:0:0:0: [sdr] tag#2 Sense Key : Medium Error [current]",
+      "[    4.840006] sd 7:0:0:0: [sdr] tag#2 Add. Sense: Unrecovered read error",
+      "[    4.840009] sd 7:0:0:0: [sdr] tag#2 CDB: Read(10) 28 00 00 10 00 00 00 00 08 00",
+      "[    4.840012] blk_update_request: I/O error, dev sdr, sector 1048576 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0",
+    ].join("\n") + "\n";
+    const r = kernelLogParser.parse(text);
+    expect(r.snapshot.io_errors).toEqual({ count: 1, devices: ["sdr"] });
+    expect(r.snapshot.dmesg_events?.events.map((e) => e.details)).toEqual([{ device: "sdr", sense_key: "Medium Error" }]);
+    expect(new Set(evaluate(r.snapshot).alerts.map((a) => `${a.type}:${a.severity}`))).toEqual(new Set(["disk_io_errors:critical"]));
+  });
+
+  it("an I/O error on the standby device outside the sense report's window still counts", () => {
+    const text = alua + [
+      "[   60.000000] EXT4-fs (sdq1): mounted filesystem with ordered data mode. Quota mode: none.",
+      "[   61.000000] sd 7:0:1:0: alua: port group 02 state A non-preferred supports tolUsNA",
+      "[   90.000000] blk_update_request: I/O error, dev sdq, sector 4096 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0",
+    ].join("\n") + "\n";
+    expect(kernelLogParser.parse(text).snapshot.io_errors).toEqual({ count: 1, devices: ["sdq"] });
+  });
+
+  it("an RDAC sense with no ownership answer is still counted", () => {
+    const text = fixture("synthetic-dmesg-rdac-unowned-boot.txt").replace("<<vendor>>ASC=0x94 ASCQ=0x1", "Add. Sense: No additional sense information");
+    const r = kernelLogParser.parse(text);
+    expect(r.snapshot.io_errors?.count).toBe(2);
+    expect(new Set(types(evaluate(r.snapshot).alerts))).toEqual(new Set(["disk_io_errors"]));
   });
 });
 

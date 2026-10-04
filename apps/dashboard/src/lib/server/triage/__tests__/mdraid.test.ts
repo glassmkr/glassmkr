@@ -164,7 +164,7 @@ describe("/proc/mdstat", () => {
     ]);
     expect(parsed.notes).toHaveLength(1);
     expect(parsed.notes[0].level).toBe("warning");
-    expect(parsed.notes[0].message).toMatch(/^1 array has an empty slot whose former member is not named/);
+    expect(parsed.notes[0].message).toMatch(/^1 array has an empty slot whose member is not named/);
     expect(ids(results)).toEqual(["raid_degraded"]);
     const [r] = results;
     expect(r.message).toContain("Failed disks: unknown");
@@ -218,7 +218,7 @@ describe("/proc/mdstat", () => {
       { device: "md0", level: "raid1", status: "active", degraded: false, disks: ["sdb2", "sda2"], failed_disks: [] },
     ]);
     expect(parsed.notes.map((n) => n.message)).toEqual([
-      "1 array has an empty slot whose former member is not named in this output (the device was removed), so that failed disk cannot be identified from this paste.",
+      "1 array has an empty slot whose member is not named in this output, so the missing device cannot be identified from this paste.",
       "1 array is inactive (not running); this output cannot show whether all of its members are present.",
       "1 array has a resync, recovery, check or reshape running or queued.",
     ]);

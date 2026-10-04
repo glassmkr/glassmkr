@@ -40,6 +40,8 @@ const ALL_FIXTURES = [
   "synthetic-sel-ierr-hard-reset.txt",
   "synthetic-sel-corrected-mce.txt",
   "synthetic-sel-empty.txt",
+  "synthetic-sdr-hpe-percent-fans-healthy.txt",
+  "synthetic-sdr-hpe-percent-fan-failed.txt",
 ];
 
 function fixture(name: string): string {
@@ -286,6 +288,54 @@ describe("fans: ipmitool sdr type Fan with extended threshold codes", () => {
     const alerts = evaluate(ipmiSelParser.parse(text).snapshot);
     expect(fired(alerts)).toEqual(["ipmi_fan_failure"]);
     expect(alertOf(alerts, "ipmi_fan_failure").title).toBe("Fan failure: 2 of 5 fans");
+  });
+});
+
+// R6-3: HPE iLO reports a fan's speed as a duty-cycle percentage, not RPM.
+// Every percent row was dropped, so a fan the BMC marked cr came back as "no
+// matching signal", with ipmi_fan_failure listed as run on the "Fans"
+// redundancy row alone. The collector keeps those rows and fires.
+describe("fans reported in percent (HPE iLO, R6-3)", () => {
+  it("reads every percent fan of a healthy sdr type Fan paste", () => {
+    const r = ipmiSelParser.parse(fixture("synthetic-sdr-hpe-percent-fans-healthy.txt"));
+    expect(r.formats).toEqual(["ipmitool_sdr"]);
+    expect(r.subjects).toBe(5);
+    expect(r.snapshot.ipmi?.fans?.map((f) => [f.name, f.status])).toEqual([
+      ["Fan 1", "ok"], ["Fan 2", "ok"], ["Fan 3", "ok"], ["Fan 4", "ok"], ["Fans", "ok"],
+    ]);
+    expect(fired(evaluate(r.snapshot))).toEqual([]);
+  });
+
+  it("fires ipmi_fan_failure on the row the BMC marks cr", () => {
+    const alerts = evaluate(ipmiSelParser.parse(fixture("synthetic-sdr-hpe-percent-fan-failed.txt")).snapshot);
+    expect(fired(alerts)).toEqual(["ipmi_fan_failure"]);
+    const fan = alertOf(alerts, "ipmi_fan_failure");
+    expect(fan.title).toBe("Fan failure: 1 of 5 fans");
+    expect((fan.evidence as { failed_fans: Array<{ name: string }> }).failed_fans.map((f) => f.name)).toEqual(["Fan 3"]);
+  });
+
+  it("reads the 3-column sdr and the sensor table forms too", () => {
+    const sdr = ["Fan 1            | 35.28 percent     | ok", "Fan 3            | 0 percent         | cr"].join("\n");
+    expect(ipmi(sdr).fans).toEqual([
+      { name: "Fan 1", rpm: 0, status: "ok" },
+      { name: "Fan 3", rpm: 0, status: "critical" },
+    ]);
+    const sensor = [
+      "Fan 1            | 35.280     | percent    | ok    | na        | na        | na        | na        | na        | na",
+      "Fan 3            | 0.000      | percent    | cr    | na        | na        | 10.000    | na        | na        | na",
+    ].join("\n");
+    expect(ipmiSelParser.detect(sensor)).toBe(true);
+    expect(fired(evaluate(ipmiSelParser.parse(sensor).snapshot))).toEqual(["ipmi_fan_failure"]);
+  });
+
+  it("never reads a percent row with no usable status as a stopped fan", () => {
+    const r = ipmiSelParser.parse(["Fan 1            | 0Ch | na  | 29.1 | 0 percent", "Fan 2            | 0Dh | ok  | 29.2 | 35.28 percent"].join("\n"));
+    expect(r.snapshot.ipmi?.fans?.map((f) => f.status)).toEqual(["ok", "ok"]);
+    expect(fired(evaluate(r.snapshot))).toEqual([]);
+  });
+
+  it("still ignores a fan-named row whose unit is not a speed", () => {
+    expect(ipmiSelParser.detect("Fan Board Temp   | 35 degrees C      | ok")).toBe(false);
   });
 });
 
@@ -597,10 +647,10 @@ describe("timestamp formats", () => {
     ).toEqual(["2026-09-28T10:23:05Z", "2026-09-28T15:53:05Z", "2026-09-28T14:23:05Z", "2026-09-28T00:05:00Z"]);
   });
 
-  it("reads a named local zone as UTC and says so", () => {
+  it("reads a named local zone as UTC for ages, and says it is not converted", () => {
     const text = selRows(["   1 | 09/28/26 | 14:23:05 CEST | Memory #0x02 | Uncorrectable ECC | Asserted"]);
     expect(ipmi(text).sel_events_recent?.[0].timestamp).toBe("2026-09-28T14:23:05Z");
-    expect(noteText(text)).toContain("1 SEL time(s) carry a local time zone name; they were read as UTC");
+    expect(noteText(text)).toContain("1 SEL time(s) carry a local time zone name; they are shown as the BMC printed them, without the zone name, and not converted to UTC.");
   });
 
   it("switches the whole paste to day/month when one date only fits that order", () => {

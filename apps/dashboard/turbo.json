@@ -3,7 +3,13 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/integrations/ai-assistants/**", "$TURBO_ROOT$/migrations/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/integrations/ai-assistants/**",
+        "$TURBO_ROOT$/migrations/**",
+        "$TURBO_ROOT$/ground-truth.yaml",
+        "$TURBO_ROOT$/apps/site/static/install.sh"
+      ]
     }
   }
 }

@@ -93,9 +93,10 @@ export interface ParserResult {
   recapture_goal?: CaptureGoal;
   /**
    * Set when the output printed every event time it dates without a time
-   * zone. The snapshot still holds them as UTC, the collector's reading, for
-   * the age comparisons; the answer shows them without the "Z", which would
-   * claim a zone the output does not state (R4-11).
+   * zone, or with a zone name the reader does not convert (R6-9). The
+   * snapshot still holds them as UTC, the collector's reading, for the age
+   * comparisons; the answer shows them without the "Z", which would claim a
+   * zone the output does not state (R4-11).
    */
   zoneless_times?: true;
   /**
@@ -106,6 +107,19 @@ export interface ParserResult {
    * --detail names exactly one; /proc/mdstat cannot.
    */
   rebuilding_arrays?: ReadonlyArray<{ device: string; member?: string }>;
+  /**
+   * nvidia_gpu: the ECC or temperature check did not run because this output
+   * lacks those fields (a short --query-gpu CSV), so nvidia-smi -q would let
+   * it run. Not set when the GPU reports ECC off or N/A: a GeForce card's
+   * complete -q was asked for again (R6-10).
+   */
+  gpu_fields_absent?: true;
+  /**
+   * nvidia_gpu: the host's GPU count, from nvidia-smi -q "Attached GPUs". A
+   * one-GPU host has no NVLink to check, so the answer does not ask for
+   * nvidia-smi nvlink --status (R6-10).
+   */
+  host_gpus?: number;
 }
 
 export interface TriageParser {

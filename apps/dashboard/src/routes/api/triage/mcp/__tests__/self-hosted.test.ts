@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("$lib/server/self-hosted", () => ({ SELF_HOSTED: true }));
 vi.mock("$lib/server/auth/rate-limit.js", () => ({
   take: vi.fn(async () => ({ allowed: true, remaining: 1, retryAfterSeconds: 0, degraded: false })),
+  charge: vi.fn(async () => {}),
 }));
 
 import { POST } from "../+server.js";
