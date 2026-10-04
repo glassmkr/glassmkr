@@ -74,6 +74,8 @@ interface RawGpu {
   vramTotal?: Reading;
   vramUsed?: Reading;
   temp?: Reading;
+  /** "GPU Slowdown Temp" in degrees; the relative T.Limit form (driver 550+) is a different key. */
+  slowdownTemp?: Reading;
   powerDraw?: Reading;
   powerLimit?: Reading;
   utilGpu?: Reading;
@@ -223,7 +225,20 @@ const NVLINK_GPU_RE = /^\s*GPU\s+(\d{1,3}):([^(]*)\(UUID:([^)]*)\)\s*$/;
 const NVLINK_GPU_LINE_RE = /^[ \t]*GPU[ \t]+\d{1,3}:[^\r\n]{0,256}\(UUID:/m;
 const NVLINK_LINK_RE = /^\s*Link\s+(\d{1,3}):(.*)$/;
 const NVLINK_LINK_LINE_RE = /^[ \t]*Link[ \t]+\d{1,3}:/m;
+// A `Link N:` row whose value carries its own label is a counter, not link
+// state: `nvlink -e` prints "Link 0: Replay Errors: 0", `nvlink -gt d`
+// "Link 0: Data Tx: 26737 KiB". A --status value never has a second label
+// ("25 GB/s", "<inactive>"). Read as state, every healthy link was Down (R4-1).
+const NVLINK_COUNTER_VALUE_RE = /^[A-Za-z][A-Za-z0-9 ]{0,40}:/;
 const DRIVER_FAIL_RE = /NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver/i;
+// Plain `nvidia-smi`: the summary table's banner row with the driver version,
+// and its column header. Detected only so the answer can say the table is not
+// read and ask for -q; came back "No supported command output was recognised"
+// (R4-5). One whitespace run before the optional "|" keeps it linear.
+const SUMMARY_BANNER_RE = /^[ \t]*(?:\|[ \t]*)?NVIDIA-SMI[ \t]+\d{1,4}\.\d{1,4}(?:\.\d{1,4})?[ \t]+Driver Version:/m;
+const SUMMARY_ECC_HEADER = "Volatile Uncorr. ECC";
+const SUMMARY_TABLE_NOTE =
+  "nvidia-smi's default summary table is not read, so no GPU check ran on it. nvidia-smi -q prints the ECC, temperature, throttle-reason and PCIe fields the checks read.";
 const NO_DEVICES_RE = /^[ \t]*No devices were found[ \t]*$/m;
 // A GPU nvidia-smi cannot open: "Unable to determine the device handle for
 // GPU0000:2A:00.0: Unknown Error" (or "...: GPU is lost. Reboot the system
@@ -491,6 +506,7 @@ function gpuFromQuery(f: Map<string, string>, bdf: string): RawGpu {
   set("utilGpu", reading(get("utilization>gpu")));
   set("utilMem", reading(get("utilization>memory")));
   set("temp", reading(get("temperature>gpu current temp")));
+  set("slowdownTemp", reading(get("temperature>gpu slowdown temp")));
   set("clockGr", reading(get("clocks>graphics")));
   set("clockSm", reading(get("clocks>sm")));
   set("clockMem", reading(get("clocks>memory")));
@@ -768,9 +784,10 @@ function classifyLink(linkId: number, value: string): NvLinkBasic {
   return { link_id: linkId, state: "down", speed_gbps: 0 };
 }
 
-function parseNvLink(lines: string[], table: GpuTable): { gpus: number; unmatched: number } {
+function parseNvLink(lines: string[], table: GpuTable): { gpus: number; unmatched: number; counterRows: number } {
   const blocks: RawGpu[] = [];
   let cur: RawGpu | null = null;
+  let counterRows = 0;
   for (const line of lines) {
     const header = line.match(NVLINK_GPU_RE);
     if (header) {
@@ -788,21 +805,28 @@ function parseNvLink(lines: string[], table: GpuTable): { gpus: number; unmatche
     const link = line.match(NVLINK_LINK_RE);
     if (link) {
       const id = Number(link[1]);
-      if (!cur.links!.some((l) => l.link_id === id)) cur.links!.push(classifyLink(id, link[2].trim()));
+      const value = link[2].trim();
+      // Counters never set state, so a status row decides in either order.
+      if (NVLINK_COUNTER_VALUE_RE.test(value)) counterRows++;
+      else if (!cur.links!.some((l) => l.link_id === id)) cur.links!.push(classifyLink(id, value));
       continue;
     }
     if (line.trim()) cur = null;
   }
   // A header with no Link lines is `nvidia-smi -L`, or a GPU without NVLink
-  // (Crucible's L4 case: empty output). Neither says anything about links.
+  // (Crucible's L4 case: empty output); one with only counter rows is
+  // `nvlink -e` or `-gt`. None of them says anything about link state.
   const withLinks = blocks.filter((b) => b.links!.length > 0);
   const hadOtherGpus = table.list.some((g) => g.source !== "nvlink");
   let unmatched = 0;
   for (const b of withLinks) {
     if (table.upsert(b) === "added" && hadOtherGpus) unmatched++;
   }
-  return { gpus: withLinks.length, unmatched };
+  return { gpus: withLinks.length, unmatched, counterRows };
 }
+
+const NVLINK_COUNTERS_NOTE =
+  "NVLink error or traffic counters (nvidia-smi nvlink -e or -gt) are in this paste; they are not evaluated. Link state comes from nvidia-smi nvlink --status.";
 
 // ---------------------------------------------------------------------------
 // Raw records -> Snapshot entries
@@ -827,6 +851,8 @@ interface BuildCounts {
   widthOnly: number;
   /** GPUs with neither a temperature nor throttle reasons: the thermal check has nothing to read. */
   thermalBlind: number;
+  /** GPUs at or above the GPU Slowdown Temp the paste prints for them. */
+  atSlowdown: number;
 }
 
 function num0(r: Reading): number {
@@ -889,6 +915,7 @@ function buildGpus(raws: RawGpu[], counts: BuildCounts): SnapshotGpu[] {
     if (r.powerDraw === undefined || r.powerLimit === undefined) counts.powerMissing++;
     if (r.reasons === undefined) counts.reasonsMissing++;
     if (r.temp === undefined && r.reasons === undefined) counts.thermalBlind++;
+    if (typeof r.temp === "number" && typeof r.slowdownTemp === "number" && r.slowdownTemp > 0 && r.temp >= r.slowdownTemp) counts.atSlowdown++;
 
     const reasons = r.reasons ?? [];
     return {
@@ -1013,6 +1040,15 @@ function buildNotes(
       message: `The slot's own width: cat "$(readlink -f /sys/bus/pci/devices/<bus id>)/../max_link_width", with the GPU's bus id as lspci -D prints it.`,
     });
   }
+  // The thermal rule fires at a fixed 92 C, not at the card's own slowdown
+  // temperature: an A100 at 90 C against its printed 89 C was listed only as
+  // "ran and found no matching signal" (R4-3).
+  if (counts.atSlowdown > 0) {
+    notes.push({
+      level: "warning",
+      message: `The GPU temperature is at or above the GPU Slowdown Temp nvidia-smi printed for it on ${gpuCount(counts.atSlowdown)}. The thermal check fires on a hardware thermal slowdown or at a fixed 92 C, not at each card's own slowdown temperature.`,
+    });
+  }
   if (counts.vbiosSkipped > 0) {
     notes.push({
       level: "info",
@@ -1086,6 +1122,10 @@ function hasCsvHeader(text: string): boolean {
   return false;
 }
 
+function hasSummaryTable(text: string): boolean {
+  return text.includes(SUMMARY_ECC_HEADER) && text.includes("NVIDIA-SMI") && SUMMARY_BANNER_RE.test(text);
+}
+
 function hasBanner(text: string): boolean {
   if (!text.includes("NVSMI LOG")) return false;
   for (const line of text.split(/\r\n|\r|\n/)) {
@@ -1125,6 +1165,32 @@ function parseUnsafe(text: string): ParserResult {
       note = { level: "warning", message: "nvidia-smi reported no devices, so this paste has no GPU readings." };
     }
     if (note) return { domain: "nvidia_gpu", formats: [], snapshot: {}, subjects: 0, notes: [note], nothing_to_report: true };
+    // Not nothing_to_report: that points at the kernel log, and the GPU
+    // capture is the one this paste needs.
+    if (hasSummaryTable(text)) {
+      return {
+        domain: "nvidia_gpu",
+        formats: [],
+        snapshot: {},
+        subjects: 0,
+        notes: [
+          { level: "warning", message: SUMMARY_TABLE_NOTE },
+          ...(nvlink.counterRows > 0 ? [{ level: "info" as const, message: NVLINK_COUNTERS_NOTE }] : []),
+        ],
+        recapture_why: "nvidia-smi -q prints every field the GPU checks read; the default summary table is not read.",
+      };
+    }
+    if (nvlink.counterRows > 0) {
+      return {
+        domain: "nvidia_gpu",
+        formats: [],
+        snapshot: {},
+        subjects: 0,
+        notes: [{ level: "info", message: NVLINK_COUNTERS_NOTE }],
+        recapture_goal: "nvlink",
+        recapture_why: "nvidia-smi nvlink -e and -gt print counters, not link state; nvlink --status shows whether each link is up.",
+      };
+    }
     return {
       domain: "nvidia_gpu",
       formats: [],
@@ -1150,6 +1216,7 @@ function parseUnsafe(text: string): ParserResult {
     vbiosSkipped: 0,
     widthOnly: 0,
     thermalBlind: 0,
+    atSlowdown: 0,
   };
   const gpus = buildGpus(table.list, counts);
   const driver = query.driver ?? csv.driver;
@@ -1157,6 +1224,7 @@ function parseUnsafe(text: string): ParserResult {
   const downLinks = n < 2 ? gpus.flatMap((g) => g.nvlink_links.filter((l) => l.state === "down").map((l) => l.link_id)) : [];
   const notes = buildNotes(n, counts, nvlink.gpus, nvlink.unmatched, table.dropped, downLinks);
   if (unopened > 0) notes.push(unopenedNote(unopened));
+  if (nvlink.counterRows > 0) notes.push({ level: "info", message: NVLINK_COUNTERS_NOTE });
   // A rule is checked only when some GPU carries what it reads; a memory-only
   // CSV said six GPU rules "ran and found no matching signal" while its own
   // notes said each check was skipped (R2-17). nvlink_link_down returns
@@ -1230,6 +1298,7 @@ export const nvidiaSmiParser: TriageParser = {
         GPU_HEADER_LINE_RE.test(text) ||
         (NVLINK_GPU_LINE_RE.test(text) && NVLINK_LINK_LINE_RE.test(text)) ||
         DRIVER_FAIL_RE.test(text) ||
+        hasSummaryTable(text) ||
         DEVICE_HANDLE_LINE_RE.test(text) ||
         NO_DEVICES_RE.test(text) ||
         hasCsvHeader(text)

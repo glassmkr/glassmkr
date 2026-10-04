@@ -349,11 +349,12 @@ const XID_WARNING = new Set([8, 14, 22, 25, 32, 38, 39, 42, 44, 46, 60, 67]);
 //     (Ctrl-C, sigkill, a reset).
 const XID_NOT_GPU_FAULT = new Set([43, 45, 63]);
 //   - 13 (graphics engine exception) and 31 (MMU fault) logged against a
-//     named process: RESTART_APP, "general user application faults". With no
-//     process (pid='<unknown>') they stay critical, since NVIDIA notes that
-//     hardware can rarely surface as either.
+//     process: RESTART_APP, "general user application faults". With no
+//     process (pid='<unknown>', or name=<unknown>) they stay critical, since
+//     NVIDIA notes that hardware can rarely surface as either. Drivers before
+//     R495 print the pid with no name= after it (R4-6).
 const XID_APP_FAULT = new Set([13, 31]);
-const XID_APP_CONTEXT_RE = /^,\s*pid=\d{1,10},\s*name=(?!<unknown>)[^,]{1,64}(?:,|$)/;
+const XID_APP_CONTEXT_RE = /^,\s*pid=\d{1,10}(?:,\s*name=(?!<unknown>)[^,]{1,64}(?:,|$)|,(?!\s*name=)|$)/;
 
 // Ported from Crucible src/lib/privileged.ts "dmesg-io" grep and
 // src/collect/io-errors.ts device extraction.
@@ -808,7 +809,7 @@ export const kernelLogParser: TriageParser = {
       const codes = [...notRaisedXids.keys()];
       notes.push({
         level: "warning",
-        message: `${plural(n, "NVIDIA Xid event", "NVIDIA Xid events")} (${codes.length === 1 ? "code" : "codes"} ${codes.join(", ")}) ${n === 1 ? "was" : "were"} not raised as a finding: NVIDIA's Xid catalog lists 13 and 31 from a named process as application faults, and 43, 45 and 63 as events that are not a GPU fault on their own.`,
+        message: `${plural(n, "NVIDIA Xid event", "NVIDIA Xid events")} (${codes.length === 1 ? "code" : "codes"} ${codes.join(", ")}) ${n === 1 ? "was" : "were"} not raised as a finding: NVIDIA's Xid catalog lists 13 and 31 from a process as application faults, and 43, 45 and 63 as events that are not a GPU fault on their own.`,
       });
     }
     if (unknownTimeLines > 0) {

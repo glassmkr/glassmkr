@@ -17,6 +17,7 @@
 //     evaluator interpolates into a title or fix command is inert.
 
 import type { Snapshot } from "$lib/server/alerts/evaluator";
+import type { CaptureGoal } from "./capture";
 
 export type TriageDomain =
   | "smart"
@@ -83,6 +84,20 @@ export interface ParserResult {
    * paste was cut off (R2b-17).
    */
   recapture_why?: string;
+  /**
+   * The capture to ask for in place of the domain's default, when the output
+   * is a sibling command whose fields no rule reads: `nvidia-smi nvlink -e`
+   * prints counters, and the link state needs `nvlink --status`, not
+   * `nvidia-smi -q` (R4-1).
+   */
+  recapture_goal?: CaptureGoal;
+  /**
+   * Set when the output printed every event time it dates without a time
+   * zone. The snapshot still holds them as UTC, the collector's reading, for
+   * the age comparisons; the answer shows them without the "Z", which would
+   * claim a zone the output does not state (R4-11).
+   */
+  zoneless_times?: true;
 }
 
 export interface TriageParser {

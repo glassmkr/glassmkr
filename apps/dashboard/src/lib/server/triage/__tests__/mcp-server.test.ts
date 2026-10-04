@@ -121,7 +121,9 @@ describe("tools/list contract", () => {
     expect(tools[0]._meta?.["anthropic/maxResultSizeChars"]).toBe(200_000);
     for (const tool of tools.slice(1)) expect(tool._meta?.["anthropic/maxResultSizeChars"]).toBeUndefined();
     const analyze = tools[0];
-    expect(analyze.description).toContain("smartctl, zpool status, /proc/mdstat or mdadm --detail, dmesg or journalctl -k, ipmitool sel, or nvidia-smi");
+    expect(analyze.description).toContain("smartctl, zpool status, /proc/mdstat or mdadm --detail, dmesg or journalctl -k, ipmitool sel, or nvidia-smi -q, nvidia-smi nvlink --status or nvidia-smi --query-gpu CSV");
+    // Plain nvidia-smi prints a summary table no reader reads (R4-5).
+    expect(analyze.description).not.toMatch(/nvidia-smi and asks/);
     expect(analyze.description).toContain("verbatim");
     expect(analyze.inputSchema.required).toEqual(["output"]);
     expect((analyze.inputSchema.properties as any).output.maxLength).toBe(200000);

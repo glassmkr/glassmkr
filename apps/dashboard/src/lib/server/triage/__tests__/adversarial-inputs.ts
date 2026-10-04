@@ -104,7 +104,7 @@ export function adversarialInputs(size: number): AdversarialInput[] {
     { name: "mdraid: long member list", text: fill("Personalities : [raid1]\nmd0 : active raid1 ", "a", size) },
     { name: "mdraid: padded detail value", text: fill("/dev/md0:\n   State : ", " ", size, "x\n") },
   );
-  out.push(...roundTwoInputs(size), ...roundThreeInputs(size));
+  out.push(...roundTwoInputs(size), ...roundThreeInputs(size), ...roundFourInputs(size));
   return out;
 }
 
@@ -220,5 +220,33 @@ function roundThreeInputs(size: number): AdversarialInput[] {
         fill("", '{"smart_status":0}\n', 20_000) +
         lines("", () => "sd 0:0:0:0: [u] Sense Key : 0x3 [current]", size - 20_000),
     },
+  ];
+}
+
+// Review round 4: a dedupe over every distinct SEL sensor, a fix workflow
+// resolved for every alert before the 30-finding cap, and the summary-table
+// banner regex on padded lines.
+export function roundFourInputs(size: number): AdversarialInput[] {
+  return [
+    // R4-14: componentList deduplicated labels with Array.includes.
+    {
+      name: "ipmi: SEL of critical rows with distinct sensors",
+      text: lines(
+        "root@h:~# ipmitool sel elist\n",
+        (i) => `${(i + 1).toString(16).padStart(4, " ")} | 01/01/2020 | 00:00:00 | Memory #0x${(i & 0xffff).toString(16).padStart(4, "0")} | Uncorrectable ECC | Asserted`,
+        size,
+      ),
+    },
+    // R4-15: one zfs_pool_unhealthy alert per faulted top-level vdev.
+    {
+      name: "zpool: thousands of faulted top-level vdevs",
+      text: lines("  pool: p\n state: DEGRADED\nconfig:\n\n\tNAME STATE READ WRITE CKSUM\n\tp DEGRADED 0 0 0\n", (i) => `\t  s${token(i, 3)} FAULTED 0 0 0`, size),
+    },
+    // R4-5: the summary-table banner regex on lines padded where it backtracks.
+    {
+      name: "nvidia: summary banner padded before Driver Version",
+      text: lines("| GPU  Name | Volatile Uncorr. ECC |\n", () => "| NVIDIA-SMI 550.54.15" + " ".repeat(4000) + "x", size),
+    },
+    { name: "nvidia: summary header with lines of spaces", text: fill("Volatile Uncorr. ECC NVIDIA-SMI\n", " ".repeat(4000) + "\n", size) },
   ];
 }

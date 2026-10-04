@@ -161,6 +161,8 @@ interface Counters {
   failedSelfTest?: { nibble: number; lba?: number; hours?: number };
   /** Drives with SMART 197 or 198 above zero, and the largest of each. */
   pendingDrives: number;
+  /** Crucial/Micron drives whose 197 Current_Pending_ECC_Cnt reads 1 with nothing beside it (R4-9). */
+  eccFlapDrives: number;
   maxPending: number;
   maxOfflineUncorrectable: number;
   /** Drives reporting unrecovered data no single-paste rule reads, and the largest count (R3-7). */
@@ -1498,6 +1500,10 @@ function buildNotes(c: Counters, subjects: number): ParseNote[] {
       : `${c.pendingDrives} drives report pending or offline-uncorrectable sectors (SMART 197/198; highest ${c.maxPending} pending, ${c.maxOfflineUncorrectable} offline-uncorrectable)`;
     warn(`${lead}. Glassmkr judges these over days of readings, so one paste raised no finding on its own.`);
   }
+  if (c.eccFlapDrives > 0) {
+    const lead = c.eccFlapDrives === 1 ? "1 drive reports" : `${c.eccFlapDrives} drives report`;
+    info(`${lead} Current_Pending_ECC_Cnt (SMART 197) = 1 and no reallocated, uncorrectable or offline-uncorrectable sectors. On Crucial and Micron SSDs this counter moves between 0 and 1 with no fault; one reading says nothing either way.`);
+  }
   // Unrecovered data on a drive whose health line can still say PASSED. No
   // rule reads these from one paste, so the answer said only "no rule
   // matched" (R3-7). The NVMe note keys on media errors, never on the error
@@ -1555,6 +1561,7 @@ function parseSmartctl(input: string): ParserResult {
     grownDefectTotal: 0,
     failedSelfTestDrives: 0,
     pendingDrives: 0,
+    eccFlapDrives: 0,
     maxPending: 0,
     maxOfflineUncorrectable: 0,
     mediaErrorDrives: 0,
@@ -1687,7 +1694,20 @@ function parseSmartctl(input: string): ParserResult {
     }
     const pending = entry.pending_sectors ?? 0;
     const offline = entry.offline_uncorrectable ?? 0;
-    if (pending > 0 || offline > 0) {
+    // Crucial/Micron name 197 Current_Pending_ECC_Cnt, an ECC bookkeeping
+    // counter that moves between 0 and 1 on drives with no fault; the
+    // evaluator stopped firing on pending sectors because of it. Only that
+    // name at 1, with no other media counter and no failed self-test, is set
+    // apart from the pending-sector warning (R4-9).
+    const eccFlap =
+      d.attrs.get(197)?.name === "Current_Pending_ECC_Cnt" &&
+      pending === 1 &&
+      offline === 0 &&
+      (entry.reallocated_sectors ?? 0) === 0 &&
+      (entry.reported_uncorrectable ?? 0) === 0 &&
+      !(failedTest && failedTest.nibble !== null);
+    if (eccFlap) counters.eccFlapDrives++;
+    else if (pending > 0 || offline > 0) {
       counters.pendingDrives++;
       counters.maxPending = Math.max(counters.maxPending, pending);
       counters.maxOfflineUncorrectable = Math.max(counters.maxOfflineUncorrectable, offline);

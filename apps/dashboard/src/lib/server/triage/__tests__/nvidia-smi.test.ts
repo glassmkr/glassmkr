@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { nvidiaSmiParser } from "../parsers/nvidia-smi";
-import { analyzeOutput, renderAnalysisText } from "../analyze";
+import { SEL_WINDOW_DAYS, analyzeOutput, renderAnalysisText } from "../analyze";
 import type { ParserResult } from "../types";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "nvidia_gpu");
@@ -25,7 +25,7 @@ function evaluate(result: ParserResult): AlertResult[] {
   const allow = new Set(nvidiaSmiParser.rules);
   return evaluateAlerts(result.snapshot as Snapshot, {
     muted_rules: listMetadataRuleTypes().filter((t) => !allow.has(t)),
-    ipmi_sel_critical_window_days: 3650,
+    ipmi_sel_critical_window_days: SEL_WINDOW_DAYS,
   });
 }
 
@@ -459,6 +459,138 @@ describe("NVLink fault bucket: 2x A100 identity CSV + nvlink --status", () => {
   });
 });
 
+// R4-1: `nvlink -e` (error counters) and `nvlink -gt d` (traffic) print
+// `Link N: <Label>: <value>` rows. Read as link state they were every link
+// Down: a critical vendor-side finding on each healthy GPU. nvlink_link_down's
+// own quick check tells the user to run `nvlink --errors`.
+describe("NVLink counter output is not link state (R4-1)", () => {
+  const errors = fixture("synthetic-nvlink-errors-a100x2.txt");
+  const throughput = fixture("synthetic-nvlink-throughput-a100x2.txt");
+  const status = fixture("synthetic-nvlink-fault-a100x2.txt").split("\n").slice(4).join("\n").replace(/Down/g, "25 GB/s");
+  const quiet = <T,>(fn: () => T): T => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      return fn();
+    } finally {
+      log.mockRestore();
+    }
+  };
+
+  for (const [name, text] of [
+    ["nvlink -e", errors],
+    ["nvlink -gt d", throughput],
+    ["nvlink --errors | head -40 (the quick check's own command)", errors.split("\n").slice(0, 40).join("\n")],
+    ["nvlink -e with no prompt line", errors.split("\n").slice(1).join("\n")],
+  ] as const) {
+    it(`${name}: no link is read as Down, nothing claims nvlink --status, and the answer asks for it`, () => {
+      const r = nvidiaSmiParser.parse(text);
+      expect(nvidiaSmiParser.detect(text)).toBe(true);
+      expect(r.formats).not.toContain("nvidia_smi_nvlink_status");
+      expect(r.subjects).toBe(0);
+      expect(r.notes.map((n) => n.message).join("\n")).toMatch(/NVLink error or traffic counters/);
+      const a = quiet(() => analyzeOutput(text));
+      expect(a.findings).toEqual([]);
+      expect(a.checked_no_signal).toEqual([]);
+      expect(a.next_capture[0]?.goal).toBe("nvlink");
+      const rendered = renderAnalysisText(a);
+      expect(rendered).not.toMatch(/report Down|NVLink link down/);
+      expect(rendered).toContain("nvidia-smi nvlink --status");
+    });
+  }
+
+  it("-e then --status: the status rows decide, and the counters get a note", () => {
+    const r = nvidiaSmiParser.parse(`${errors}\n$ nvidia-smi nvlink --status\n${status}`);
+    expect(r.formats).toEqual(["nvidia_smi_nvlink_status"]);
+    expect(gpus(r).flatMap((g) => g.nvlink_links.map((l) => l.state))).toEqual(Array(24).fill("up"));
+    expect(r.rules_checked).toContain("nvlink_link_down");
+    expect(evaluate(r)).toEqual([]);
+    expect(r.notes.map((n) => n.message).join("\n")).toMatch(/NVLink error or traffic counters/);
+  });
+
+  it("--status then -e gives the same links", () => {
+    const a = nvidiaSmiParser.parse(`${status}\n${errors}`);
+    const b = nvidiaSmiParser.parse(`${errors}\n${status}`);
+    expect(gpus(a).map((g) => g.nvlink_links)).toEqual(gpus(b).map((g) => g.nvlink_links));
+  });
+
+  it("a real Down row next to counter rows is still Down", () => {
+    const text = `${errors}\n${fixture("synthetic-nvlink-fault-a100x2.txt").split("\n").slice(4).join("\n")}`;
+    const alerts = evaluate(nvidiaSmiParser.parse(text));
+    expect(ruleIds(alerts)).toEqual(["nvlink_link_down"]);
+    expect(alerts[0].evidence).toMatchObject({ down_link_ids: [6, 7] });
+  });
+
+  it("one H100 NVL with nvlink -e names no Down link", () => {
+    const one = [
+      "GPU 0: NVIDIA H100 NVL (UUID: GPU-0000feed-0000-4000-8000-000000000700)",
+      ...Array.from({ length: 18 }, (_, i) => [`\t Link ${i}: Replay Errors: 0`, `\t Link ${i}: Recovery Errors: 0`, `\t Link ${i}: CRC Errors: 0`]).flat(),
+    ].join("\n");
+    const r = nvidiaSmiParser.parse(one);
+    expect(r.notes.map((n) => n.message).join("\n")).not.toMatch(/report Down/);
+  });
+
+  it("-q plus nvlink -e reads the GPUs, asks for nvlink --status, and claims no NVLink check", () => {
+    const text = `${fixture("synthetic-prompt-a100x2-d-ecc-temp.txt")}\n${errors}`;
+    const r = nvidiaSmiParser.parse(text);
+    expect(r.formats).not.toContain("nvidia_smi_nvlink_status");
+    expect(r.rules_checked).not.toContain("nvlink_link_down");
+    const a = quiet(() => analyzeOutput(text));
+    expect(a.findings.map((f) => f.rule_id)).not.toContain("nvlink_link_down");
+    expect(a.next_capture.map((c) => c.goal)).toContain("nvlink");
+  });
+});
+
+// R4-5: plain `nvidia-smi` prints a summary table no reader reads. It came
+// back "No supported command output was recognised", with the GPU capture
+// last of six and nothing saying the table was seen; beside a kernel log it
+// was dropped without a word.
+describe("nvidia-smi's default summary table (R4-5)", () => {
+  const table = fixture("synthetic-summary-table-a100x2.txt");
+  const SUMMARY_NOTE = /nvidia-smi's default summary table is not read/;
+
+  it("is detected, reads nothing, and says nvidia-smi -q is what gets read", () => {
+    expect(nvidiaSmiParser.detect(table)).toBe(true);
+    const r = nvidiaSmiParser.parse(table);
+    expect(r.subjects).toBe(0);
+    expect(r.formats).toEqual([]);
+    expect(r.nothing_to_report).toBeUndefined();
+    expect(r.notes.find((n) => SUMMARY_NOTE.test(n.message))?.level).toBe("warning");
+    const a = analyzeOutput(table);
+    expect(a.findings).toEqual([]);
+    expect(a.next_capture[0]?.goal).toBe("gpu");
+    const text = renderAnalysisText(a);
+    expect(text).toMatch(SUMMARY_NOTE);
+    expect(text).not.toContain("No supported command output was recognised");
+    expect(text).toContain("nvidia-smi -q");
+  });
+
+  it("beside a kernel log, the answer says the table was not read and asks for nvidia-smi -q", () => {
+    const text = `${table}\n[Fri Oct  3 11:58:01 2026] nvme nvme0: 7/0/0 default/read/poll queues\n[Fri Oct  3 11:58:02 2026] EXT4-fs (nvme0n1p1): mounted filesystem with ordered data mode.\n[Fri Oct  3 11:58:03 2026] NET: Registered PF_INET6 protocol family\n`;
+    const a = analyzeOutput(text);
+    expect(a.input.formats).toContain("dmesg");
+    expect(a.next_capture.map((c) => c.goal)).toContain("gpu");
+    expect(renderAnalysisText(a)).toMatch(SUMMARY_NOTE);
+  });
+
+  it("an older driver's table (R470 layout) is detected too", () => {
+    const old = [
+      "+-----------------------------------------------------------------------------+",
+      "| NVIDIA-SMI 470.57.02    Driver Version: 470.57.02    CUDA Version: 11.4     |",
+      "|-------------------------------+----------------------+----------------------+",
+      "| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |",
+      "|   0  Tesla V100-SXM2...  On   | 00000000:18:00.0 Off |                    0 |",
+    ].join("\n");
+    expect(nvidiaSmiParser.detect(old)).toBe(true);
+    expect(nvidiaSmiParser.parse(old).notes.map((n) => n.message).join("\n")).toMatch(SUMMARY_NOTE);
+  });
+
+  it("nvidia-smi -q beside the table is read as before", () => {
+    const r = nvidiaSmiParser.parse(`${table}\n${fixture("synthetic-healthy-h100x2-q.txt")}`);
+    expect(r.subjects).toBe(2);
+    expect(r.formats).toEqual(["nvidia_smi_query"]);
+  });
+});
+
 describe("truncated: copy stops inside GPU 1's ECC block", () => {
   const text = fixture("synthetic-truncated-h100x2-q.txt");
   const result = nvidiaSmiParser.parse(text);
@@ -867,5 +999,47 @@ describe("SRAM Threshold Exceeded and GPU Reset Status (R3-11)", () => {
     const msgs = nvidiaSmiParser.parse(fixture("synthetic-healthy-h100x2-q.txt")).notes.map((n) => n.message);
     expect(msgs).not.toContain(SRAM);
     expect(msgs.join("\n")).not.toMatch(/SRAM Threshold Exceeded|GPU Reset Status/);
+  });
+});
+
+// R4-3: the thermal summary said the GPU was "at or above the HW slowdown
+// threshold", but the rule fires at a fixed 92 C or on a hardware thermal
+// slowdown and never reads the card's own slowdown temperature.
+describe("the thermal finding states its real trigger (R4-3)", () => {
+  const AT_SLOWDOWN = "The GPU temperature is at or above the GPU Slowdown Temp nvidia-smi printed for it on 1 GPU. The thermal check fires on a hardware thermal slowdown or at a fixed 92 C, not at each card's own slowdown temperature.";
+
+  it("an A6000 at 93 C, below its own 95 C slowdown temp, with only a SW slowdown: the summary names the 92 C backstop", () => {
+    const text = fixture("synthetic-failing-a100-q.txt")
+      .replace("NVIDIA A100-SXM4-80GB", "NVIDIA RTX A6000")
+      .replace(/(HW Slowdown\s+:) Active/, "$1 Not Active")
+      .replace(/(HW Thermal Slowdown\s+:) Active/, "$1 Not Active")
+      .replace(/(GPU Shutdown Temp\s+:) 92 C/, "$1 98 C")
+      .replace(/(GPU Slowdown Temp\s+:) 89 C/, "$1 95 C");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const a = analyzeOutput(text);
+      const f = a.findings.find((x) => x.rule_id === "gpu_thermal_critical")!;
+      expect(f.observed.temp_c).toBe(93);
+      expect(f.summary).not.toMatch(/at or above the HW slowdown threshold/);
+      expect(f.summary).toMatch(/92 C/);
+      expect(f.summary).toMatch(/not this card's own slowdown temperature/);
+      expect(a.notes).not.toContain(AT_SLOWDOWN);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("an A100 at 90 C against its printed 89 C slowdown temp says so in the text block", () => {
+    const text = fixture("synthetic-prompt-a100x2-d-ecc-temp.txt").replace(/(GPU Current Temp\s+:) 41 C/, "$1 90 C");
+    const r = nvidiaSmiParser.parse(text);
+    expect(r.notes).toContainEqual({ level: "warning", message: AT_SLOWDOWN });
+    const a = analyzeOutput(text);
+    expect(a.findings.map((f) => f.rule_id)).not.toContain("gpu_thermal_critical");
+    expect(renderAnalysisText(a)).toContain(AT_SLOWDOWN);
+  });
+
+  it("a relative T.Limit slowdown line (driver 550+) is not read as a temperature", () => {
+    const msgs = nvidiaSmiParser.parse(fixture("synthetic-crlf-l4-q.txt")).notes.map((n) => n.message);
+    expect(msgs.join("\n")).not.toMatch(/GPU Slowdown Temp/);
   });
 });

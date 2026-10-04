@@ -14,7 +14,7 @@ import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/ale
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { decodeNvmeCriticalWarning, smartctlParser, unpackSeagateCounter } from "../parsers/smartctl";
 import { DOMAIN_SNAPSHOT_KEYS, type ParserResult } from "../types";
-import { analyzeOutput, renderAnalysisText } from "../analyze";
+import { SEL_WINDOW_DAYS, analyzeOutput, renderAnalysisText } from "../analyze";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "smart");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -28,7 +28,7 @@ function evaluate(snapshot: Partial<Snapshot>): { results: AlertResult[]; errors
   try {
     const results = evaluateAlerts(snapshot as Snapshot, {
       muted_rules: listMetadataRuleTypes().filter((t) => !smartctlParser.rules.includes(t)),
-      ipmi_sel_critical_window_days: 3650,
+      ipmi_sel_critical_window_days: SEL_WINDOW_DAYS,
     });
     return { results, errors };
   } finally {
@@ -396,6 +396,48 @@ describe("unreadable devices and things that are not disks", () => {
   });
 });
 
+const MX500_FLAP_NOTE =
+  "1 drive reports Current_Pending_ECC_Cnt (SMART 197) = 1 and no reallocated, uncorrectable or offline-uncorrectable sectors. On Crucial and Micron SSDs this counter moves between 0 and 1 with no fault; one reading says nothing either way.";
+
+// R4-9: a healthy Crucial MX500 whose 197 Current_Pending_ECC_Cnt reads 1 got
+// a warning that it has a pending sector, though the evaluator dropped pending
+// as a trigger because of exactly this drive and counter.
+describe("Crucial/Micron Current_Pending_ECC_Cnt = 1 (R4-9)", () => {
+  const block = (raw197: number, raw198 = 0, raw5 = 0) =>
+    [
+      "smartctl 7.3 2022-02-28 r5338 [x86_64-linux-6.1.0-25-amd64] (local build)",
+      "=== START OF INFORMATION SECTION ===",
+      "Model Family:     Crucial/Micron Client SSDs",
+      "Device Model:     CT2000MX500SSD1",
+      "Serial Number:    2317FAKE0009",
+      "",
+      "=== START OF READ SMART DATA SECTION ===",
+      "SMART overall-health self-assessment test result: PASSED",
+      "",
+      "ID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_FAILED RAW_VALUE",
+      `  5 Reallocate_NAND_Blk_Cnt 0x0032   100   100   010    Old_age   Always       -       ${raw5}`,
+      "187 Reported_Uncorrect      0x0032   100   100   000    Old_age   Always       -       0",
+      `197 Current_Pending_ECC_Cnt 0x0032   100   100   000    Old_age   Always       -       ${raw197}`,
+      `198 Offline_Uncorrectable   0x0030   100   100   000    Old_age   Offline      -       ${raw198}`,
+      "",
+    ].join("\n");
+
+  it("197 = 1 alone is an info note naming the counter, not a pending-sector warning", () => {
+    const { parsed, results } = runText(block(1));
+    expect(fired(results)).toEqual([]);
+    expect(parsed.notes).toContainEqual({ level: "info", message: MX500_FLAP_NOTE });
+    expect(noteText(parsed)).not.toMatch(/pending and .* offline-uncorrectable sectors/);
+  });
+
+  it("197 above 1, or with 198 or 5 non-zero, keeps the pending-sector warning", () => {
+    for (const text of [block(8), block(1, 2), block(1, 0, 3)]) {
+      const { parsed } = runText(text);
+      expect(parsed.notes.find((n) => /SMART 197\/198/.test(n.message))?.level).toBe("warning");
+      expect(noteText(parsed)).not.toContain("Current_Pending_ECC_Cnt");
+    }
+  });
+});
+
 describe("several devices in one paste", () => {
   it("loop with echo headers: each block gets its device; only the failing drive fires smart_failing", () => {
     const { parsed, results } = run("synthetic-loop-mixed.txt");
@@ -418,6 +460,10 @@ describe("several devices in one paste", () => {
       "smart_failing:critical:/dev/sdb",
     ]);
     expect(noteText(parsed)).toMatch(/Skipped 1 BMC virtual media device/);
+    // R4-9: the MX500's 197 = 1 is its ECC counter flapping, not a pending
+    // sector; the failing Seagate's 656 is.
+    expect(parsed.notes).toContainEqual({ level: "info", message: MX500_FLAP_NOTE });
+    expect(parsed.notes).toContainEqual({ level: "warning", message: expect.stringMatching(/^1 drive reports 656 pending and 656 offline-uncorrectable sectors/) });
   });
 
   it("an explicit device list maps blocks in order only when the counts match", () => {

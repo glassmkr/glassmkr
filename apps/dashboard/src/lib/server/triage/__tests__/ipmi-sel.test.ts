@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, t
 
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
+import { SEL_WINDOW_DAYS } from "../analyze";
 import { ipmiSelParser } from "../parsers/ipmi-sel";
 
 const FIXTURES = join(__dirname, "fixtures", "ipmi_sel");
@@ -41,7 +42,9 @@ function fixture(name: string): string {
   return readFileSync(join(FIXTURES, name), "utf8");
 }
 
-function evaluate(snapshot: Partial<Snapshot>, windowDays: number | null = 3650): AlertResult[] {
+// The window analyze.ts passes, so a parser change that matters only for an
+// event 10 to 100 years old (an unset BMC clock, R1-9) fails here too (R4-16).
+function evaluate(snapshot: Partial<Snapshot>, windowDays: number | null = SEL_WINDOW_DAYS): AlertResult[] {
   return evaluateAlerts(snapshot as Snapshot, {
     muted_rules: listMetadataRuleTypes().filter((t) => !ipmiSelParser.rules.includes(t)),
     ...(windowDays === null ? {} : { ipmi_sel_critical_window_days: windowDays }),
@@ -211,7 +214,7 @@ describe("failing SEL: ipmitool 1.8.19 layout (2-digit year, UTC suffix)", () =>
     const ev = sel.evidence as Record<string, unknown>;
     expect((ev.critical_events as unknown[]).length).toBe(4);
     expect(ev.transient_pairs_excluded).toBe(1);
-    expect(ev.window_days).toBe(3650);
+    expect(ev.window_days).toBe(SEL_WINDOW_DAYS);
     expect([...(ev.sensor_types as string[])].sort()).toEqual(["memory", "power", "processor"]);
     expect(ev.parser_quality).toBe("unknown");
     const ecc = alertOf(alerts, "ecc_errors");
@@ -385,7 +388,7 @@ describe("sel list: hex ids, Pre-Init and OEM records", () => {
     expect(events.find((e) => e.id === 2)).toMatchObject({ event: "AC lost", severity: "critical", timestamp: "" });
   });
 
-  it("with the paste window (3650 days) the Pre-Init event counts with unknown age", () => {
+  it("with the paste window (SEL_WINDOW_DAYS) the Pre-Init event counts with unknown age", () => {
     const alerts = evaluate(ipmiSelParser.parse(text).snapshot);
     expect(fired(alerts)).toEqual(["ecc_errors", "ipmi_sel_critical"]);
     const ev = alertOf(alerts, "ipmi_sel_critical").evidence as Record<string, unknown>;
@@ -393,6 +396,11 @@ describe("sel list: hex ids, Pre-Init and OEM records", () => {
     expect(critical.map((e) => e.id).sort((a, b) => a - b)).toEqual([2, 11, 31]);
     expect(critical.find((e) => e.id === 2)?.age_days).toBeNull();
     expect(critical.find((e) => e.id === 31)?.age_days).toBe(32);
+  });
+
+  it("an event dated by a BMC clock that was never set (01/01/2000) still counts (R1-9, R4-16)", () => {
+    const alerts = evaluate(ipmiSelParser.parse("   1 | 01/01/2000 | 00:00:12 | Power Supply PS2 Status | Failure detected | Asserted\n").snapshot);
+    expect(fired(alerts)).toEqual(["ipmi_sel_critical"]);
   });
 
   it("ipmi_sel_critical_window_days is what keeps older pasted events in scope", () => {

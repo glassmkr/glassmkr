@@ -171,15 +171,24 @@ describe("self-hosted steps make the dashboard reachable from other hosts (R2-20
 // systemd unit; Alpine has musl and OpenRC, so every command the tool gave
 // for it failed.
 describe("Alpine is not offered an install path that cannot work (R3-20)", () => {
-  it("says the packaged agent does not run there, with no commands to try", () => {
+  it("says the installer and the binary do not support Alpine, with no commands to try", () => {
     const r = valid(monitoringSetup({ target: "hosted", distro: "alpine" }));
     expect(commands(r)).toEqual([]);
     expect(r.verify).toEqual([]);
     expect(r.steps).toHaveLength(1);
-    expect(r.steps[0].title).toBe("Alpine Linux is not supported yet");
+    expect(r.steps[0].title).toBe("No packaged install for Alpine Linux");
     expect(r.steps[0].detail).toMatch(/glibc/);
     expect(r.steps[0].detail).toMatch(/systemd/);
     expect(renderSetupText(r)).not.toMatch(/systemctl|sha256sum/);
+  });
+
+  // R4-8: ground-truth.yaml keeps runtime support (Alpine listed) apart from
+  // install-path support; the wording said the agent itself does not run
+  // there, and "yet" promised a future the sources do not.
+  it("scopes the claim to the install paths and promises nothing", () => {
+    const step = monitoringSetup({ target: "hosted", distro: "alpine" }).steps[0];
+    expect(`${step.title} ${step.detail}`).not.toMatch(/\byet\b|agent does not run|not supported/i);
+    expect(step.detail).toMatch(/one-line installer and the single-file binary do not support Alpine/);
   });
 
   it("the binary step no longer names Alpine", () => {

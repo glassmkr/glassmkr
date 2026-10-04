@@ -57,7 +57,7 @@
     <section id="prerequisites">
       <h2><a href="#prerequisites" class="anchor-link">#</a>Prerequisites</h2>
       <ul>
-        <li>A Linux server. Debian, Ubuntu, RHEL, Rocky, Alma and Fedora can use the one-line installer; Arch and other glibc distributions with systemd but without apt or dnf use the single-file binary, which needs no Node. See step 3. Alpine (musl libc, OpenRC) is not supported yet.</li>
+        <li>A Linux server. Debian, Ubuntu, RHEL, Rocky, Alma and Fedora can use the one-line installer; Arch and other glibc distributions with systemd but without apt or dnf use the single-file binary, which needs no Node. See step 3. The installer and the single-file binary do not support Alpine (musl libc, OpenRC).</li>
         <li>Root or sudo access.</li>
         <li>Outbound HTTPS (port 443) to <code>app.glassmkr.com</code>. No inbound ports required.</li>
       </ul>

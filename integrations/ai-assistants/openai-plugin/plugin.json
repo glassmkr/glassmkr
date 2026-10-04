@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "glassmkr",
   "version": "1.0.0",
-  "description": "Checks pasted Linux server hardware output (smartctl, zpool status, /proc/mdstat, mdadm --detail, dmesg, journalctl -k, ipmitool sel, nvidia-smi) against Glassmkr's open-source alert rules and returns findings, fix steps, and the commands to capture more.",
+  "description": "Checks pasted Linux server hardware output (smartctl, zpool status, /proc/mdstat, mdadm --detail, dmesg, journalctl -k, ipmitool sel, nvidia-smi -q, nvidia-smi nvlink --status) against Glassmkr's open-source alert rules and returns findings, fix steps, and the commands to capture more.",
   "author": {
     "name": "Simon Rybisar",
     "email": "hello@glassmkr.com",
@@ -52,7 +52,7 @@
         "developerName": "Simon Rybisar",
         "category": "Developer Tools",
         "capabilities": [
-          "Analyze pasted smartctl, ZFS, mdadm, kernel log, IPMI SEL and nvidia-smi output",
+          "Analyze pasted smartctl, ZFS, mdadm, kernel log, IPMI SEL and nvidia-smi -q output",
           "Return capture commands for disks, RAID, ZFS, GPUs and the BMC event log",
           "Explain how to set up continuous monitoring with the Crucible agent"
         ],
@@ -127,7 +127,7 @@
       },
       "publication": {
         "countries": [],
-        "release_notes": "Initial release: analyze pasted smartctl, zpool status, /proc/mdstat and mdadm --detail, kernel log, ipmitool SEL and nvidia-smi output with Glassmkr's alert rules; capture commands for each goal; monitoring setup steps for the Crucible agent."
+        "release_notes": "Initial release: analyze pasted smartctl, zpool status, /proc/mdstat and mdadm --detail, kernel log, ipmitool SEL and nvidia-smi -q output with Glassmkr's alert rules; capture commands for each goal; monitoring setup steps for the Crucible agent."
       }
     }
   }

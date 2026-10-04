@@ -57,7 +57,7 @@ export const TRIAGE_COLLECTOR_VERSION = "1.2.4";
  * every date ipmitool prints; the answer reports how old the events are
  * instead (selTiming below).
  */
-const SEL_WINDOW_DAYS = 36_500;
+export const SEL_WINDOW_DAYS = 36_500;
 
 const MAX_FINDINGS = 30;
 const MAX_OBSERVED_KEYS = 24;
@@ -161,8 +161,11 @@ const TRIAGE_SUMMARY: Record<string, string> = {
     "The memory controller or the BMC reported one or more uncorrectable ECC errors in this output. An uncorrectable error is a hardware fault in memory; check when it happened (the dates in the paste), then identify the DIMM and plan its replacement.",
   zfs_scrub_errors:
     "The pool's most recent scrub found checksum or repair errors. They point at failing disks or silent corruption; zpool status -v lists the affected files.",
+  // The rule fires at a fixed 92 C and never reads the card's own slowdown
+  // temperature; "at or above the HW slowdown threshold" was false for an
+  // A6000 at 93 C against its printed 95 C (R4-3).
   gpu_thermal_critical:
-    "GPU die temperature at or above the HW slowdown threshold, or nvidia-smi reports a hardware thermal slowdown. A software thermal slowdown at the card's thermal target (normal load behavior) does not fire. Sustained operation at thermal limits accelerates wear and reduces throughput.",
+    "nvidia-smi reports a hardware thermal slowdown (HW Thermal Slowdown, or HW Slowdown with no power brake), or the GPU die reads 92 C or more. 92 C is a fixed backstop, not this card's own slowdown temperature, which nvidia-smi -q prints as GPU Slowdown Temp. A software thermal slowdown alone does not fire. Sustained operation at thermal limits accelerates wear and reduces throughput.",
   gpu_corrected_ecc_storm:
     "The GPU's corrected-ECC counter is high, or single-bit retired pages are non-zero. Corrected errors were repaired by the GPU; one paste shows the counters, not how fast they are rising, so compare with a reading taken later.",
   // The YAML names the agent version that added per-vdev classes and says
@@ -190,6 +193,16 @@ const TRIAGE_SUMMARY: Record<string, string> = {
   // (R2b-14).
   filesystem_readonly:
     "The kernel logged that it remounted a filesystem read-only, which it does when the filesystem fails, usually after I/O errors. Anything that writes to it fails; data already on it stays readable. Check the kernel log lines before the remount for the device's errors.",
+  // The YAML names causes the paste does not show ("typically indicates a
+  // failed firmware update") and leaves out the common one, a GPU replaced
+  // under RMA (R4-12).
+  gpu_driver_or_firmware_drift:
+    "GPUs of the same model on this host report different VBIOS versions. The output does not say why: a replaced GPU, a partial firmware update and a mixed batch all look like this.",
+  // The YAML calls the cap "catastrophic for training-style workloads", an
+  // impact the paste does not show (R4-12). The width-only branch has its own
+  // text (shapeFinding).
+  gpu_pcie_link_degraded:
+    "The GPU's PCIe link is running below the card's maximum generation or width, so host-to-GPU bandwidth is capped below what the card supports.",
   // Shorter than the YAML so the text block carries it whole (R2b-14).
   nvme_critical_warning:
     "An NVMe drive's Critical Warning byte is non-zero. Each set bit is a condition the NVMe specification flags for immediate attention: available spare below threshold, temperature threshold exceeded, reliability degraded, read-only mode, or a failed volatile memory backup.",
@@ -265,8 +278,15 @@ export const TRIAGE_TEXT_REPLACE: Record<string, ReadonlyArray<readonly [string,
   // The SEL names the sensor an event was logged against; a threshold
   // crossing or an event deasserted years ago is not a failed part the BMC
   // has identified (R3-9).
+  // The sensor list is paste text and stays out of the command: a label keeps
+  // "(", ")" and ":", and `/(e:id:) x` in a comment line is a zsh glob
+  // qualifier that runs `id` when the block is pasted (R4-2). commandEvidence
+  // never passes the list, so the token renders as a placeholder here.
   ipmi_sel_critical: [
-    ["# This SEL alert names the failed component(s): ", "# Sensors named by the critical SEL events: "],
+    [
+      "# This SEL alert names the failed component(s): <affected_components>.",
+      "# The sensors these critical SEL events name are listed in this answer as affected_components.",
+    ],
     [
       "# The BMC has already identified the part; the commands below just\n# confirm it and point at the focused workflow",
       "# Check each event's date and whether a Deasserted row follows it;\n# ipmitool sdr elist shows each sensor's current reading.\n# Focused workflows",
@@ -310,6 +330,27 @@ const NEVER_SCRUBBED = {
     "The pool shows no record of a scrub. A scrub reads every block and finds silent corruption; a just-created pool simply needs its first one. This is a maintenance gap reported at info, not a fault.",
 };
 
+const PCIE_WIDTH_ONLY_EXPLANATION =
+  "nvidia-smi reports the negotiated PCIe generation and width against the card's maximum; the sysfs walk shows the kernel's view, including max_link_width. At the same generation, a narrower link is expected in a slot wired for fewer lanes; check the slot's electrical width (chassis or board manual) before reseating.";
+
+const RECOVERABLE_SENSE_KEYS = new Set(["Recovered Error", "Not Ready", "Unit Attention"]);
+
+// Sense keys the kernel maps to a target failure and does not retry
+// (scsi_check_sense). Constant text keyed on the sanitized sense key (R4-4).
+const TARGET_FAILURE_SUMMARY =
+  "The kernel treats this sense key as a target failure and does not retry the command. The key is under observed; cross-check SMART for the drive and the kernel lines around this one.";
+const TARGET_FAILURE_SENSE: Record<string, { title: string; summary: string }> = {
+  "Data Protect": {
+    title: "Drive refused a command (Data Protect)",
+    summary:
+      "The kernel reported a Data Protect sense key on this drive: the drive or LUN refused the command as write-protected or access-denied, and the kernel does not retry it. A read-only end-of-life SSD, a locked self-encrypting drive and a read-only LUN all report this; the Add. Sense line says which. Check SMART for the drive.",
+  },
+  "Blank Check": { title: "SCSI target-failure sense key", summary: TARGET_FAILURE_SUMMARY },
+  "Copy Aborted": { title: "SCSI target-failure sense key", summary: TARGET_FAILURE_SUMMARY },
+  "Volume Overflow": { title: "SCSI target-failure sense key", summary: TARGET_FAILURE_SUMMARY },
+  Miscompare: { title: "SCSI target-failure sense key", summary: TARGET_FAILURE_SUMMARY },
+};
+
 // YAML titles that name a source the answer did not read: mce_uncorrected
 // reads the EDAC UE count only, and was titled a machine check beside a note
 // saying machine-check lines were not decoded (R2b-16).
@@ -322,6 +363,16 @@ const TRIAGE_TITLE: Record<string, string> = {
 const TRIAGE_DROP_OBSERVED: Record<string, readonly string[]> = {
   ipmi_sel_critical: ["total_events_in_sel"],
 };
+
+// gpu_xid_critical's count is named for the live agent's 24 h dmesg window; a
+// paste has no window, and the count covers every event in it of any age,
+// undated ones included (R4-13).
+const TRIAGE_RENAME_OBSERVED: Record<string, Readonly<Record<string, string>>> = {
+  gpu_xid_critical: { events_in_window: "events_in_paste" },
+};
+
+// The evaluator's stand-in for a value it could not find, not a reading.
+const PLACEHOLDER_OBSERVED = new Set(["gpu_uuid", "gpu_name"]);
 
 // ---------------------------------------------------------------------------
 // Output contract (also the MCP tool's outputSchema)
@@ -643,6 +694,27 @@ function fixEvidence(evidence: Observed): Observed {
   return rest;
 }
 
+// The characters a paste-derived value may carry into a fix command. The
+// sanitizer's charsets keep "(", ")", ":", "#" and spaces, which are inert as
+// data but not as shell words: in zsh, `/(e:id:)` before a space runs `id`
+// (R4-2).
+const COMMAND_SAFE = /^[A-Za-z0-9._/+-]{1,64}$/;
+
+/**
+ * Evidence resolveFix may interpolate into commands: numbers, booleans and
+ * single command-safe tokens only, never a label (models, sensor lists). A
+ * value left out renders as the template's `<key>` placeholder. The
+ * explanation, which is prose, still reads the full evidence.
+ */
+function commandEvidence(evidence: Observed): Observed {
+  const out: Observed = {};
+  for (const [key, value] of Object.entries(evidence)) {
+    if (typeof value === "string" && (LABEL_KEYS.has(key) || !COMMAND_SAFE.test(value))) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 function subjectKind(ruleId: string, observed: Observed, ruleDomain: TriageDomain | undefined): SubjectKind {
   if (ruleId === "ecc_errors") return observed.source === "edac" ? "kernel" : "bmc";
   if (RULE_KIND[ruleId]) return RULE_KIND[ruleId];
@@ -747,11 +819,53 @@ export function triageRuleCopy(ruleId: string): {
   return { summary: triageSummary(ruleId), quick_check: fix?.quick_check ?? null, fix };
 }
 
+// A UTC time as the readers write it into the snapshot.
+const UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+/**
+ * A finding without its fix workflow, and the call that builds it. Resolving
+ * and interpolating a workflow is most of a finding's cost, and the answer
+ * keeps at most MAX_FINDINGS: a 200 KB paste of faulted vdevs resolved about
+ * 9,000 workflows and threw all but 30 away (R4-15). Dedupe and the cap read
+ * only the finding, so the fix is built for the ones the answer keeps.
+ */
+interface ShapedFinding {
+  finding: Finding;
+  fix: () => Finding["fix"];
+}
+
+interface FixAdjust {
+  /** gpu_pcie_link_degraded narrower than the card at the same generation. */
+  widthOnly: boolean;
+  /** A branch whose prior differs from the rule's YAML default. */
+  verdictPrior?: "recoverable" | "investigation";
+}
+
+function findingFix(ruleId: string, safeEvidence: Observed, locator: ServerLocator, adjust: FixAdjust): Finding["fix"] {
+  let fix: Finding["fix"];
+  try {
+    // The sanitized evidence, not the raw one: resolveFix interpolates
+    // {{key}} tokens into commands, and only re-sanitized values may land there.
+    const fixEv = fixEvidence(safeEvidence);
+    fix = buildFix(ruleId, resolveFix(ruleId, commandEvidence(fixEv), locator), fixEv);
+  } catch {
+    return null;
+  }
+  if (!fix) return null;
+  // The YAML explanation calls Gen 4 x8 on a Gen 4 x16 card "a slot, cable,
+  // or firmware issue", beside a summary that calls it expected in a slot
+  // wired for fewer lanes (R4-10).
+  if (adjust.widthOnly && fix.quick_check) fix.quick_check.explanation = PCIE_WIDTH_ONLY_EXPLANATION;
+  if (adjust.verdictPrior) fix.verdict_prior = adjust.verdictPrior;
+  return fix;
+}
+
 function shapeFinding(
   alert: AlertResult,
   ruleDomain: TriageDomain | undefined,
   locator: ServerLocator,
-): Finding {
+  zonelessSel = false,
+): ShapedFinding {
   const meta = getRuleMetadata(alert.type);
   const safeEvidence = sanitizeEvidence(alert.evidence ?? {});
   const kind = subjectKind(alert.type, safeEvidence, ruleDomain);
@@ -776,16 +890,22 @@ function shapeFinding(
 
   const observed: Observed = {};
   const dropped = TRIAGE_DROP_OBSERVED[alert.type] ?? [];
-  for (const [k, v] of Object.entries(safeEvidence)) if (!used.has(k) && !dropped.includes(k)) observed[k] = v;
-
-  let fix: Finding["fix"] = null;
-  try {
-    // The sanitized evidence, not the raw one: resolveFix interpolates
-    // {{key}} tokens into commands, and only re-sanitized values may land there.
-    const fixEv = fixEvidence(safeEvidence);
-    fix = buildFix(alert.type, resolveFix(alert.type, fixEv, locator), fixEv);
-  } catch {
-    fix = null;
+  const renamed = TRIAGE_RENAME_OBSERVED[alert.type] ?? {};
+  for (const [k, v] of Object.entries(safeEvidence)) {
+    if (used.has(k) || dropped.includes(k) || (PLACEHOLDER_OBSERVED.has(k) && v === "unknown")) continue;
+    observed[renamed[k] ?? k] = v;
+  }
+  // The SEL printed its times with no zone; the "Z" the snapshot needs for
+  // the age comparisons would state one (R4-11).
+  if (zonelessSel && (ruleDomain === "ipmi_sel" || observed.source === "ipmi_sel")) {
+    for (const [k, v] of Object.entries(observed)) if (typeof v === "string" && UTC_SECONDS.test(v)) observed[k] = v.slice(0, -1);
+  }
+  // A span with one end undated covers only the dated events, and read as
+  // the span of all of them (R4-13).
+  const dated = (v: unknown) => typeof v === "string" && v !== "";
+  if (typeof observed.events_in_paste === "number" && observed.events_in_paste > 1 && dated(observed.first_event_iso) !== dated(observed.last_event_iso)) {
+    delete observed.first_event_iso;
+    delete observed.last_event_iso;
   }
 
   let severity = alert.severity;
@@ -795,6 +915,8 @@ function shapeFinding(
   // marks benign carries "recoverable" so it does not say "vendor-side" beside
   // "common and recoverable on their own" (R2-14).
   let recoverable = false;
+  let investigation = false;
+  let widthOnly = false;
   if (alert.type === "zfs_scrub_errors" && observed.scrub_never_run === true) {
     title = NEVER_SCRUBBED.title;
     summary = NEVER_SCRUBBED.summary;
@@ -803,13 +925,21 @@ function shapeFinding(
   // A recoverable sense key (Recovered Error, Not Ready, Unit Attention): the
   // evaluator itself calls these common and says to escalate only on repeats,
   // but that text is in the message this answer drops, and the YAML summary
-  // says "investigate immediately to prevent data loss" (R1-17).
-  if (alert.type === "disk_io_errors" && observed.scope === "scsi_sense" && severity !== "critical") {
+  // says "investigate immediately to prevent data loss" (R1-17). Only those
+  // three: Data Protect is a drive refusing writes, and the kernel does not
+  // retry it or the other target-failure keys (R4-4). Illegal Request and
+  // Vendor Specific keep the rule's own copy.
+  const senseKey = alert.type === "disk_io_errors" && observed.scope === "scsi_sense" && severity !== "critical" ? observed.sense_key : undefined;
+  if (typeof senseKey === "string" && RECOVERABLE_SENSE_KEYS.has(senseKey)) {
     observed.severity_basis = "recoverable_sense_key";
     title = "Recoverable SCSI sense key";
     summary =
-      "The kernel reported a recoverable SCSI sense key on this drive (for example Recovered Error, Not Ready or Unit Attention). These are common and recoverable on their own; cross-check SMART for the drive, and treat them as a fault only if they keep repeating.";
+      "The kernel reported a recoverable SCSI sense key on this drive (Recovered Error, Not Ready or Unit Attention). These are common and recoverable on their own; cross-check SMART for the drive, and treat them as a fault when they keep recurring in later logs.";
     recoverable = true;
+  } else if (typeof senseKey === "string" && TARGET_FAILURE_SENSE[senseKey]) {
+    observed.severity_basis = "target_failure_sense_key";
+    ({ title, summary } = TARGET_FAILURE_SENSE[senseKey]);
+    investigation = true;
   }
   // nvidia-smi's width maximum is the card's, never the slot's, and a paste has
   // no slot width (the agent reads it from sysfs). Narrower than the card with
@@ -825,31 +955,32 @@ function shapeFinding(
       title = "GPU PCIe link narrower than card maximum";
       summary =
         "The GPU's PCIe link is narrower than the card's maximum width at the same generation. nvidia-smi does not show the slot's electrical width, so this output cannot tell a slot wired for fewer lanes (expected, not a fault) from a link that trained down; check the slot's width before re-seating anything.";
+      widthOnly = true;
     }
   }
 
-  let investigation = false;
   if (alert.type === "psu_redundancy_loss" && observed.path === "aggregate-redundancy") {
     summary = PSU_AGGREGATE_SUMMARY;
     investigation = true;
   }
 
-  if (recoverable && fix) fix.verdict_prior = "recoverable";
-  if (investigation && fix) fix.verdict_prior = "investigation";
-
+  const adjust: FixAdjust = { widthOnly, verdictPrior: investigation ? "investigation" : recoverable ? "recoverable" : undefined };
   return {
-    rule_id: alert.type,
-    severity,
-    title,
-    subject,
-    summary,
-    observed,
-    fix,
+    finding: {
+      rule_id: alert.type,
+      severity,
+      title,
+      subject,
+      summary,
+      observed,
+      fix: null,
+    },
+    fix: () => findingFix(alert.type, safeEvidence, locator, adjust),
   };
 }
 
 // Timestamps and counters that differ between otherwise identical events.
-const VOLATILE_KEY = /timestamp|_iso$|^age_|^events_in_window$/;
+const VOLATILE_KEY = /timestamp|_iso$|^age_|^events_in_(?:window|paste)$/;
 
 function findingKey(f: Finding): string {
   const stable = Object.entries(f.observed)
@@ -859,16 +990,16 @@ function findingKey(f: Finding): string {
 }
 
 /** Collapse repeats (fifty identical NVMe resets) into one finding with a count. */
-function dedupeFindings(findings: Finding[]): Finding[] {
-  const byKey = new Map<string, { finding: Finding; n: number }>();
-  for (const f of findings) {
-    const key = findingKey(f);
+function dedupeFindings(findings: ShapedFinding[]): ShapedFinding[] {
+  const byKey = new Map<string, { shaped: ShapedFinding; n: number }>();
+  for (const s of findings) {
+    const key = findingKey(s.finding);
     const hit = byKey.get(key);
     if (hit) hit.n += 1;
-    else byKey.set(key, { finding: f, n: 1 });
+    else byKey.set(key, { shaped: s, n: 1 });
   }
-  return [...byKey.values()].map(({ finding, n }) =>
-    n > 1 ? { ...finding, observed: { ...finding.observed, occurrences: n } } : finding,
+  return [...byKey.values()].map(({ shaped, n }) =>
+    n > 1 ? { ...shaped, finding: { ...shaped.finding, observed: { ...shaped.finding.observed, occurrences: n } } } : shaped,
   );
 }
 
@@ -991,12 +1122,14 @@ const COMPONENTS_CHARS = 64;
  */
 function componentList(events: unknown): string | null {
   if (!Array.isArray(events)) return null;
-  const labels: string[] = [];
+  // A Set, not labels.includes: a SEL of thousands of distinct sensors was
+  // quadratic (R4-14).
+  const labels = new Set<string>();
   for (const e of events) {
     const label = isPlainObject(e) ? safeLabel(e.sensor, COMPONENTS_CHARS).replace(/,/g, " ").trim() : "";
-    if (label && !labels.includes(label)) labels.push(label);
+    if (label) labels.add(label);
   }
-  return boundedNameList(labels, ", ");
+  return boundedNameList([...labels], ", ");
 }
 
 /**
@@ -1168,14 +1301,18 @@ export function analyzeOutput(text: string, opts: AnalyzeOptions = {}): TriageAn
       evidence: { ...(a.evidence ?? {}), ...timing.evidence, ...(components ? { affected_components: components } : {}) },
     };
   });
-  const shaped = timed.map((a) => shapeFinding(a, ruleDomain.get(a.type), locator));
-  const ordered = dedupeFindings(shaped)
-    .map((f, i) => ({ f, i }))
+  const zonelessSel = active.some(({ result }) => result.domain === "ipmi_sel" && result.zoneless_times === true);
+  const deduped = dedupeFindings(timed.map((a) => shapeFinding(a, ruleDomain.get(a.type), locator, zonelessSel)));
+  const fixOf = new Map(deduped.map((s) => [s.finding, s.fix]));
+  const ordered = deduped
+    .map((s, i) => ({ f: s.finding, i }))
     .sort((a, b) => SEVERITY_RANK[a.f.severity] - SEVERITY_RANK[b.f.severity] || a.i - b.i)
     .map(({ f }) => f);
-  const findings = capFindings(ordered, MAX_FINDINGS);
-  if (ordered.length > findings.length) {
-    const note = `${ordered.length - findings.length} more findings were left out of this answer (${droppedRules(ordered, findings)}); paste a smaller section to see them.`;
+  const kept = capFindings(ordered, MAX_FINDINGS);
+  // Fix workflows only for the findings the answer keeps (R4-15).
+  const findings = kept.map((f) => ({ ...f, fix: fixOf.get(f)?.() ?? null }));
+  if (ordered.length > kept.length) {
+    const note = `${ordered.length - kept.length} more findings were left out of this answer (${droppedRules(ordered, kept)}); paste a smaller section to see them.`;
     notes.push(note);
     warnings.add(note);
   }
@@ -1270,7 +1407,7 @@ function nextCapture(
   };
   /** A detected output that ran no rule: capture it again, unless it said there was nothing to read. */
   const recapture = (r: ParserResult, why: string) => {
-    if (!r.nothing_to_report) return add(DOMAIN_GOAL[r.domain], r.recapture_why ? cleanNote(r.recapture_why) : why);
+    if (!r.nothing_to_report) return add(r.recapture_goal ?? DOMAIN_GOAL[r.domain], r.recapture_why ? cleanNote(r.recapture_why) : why);
     const next = NOTHING_TO_REPORT_NEXT[r.domain];
     if (next) add(next.goal, next.why);
   };

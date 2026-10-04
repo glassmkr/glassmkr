@@ -170,12 +170,57 @@ describe("JSON-RPC over POST: initialize -> tools/list -> tools/call", () => {
       const { body: res } = await rpc("tools/call", { name, arguments: args });
       const sc = res.result.structuredContent as Record<string, unknown>;
       const schema = advertised.get(name);
-      expect(schema.additionalProperties).toBe(false);
       for (const key of schema.required) expect(sc).toHaveProperty(key);
       for (const key of Object.keys(sc)) expect(Object.keys(schema.properties)).toContain(key);
       const verdict = ajv.getValidator(schema)(sc);
       expect(verdict.valid, `${name}: ${verdict.errorMessage ?? ""}`).toBe(true);
     }
+  });
+
+  // R4-7: the advertised schemas were closed at every level, so a client
+  // that listed tools before a deploy rejected every result that carried a new
+  // format, subject kind or field. The zod objects above stay strict; what a
+  // client caches accepts additions.
+  it("the advertised schemas accept an additive change (R4-7)", async () => {
+    const { body } = await rpc("tools/list", {});
+    const ajv = new AjvJsonSchemaValidator();
+    const advertised = new Map((body.result.tools as any[]).map((t) => [t.name, t.outputSchema]));
+    const { body: res } = await rpc("tools/call", { name: "analyze_server_output", arguments: { output: MDSTAT } });
+    const sc = structuredClone(res.result.structuredContent) as any;
+    sc.new_top_level = 1;
+    sc.input.new_input_key = "x";
+    sc.input.formats.push("storcli_show_all");
+    sc.findings[0].new_finding_key = true;
+    sc.findings[0].subject.kind = "nic";
+    sc.findings[0].subject.new_subject_key = "x";
+    sc.findings[0].fix.verdict_prior = "new-prior";
+    sc.findings[0].fix.quick_check.new_key = "x";
+    sc.findings[0].fix.steps[0].new_key = "x";
+    sc.next_capture.push({ goal: "hw_raid", command: "storcli /c0 show all", why: "x", new_key: 1 });
+    sc.continuous_monitoring.docs_url = "https://glassmkr.com/docs/getting-started";
+    const verdict = ajv.getValidator(advertised.get("analyze_server_output"))(sc);
+    expect(verdict.valid, verdict.errorMessage ?? "").toBe(true);
+
+    const capture = (await rpc("tools/call", { name: "get_capture_command", arguments: { goal: "all_disks" } })).body.result.structuredContent as any;
+    capture.goal = "hw_raid";
+    capture.commands[0].new_key = 1;
+    capture.new_key = 1;
+    expect(ajv.getValidator(advertised.get("get_capture_command"))(capture).valid).toBe(true);
+
+    const setup = (await rpc("tools/call", { name: "get_monitoring_setup", arguments: {} })).body.result.structuredContent as any;
+    setup.target = "edge";
+    setup.distro_family = "apk";
+    setup.source_url = "https://github.com/glassmkr/crucible/";
+    setup.steps[0].new_key = 1;
+    expect(ajv.getValidator(advertised.get("get_monitoring_setup"))(setup).valid).toBe(true);
+
+    // Open, but not empty: a value of the wrong type still fails.
+    const wrong = structuredClone(res.result.structuredContent) as any;
+    wrong.findings[0].severity = 3;
+    expect(ajv.getValidator(advertised.get("analyze_server_output"))(wrong).valid).toBe(false);
+    // The values a client can expect are still in the schema.
+    const analyze = advertised.get("analyze_server_output");
+    expect(analyze.properties.input.properties.formats.items.description).toContain("proc_mdstat");
   });
 
   it("answers an unrecognised paste with an empty result, not an error", async () => {

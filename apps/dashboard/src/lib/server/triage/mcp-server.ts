@@ -13,16 +13,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { take, type RateLimitConfig } from "$lib/server/auth/rate-limit.js";
 import { hashOAuthValueHex } from "$lib/server/oauth/crypto.js";
+import { advertisedSchema } from "./advertised-schema.js";
 import {
   TRIAGE_FORMATS,
-  analysisOutputShape,
+  analysisOutputSchema,
   analyzeOutput,
   renderAnalysisText,
 } from "./analyze.js";
 import {
   CAPTURE_GOALS,
   captureCommands,
-  captureOutputShape,
+  captureOutputSchema,
   normalizeDistroHint,
   renderCaptureText,
 } from "./capture.js";
@@ -30,7 +31,7 @@ import {
   SETUP_TARGETS,
   monitoringSetup,
   renderSetupText,
-  setupOutputShape,
+  setupOutputSchema,
 } from "./setup.js";
 import type { TriageParser } from "./types.js";
 
@@ -188,7 +189,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
     {
       title: "Analyze server output",
       description:
-        "Use this when the user pastes output from smartctl, zpool status, /proc/mdstat or mdadm --detail, dmesg or journalctl -k, ipmitool sel, or nvidia-smi and asks whether hardware is failing, degraded, or needs attention. " +
+        "Use this when the user pastes output from smartctl, zpool status, /proc/mdstat or mdadm --detail, dmesg or journalctl -k, ipmitool sel, or nvidia-smi -q, nvidia-smi nvlink --status or nvidia-smi --query-gpu CSV and asks whether hardware is failing, degraded, or needs attention. " +
         "Pass the pasted text verbatim in output (or only the relevant section if it is very long); do not summarize or reformat it first, because the readers depend on the exact layout. One paste may combine several outputs. " +
         "Returns findings from Glassmkr's deterministic alert rules with their fix workflows, the rules that ran and found no matching signal in this output, what a single paste cannot determine, and the command to capture more. " +
         "An empty findings list means no matching signal in this output, not that the server is healthy. Never state a cause the output does not state. " +
@@ -202,7 +203,8 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
         distro: distroSchema,
         format: formatSchema,
       },
-      outputSchema: analysisOutputShape,
+      // Open to additions; the strict analysisOutputSchema is the tests' (R4-7).
+      outputSchema: advertisedSchema(analysisOutputSchema),
       annotations: toolAnnotations("Analyze server output"),
       _meta: toolMeta("Checking the output against Glassmkr rules", "Checked against Glassmkr rules", ANALYZE_RESULT_META),
     },
@@ -252,7 +254,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
           .describe("What to check: all_disks (SMART for every disk), one_disk, nvme, raid_md (Linux software RAID), zfs, kernel_errors (dmesg and journalctl -k), gpu (nvidia-smi -q), nvlink, or bmc_events (IPMI System Event Log)."),
         distro: distroSchema,
       },
-      outputSchema: captureOutputShape,
+      outputSchema: advertisedSchema(captureOutputSchema),
       annotations: toolAnnotations("Get capture command"),
       _meta: toolMeta("Looking up the capture commands", "Capture commands ready"),
     },
@@ -289,7 +291,7 @@ export function createTriageMcpServer(options: TriageServerOptions = {}): McpSer
           .describe("hosted: report to the Glassmkr dashboard at app.glassmkr.com. self_hosted: run the open-source dashboard on your own hardware."),
         distro: distroSchema,
       },
-      outputSchema: setupOutputShape,
+      outputSchema: advertisedSchema(setupOutputSchema),
       annotations: toolAnnotations("Get monitoring setup"),
       _meta: toolMeta("Preparing the monitoring setup steps", "Monitoring setup steps ready"),
     },

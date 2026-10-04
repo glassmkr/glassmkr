@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
 import { kernelLogParser } from "../parsers/kernel-log";
-import { DISK_IO_GREP, analyzeOutput, renderAnalysisText } from "../analyze";
+import { DISK_IO_GREP, SEL_WINDOW_DAYS, analyzeOutput, renderAnalysisText } from "../analyze";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(__dirname, "fixtures", "kernel_log");
@@ -32,7 +32,7 @@ function evaluate(slice: Partial<Snapshot>): { alerts: AlertResult[]; errors: un
   try {
     const alerts = evaluateAlerts(slice as Snapshot, {
       muted_rules: MUTED,
-      ipmi_sel_critical_window_days: 3650,
+      ipmi_sel_critical_window_days: SEL_WINDOW_DAYS,
     });
     return { alerts, errors: [...errSpy.mock.calls] };
   } finally {
@@ -955,6 +955,22 @@ describe("Xid codes NVIDIA does not treat as a GPU fault (R3-2)", () => {
       ["gpu_xid_critical", "critical", 79],
     ]);
     expect(a.notes.find((n) => XID_NOTE.test(n))).toMatch(/^1 NVIDIA Xid event \(code 31\) was not raised/);
+  });
+
+  // R4-6: drivers before R495 log the process id with no name= after it.
+  it("older drivers' 13, 43 and 31 with a pid but no name= raise no critical finding (R4-6)", () => {
+    const a = quietAnalyze(fixture("synthetic-dmesg-T-xid-app-crash-r470.txt"));
+    expect(a.findings).toEqual([]);
+    const note = a.notes.find((n) => XID_NOTE.test(n))!;
+    expect(note).toMatch(/^3 NVIDIA Xid events \(codes 13, 43, 31\) were not raised/);
+    expect(note).toContain("13 and 31 from a process as application faults");
+  });
+
+  it("13 or 31 with pid=N but name=<unknown> stays critical (R4-6)", () => {
+    for (const code of [13, 31]) {
+      const a = quietAnalyze(`[ 9001.000001] NVRM: Xid (PCI:0000:3b:00): ${code}, pid=1, name=<unknown>, Ch 00000010\n`);
+      expect(a.findings.map((f) => [f.rule_id, f.severity])).toEqual([["gpu_xid_critical", "critical"]]);
+    }
   });
 
   it("the summary no longer says NVIDIA classes the code critical", () => {

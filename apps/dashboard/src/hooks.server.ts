@@ -17,6 +17,7 @@ import { startKeyExpiry } from "$lib/server/account/key-expiry-scheduler";
 import { startEndoflifeSync } from "$lib/server/endoflife/scheduler";
 import { registerGracefulShutdown } from "$lib/server/graceful-shutdown";
 import { demoDisposition } from "$lib/server/demo-access";
+import { isTriageUrl, scrubTriageEvent } from "$lib/server/triage/sentry-scrub";
 
 // Server-side Sentry init. Mirrors hooks.client.ts. No-op without
 // SENTRY_DSN env var so this file is safe to merge before the
@@ -30,13 +31,11 @@ if (process.env.SENTRY_DSN) {
     sendDefaultPii: false,
     tracesSampleRate: 0,
     // Paste triage promises that pasted command output is never stored. An
-    // unexpected throw would otherwise ship the request body with the event.
-    beforeSend(event) {
-      if (event.request?.url?.includes("/api/triage/")) {
-        delete event.request.data;
-      }
-      return event;
-    },
+    // unexpected throw would otherwise ship the request body with the event:
+    // the Http integration does not read it, and beforeSend drops it if
+    // anything else attached it (sentry-scrub.test.ts holds both).
+    integrations: [Sentry.httpIntegration({ ignoreIncomingRequestBody: (url) => isTriageUrl(url) })],
+    beforeSend: (event) => scrubTriageEvent(event),
   });
 }
 

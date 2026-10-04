@@ -12,7 +12,7 @@ tools:
 
 | Tool | What it does |
 |---|---|
-| `analyze_server_output` | Checks pasted `smartctl`, `zpool status`, `/proc/mdstat` or `mdadm --detail`, `dmesg` or `journalctl -k`, `ipmitool sel` and `nvidia-smi` output against Glassmkr's alert rules (the same rule code the dashboard runs) and returns the findings, the rules that ran with no matching signal in this output, what one paste cannot determine, and the command to capture more. |
+| `analyze_server_output` | Checks pasted `smartctl`, `zpool status`, `/proc/mdstat` or `mdadm --detail`, `dmesg` or `journalctl -k`, `ipmitool sel` and `nvidia-smi -q`, `nvidia-smi nvlink --status` or `nvidia-smi --query-gpu` CSV output against Glassmkr's alert rules (the same rule code the dashboard runs) and returns the findings, the rules that ran with no matching signal in this output, what one paste cannot determine, and the command to capture more. |
 | `get_capture_command` | Returns the exact commands that produce output the analyzer can read, for a goal such as all disks, ZFS, mdadm RAID, kernel errors, GPUs or the BMC event log. |
 | `get_monitoring_setup` | Returns the steps to install and enroll the open-source Crucible agent so the same rules run continuously. It never asks for a key; keys stay placeholders. |
 

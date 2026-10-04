@@ -428,7 +428,7 @@ per-call log line is disclosed in the privacy policy instead (B3).
 ### D3. Claude listing copy
 
 - **Name:** Glassmkr
-- **One-liner (161 chars):** Paste smartctl, zpool status, mdadm, dmesg, ipmitool SEL or nvidia-smi output and get a verdict from Glassmkr's open-source hardware alert rules, with fix steps.
+- **One-liner (164 chars):** Paste smartctl, zpool status, mdadm, dmesg, ipmitool SEL or nvidia-smi -q output and get a verdict from Glassmkr's open-source hardware alert rules, with fix steps.
 - **Description (1,980 chars, under 2,000):** the `longDescription` from
   `openai-plugin/plugin.json`, unchanged.
 - **Categories:** pick from the portal's list (developer tools or IT
@@ -439,7 +439,7 @@ per-call log line is disclosed in the privacy policy instead (B3).
 - **Support contact:** support@glassmkr.com
 - **Slug:** `glassmkr` (permanent)
 - **Use cases:** (1) check whether pasted smartctl, ZFS, mdadm, kernel log, IPMI
-  SEL or nvidia-smi output shows a hardware fault; (2) get the exact commands to
+  SEL or nvidia-smi -q output shows a hardware fault; (2) get the exact commands to
   capture that output; (3) get the steps to run the open-source agent for
   continuous monitoring.
 - **Test & launch instructions:** "No account or credentials are needed; the
@@ -453,7 +453,7 @@ per-call log line is disclosed in the privacy policy instead (B3).
 ### D4. Release notes (in `plugin.json`)
 
 Initial release: analyze pasted smartctl, zpool status, /proc/mdstat and mdadm
---detail, kernel log, ipmitool SEL and nvidia-smi output with Glassmkr's alert
+--detail, kernel log, ipmitool SEL and nvidia-smi -q output with Glassmkr's alert
 rules; capture commands for each goal; monitoring setup steps for the Crucible
 agent.
 

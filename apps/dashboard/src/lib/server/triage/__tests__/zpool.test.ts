@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
+import { SEL_WINDOW_DAYS } from "../analyze";
 import { zpoolParser } from "../parsers/zpool";
 
 const FIXTURES = join(__dirname, "fixtures", "zfs");
@@ -20,7 +21,7 @@ function fixture(name: string): string {
 function evaluate(snapshot: Partial<Snapshot>): AlertResult[] {
   return evaluateAlerts(snapshot as Snapshot, {
     muted_rules: listMetadataRuleTypes().filter((t) => !zpoolParser.rules.includes(t)),
-    ipmi_sel_critical_window_days: 3650,
+    ipmi_sel_critical_window_days: SEL_WINDOW_DAYS,
   });
 }
 

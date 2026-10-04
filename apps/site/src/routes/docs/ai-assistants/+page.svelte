@@ -11,7 +11,7 @@
 
 <svelte:head>
   <title>Use Glassmkr in ChatGPT and Claude: Glassmkr documentation</title>
-  <meta name="description" content="Paste smartctl, zpool status, mdadm, dmesg, ipmitool or nvidia-smi output into ChatGPT or Claude and get a verdict from Glassmkr's own alert rules. Connector URL, setup steps, limits, and what happens to the text you paste." />
+  <meta name="description" content="Paste smartctl, zpool status, mdadm, dmesg, ipmitool or nvidia-smi -q output into ChatGPT or Claude and get a verdict from Glassmkr's own alert rules. Connector URL, setup steps, limits, and what happens to the text you paste." />
   <link rel="canonical" href="https://glassmkr.com/docs/ai-assistants" />
 
   <meta property="og:type" content="article" />
@@ -36,7 +36,7 @@
     <header class="page-header">
       <p class="eyebrow">DOCS / AI ASSISTANTS</p>
       <h1>Use Glassmkr in ChatGPT and Claude</h1>
-      <p class="docs-subtitle">Paste the output of <code>smartctl</code>, <code>zpool status</code>, <code>mdadm</code>, <code>dmesg</code>, <code>ipmitool</code> or <code>nvidia-smi</code> into ChatGPT or Claude, and Glassmkr's own alert rules read it. The connector needs no account, no sign-in, and nothing installed on your servers.</p>
+      <p class="docs-subtitle">Paste the output of <code>smartctl</code>, <code>zpool status</code>, <code>mdadm</code>, <code>dmesg</code>, <code>ipmitool</code> or <code>nvidia-smi -q</code> into ChatGPT or Claude, and Glassmkr's own alert rules read it. The connector needs no account, no sign-in, and nothing installed on your servers.</p>
     </header>
 
     <section id="what">

@@ -117,11 +117,13 @@ function binaryStep(target: SetupTarget, family: DistroFamily): SetupStep {
 
 // The release binaries are built for glibc and init installs a systemd unit.
 // Alpine has musl and OpenRC, and BusyBox sha256sum has no --ignore-missing,
-// so every command the binary step gave failed there (R3-20).
+// so every command the binary step gave failed there (R3-20). The claim is
+// about these install paths only: ground-truth.yaml lists Alpine among the
+// agent's runtimes and keeps the two claims apart (R4-8).
 const ALPINE_STEP: SetupStep = {
-  title: "Alpine Linux is not supported yet",
+  title: "No packaged install for Alpine Linux",
   detail:
-    "The packaged agent does not run on Alpine: the single-file binary is built for glibc and its init installs a systemd unit, while Alpine uses musl and OpenRC, and the one-line installer supports apt and dnf only. The agent's source and issue tracker are at https://github.com/glassmkr/crucible.",
+    "The one-line installer and the single-file binary do not support Alpine: the installer handles apt and dnf only, and the binary is built for glibc and its init installs a systemd unit, while Alpine uses musl and OpenRC. This tool has no Alpine install steps; the agent's source and issue tracker are at https://github.com/glassmkr/crucible.",
   commands: [],
 };
 

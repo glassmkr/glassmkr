@@ -636,6 +636,7 @@ function parseIpmi(text: string): ParserResult {
   let unknownTimes = 0;
   let namedZones = 0;
   let zonelessTimes = 0;
+  let datedTimes = 0;
   let preClock = 0;
   const parsed: ParsedSel[] = unique.map((row) => {
     // Classify on the full text (as the collector does) so the length caps
@@ -646,6 +647,7 @@ function parseIpmi(text: string): ParserResult {
     const sensorType = classifySensor(sensorText);
     const time = row.dateCol ? selTimestamp(row.dateCol, row.timeCol, order) : { iso: "", namedZone: false };
     if (!time.iso) unknownTimes++;
+    else datedTimes++;
     if (time.namedZone) namedZones++;
     if (time.zoneless) zonelessTimes++;
     if (time.iso && time.iso < "2010") preClock++;
@@ -734,14 +736,18 @@ function parseIpmi(text: string): ParserResult {
     });
   }
   // The ISO time keeps the collector's UTC reading for the age comparisons,
-  // but ipmitool printed no zone, so the "Z" is an assumption (R3-14).
+  // but ipmitool printed no zone, so the "Z" is an assumption (R3-14). When no
+  // dated row has a zone the answer shows the times without it (R4-11); beside
+  // zoned rows it cannot, and the caveat is a warning the text block shows.
+  const allZoneless = zonelessTimes > 0 && zonelessTimes === datedTimes;
   if (zonelessTimes > 0) {
+    const suffix = allZoneless ? "" : " with a UTC suffix";
     notes.push({
-      level: "info",
+      level: allZoneless ? "info" : "warning",
       message:
         zonelessTimes === 1
-          ? "1 SEL time carries no time zone; it is shown as the BMC printed it with a UTC suffix, and the BMC clock's real zone is not in this output."
-          : `${zonelessTimes} SEL times carry no time zone; they are shown as the BMC printed them with a UTC suffix, and the BMC clock's real zone is not in this output.`,
+          ? `1 SEL time carries no time zone; it is shown as the BMC printed it${suffix}, and the BMC clock's real zone is not in this output.`
+          : `${zonelessTimes} SEL times carry no time zone; they are shown as the BMC printed them${suffix}, and the BMC clock's real zone is not in this output.`,
     });
   }
   if (preClock > 0) {
@@ -798,7 +804,7 @@ function parseIpmi(text: string): ParserResult {
   if (fans.length > 0) rules_checked.push("ipmi_fan_failure");
   if (psuReadable && (psus.length > 0 || psuRedundancy !== null)) rules_checked.push("psu_redundancy_loss");
 
-  return { domain: "ipmi_sel", formats, snapshot: { ipmi }, subjects, notes, rules_checked };
+  return { domain: "ipmi_sel", formats, snapshot: { ipmi }, subjects, notes, rules_checked, ...(allZoneless ? { zoneless_times: true as const } : {}) };
 }
 
 export const ipmiSelParser: TriageParser = {

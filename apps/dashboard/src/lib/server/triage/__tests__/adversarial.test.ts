@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { analyzeOutput } from "../analyze";
 import type { TriageFormat } from "../types";
-import { adversarialInputs } from "./adversarial-inputs";
+import { adversarialInputs, roundFourInputs } from "./adversarial-inputs";
 
 const SIZE = 200_000;
 const BUDGET_RATIO = 20;
@@ -91,4 +91,30 @@ describe("hostile 200 KB pastes stay linear", () => {
       }
     });
   }
+});
+
+// R4-14: the SEL component list was deduplicated with Array.includes, so a
+// paste of distinct sensors cost about five times one of a single sensor while
+// staying under the absolute budget above. The ratio pins it.
+describe("a SEL of distinct sensors costs about what one sensor does (R4-14)", () => {
+  it("distinct vs one sensor, 200 KB", () => {
+    const distinct = roundFourInputs(SIZE).find((i) => i.name === "ipmi: SEL of critical rows with distinct sensors")!.text;
+    const same = distinct.replace(/Memory #0x[0-9a-f]{4}/g, "Memory #0x0002");
+    const best = (text: string) => {
+      let ms = Infinity;
+      for (let i = 0; i < 5; i++) {
+        const started = performance.now();
+        analyzeOutput(text, { formatHint: "ipmitool_sel_elist" });
+        ms = Math.min(ms, performance.now() - started);
+      }
+      return ms;
+    };
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      best(same);
+      expect(best(distinct)).toBeLessThan(3 * best(same) + 5);
+    } finally {
+      log.mockRestore();
+    }
+  });
 });

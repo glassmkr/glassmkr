@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateAlerts, type AlertResult, type Snapshot } from "$lib/server/alerts/evaluator";
 import { listMetadataRuleTypes } from "$lib/server/alerts/fix-workflow/loader";
+import { SEL_WINDOW_DAYS } from "../analyze";
 import { mdraidParser } from "../parsers/mdraid";
 import type { ParserResult } from "../types";
 
@@ -25,7 +26,7 @@ function evaluate(snapshot: Partial<Snapshot>): { results: AlertResult[]; errors
   try {
     const results = evaluateAlerts(snapshot as Snapshot, {
       muted_rules: listMetadataRuleTypes().filter((t) => !mdraidParser.rules.includes(t)),
-      ipmi_sel_critical_window_days: 3650,
+      ipmi_sel_critical_window_days: SEL_WINDOW_DAYS,
     });
     return { results, errors };
   } finally {

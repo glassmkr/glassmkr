@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { analyzeOutput } from "../analyze";
+import { analyzeOutput, renderAnalysisText } from "../analyze";
 import { TRIAGE_TOOL_NAMES } from "../mcp-server";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "..", "..", "..");
@@ -86,6 +86,11 @@ describe("OpenAI plugin package matches the server", () => {
         expect(want, row.expected).not.toBeNull();
         const a = analyzeOutput(row.prompt);
         expect(a.findings.map((f) => [f.rule_id, f.severity]), row.prompt).toEqual([[want![1], want![2]]]);
+        // A paste has no time window, and "unknown" is a placeholder, not a
+        // reading (R4-13).
+        const text = renderAnalysisText(a);
+        expect(text).not.toMatch(/events_in_window|=unknown\b/);
+        expect(JSON.stringify(a.findings)).not.toMatch(/events_in_window|"unknown"/);
       }
     } finally {
       vi.restoreAllMocks();
