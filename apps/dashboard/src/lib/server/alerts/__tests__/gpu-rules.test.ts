@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import { evaluateAlerts, type AlertResult, type Snapshot } from "../evaluator";
+import { freshEventKeys } from "../event-stacking";
 import { healthySnapshot } from "./helpers";
 
 function alertsByType(snap: Snapshot, type: string): AlertResult[] {
@@ -329,6 +330,62 @@ describe("gpu_xid_critical", () => {
     expect(fired[0].severity).toBe("critical");
     expect(fired[0].evidence.gpu_uuid).toBe("unknown");
     expect(fired[0].title).toContain("0000:64:00");
+  });
+});
+
+// ============================================================================
+// gpu_xid_critical: undated XIDs and event stacking (Crucible #151)
+// ============================================================================
+//
+// When dmesg prints only the relative "[seconds since boot]" stamp, the agent
+// cannot date an Xid line. Older agents stamped it with the collection time;
+// newer ones send "". The agent also dedups undated lines per (bdf, code)
+// within one read, so an undated group is always one event whose raw_message
+// is the oldest such line still in the ring buffer.
+
+describe("gpu_xid_critical undated events and stacking", () => {
+  const xid79 = (timestamp_iso: string, raw_message: string) => ({
+    timestamp_iso,
+    xid_code: 79,
+    pci_bdf: "0000:3b:00",
+    severity: "critical" as const,
+    raw_message,
+  });
+  const emission = (ev: ReturnType<typeof xid79>) => {
+    const [a] = alertsByType(gpuSnapshot([gpuBase()], [ev]), "gpu_xid_critical");
+    return a.evidence;
+  };
+  const line = (uptime: string) => `[${uptime}] NVRM: Xid (PCI:0000:3b:00): 79, pid='<unknown>', name=<unknown>, GPU has fallen off the bus.`;
+
+  it("new agent: an undated XID still fires critical and carries an empty event time", () => {
+    const [a] = alertsByType(gpuSnapshot([gpuBase()], [xid79("", line(" 8312.441027"))]), "gpu_xid_critical");
+    expect(a.severity).toBe("critical");
+    expect(a.evidence.first_event_iso).toBe("");
+    expect(a.evidence.last_event_iso).toBe("");
+  });
+
+  it("new agent: the same undated XID re-reported on the next snapshot does not stack or re-notify", () => {
+    const first = emission(xid79("", line(" 8312.441027")));
+    const prior = [{ timestamp: "2026-10-03T10:00:00Z", ...first }];
+    expect(freshEventKeys("gpu_xid_critical", emission(xid79("", line(" 8312.441027"))), prior)).toEqual([]);
+  });
+
+  it("new agent: the XID recurring after a reboot (new kernel line) stacks and re-notifies", () => {
+    // The event alert stays open while consecutive snapshots emit it, so an
+    // XID already back in the ring buffer at the first post-boot snapshot
+    // lands on the still-open alert. Keyed on the empty time alone, a GPU
+    // falling off the bus again after the reboot matches the recorded key
+    // and refreshes silently.
+    const first = emission(xid79("", line(" 8312.441027")));
+    const prior = [{ timestamp: "2026-10-03T10:00:00Z", ...first }];
+    expect(freshEventKeys("gpu_xid_critical", emission(xid79("", line("  301.112233"))), prior)).toHaveLength(1);
+  });
+
+  it("old agent: a collection-time stamp still keys on the time (legacy, unchanged)", () => {
+    const first = emission(xid79("2026-10-03T10:00:00.000Z", line(" 8312.441027")));
+    const prior = [{ timestamp: "2026-10-03T10:00:00Z", ...first }];
+    expect(freshEventKeys("gpu_xid_critical", emission(xid79("2026-10-03T10:00:00.000Z", line(" 8312.441027"))), prior)).toEqual([]);
+    expect(freshEventKeys("gpu_xid_critical", emission(xid79("2026-10-03T10:01:00.000Z", line(" 8312.441027"))), prior)).toHaveLength(1);
   });
 });
 
