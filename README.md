@@ -38,6 +38,18 @@ back to us. Two third parties are contacted by default and you should know which
 the dashboard reads the endoflife.date dataset to judge OS support windows, and
 asks the npm registry which agent version is current. Both are lookups.
 
+## In an AI assistant
+
+Glassmkr's alert rules can also read command output you paste into ChatGPT,
+Claude or another MCP client, with no account and nothing installed: add
+`https://app.glassmkr.com/api/triage/mcp` as a remote MCP server. Setup steps and
+what happens to the pasted text:
+[glassmkr.com/docs/ai-assistants](https://glassmkr.com/docs/ai-assistants). The
+server code lives in `apps/dashboard/src/lib/server/triage/`, the directory
+submission package in [integrations/ai-assistants](integrations/ai-assistants/README.md).
+On a self-hosted dashboard the endpoint is off unless you set
+`MCP_TRIAGE_ENABLED=1`; see [SELF_HOSTING.md](SELF_HOSTING.md).
+
 ## Documentation
 
 - [SELF_HOSTING.md](SELF_HOSTING.md): install, backups, upgrades, retention, and

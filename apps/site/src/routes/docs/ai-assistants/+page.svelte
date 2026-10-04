@@ -71,6 +71,7 @@
       <p>The connector URL is:</p>
       <pre><code>https://app.glassmkr.com/api/triage/mcp</code></pre>
       <p>It takes no authentication: no account, no sign-in, no API key. You add it by URL, as below; that works today and does not depend on any directory listing.</p>
+      <p>This connector never connects to your servers and never reads a Glassmkr account. To give an assistant the live health and alerts of servers you already monitor, use the <a href="/docs/mcp">authenticated MCP server</a> at <code>https://app.glassmkr.com/mcp</code> instead.</p>
 
       <h3>ChatGPT</h3>
       <p>ChatGPT adds MCP servers by URL in developer mode. Whether you can turn developer mode on depends on your ChatGPT plan and, in a workspace, on its admin's policy.</p>
@@ -80,8 +81,8 @@
         <li>Enter a name, for example <code>Glassmkr triage</code>, and a short description if asked.</li>
         <li>Under <strong>Connection</strong>, enter <code>https://app.glassmkr.com/api/triage/mcp</code> as the MCP server URL. If the form asks for an authentication method, choose no authentication.</li>
         <li>Create the connection. ChatGPT lists the three tools it found: <strong>Analyze server output</strong>, <strong>Get capture command</strong> and <strong>Get monitoring setup</strong>.</li>
-        <li>If it is not already enabled, open your personal plugins at <a href="https://chatgpt.com/plugins?view=personal">chatgpt.com/plugins?view=personal</a> and install it.</li>
-        <li>Start a new chat, type <code>@</code> and choose the connector (or enable it from the tools menu), then paste your output.</li>
+        <li>Open your personal plugins at <a href="https://chatgpt.com/plugins?view=personal">chatgpt.com/plugins?view=personal</a>, open the connector, and select the plus button to install it.</li>
+        <li>Go back to the <a href="https://chatgpt.com">ChatGPT homepage</a>, switch the tab at the top from <strong>Chat</strong> to <strong>Work</strong>, and start a new Work chat. In the prompt box, type <code>@</code>, choose the connector, then paste your output.</li>
       </ol>
 
       <h3>Claude</h3>

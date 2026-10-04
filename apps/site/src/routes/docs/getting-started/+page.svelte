@@ -51,6 +51,9 @@
       <div class="callout">
         <strong>Automating, or onboarding many servers?</strong> The whole flow runs over the API, no dashboard clicks. A <code>write</code>-scoped account key (<code>gmk_acct_live_</code>) creates each server with <code>POST /api/v1/servers</code>, and the response returns that server's collector key. See the <a href="/docs/programmatic-api">Programmatic API quickstart</a>.
       </div>
+      <div class="callout">
+        <strong>Checked a paste in ChatGPT or Claude first?</strong> The agent runs the same alert rules on a schedule and keeps the history one paste cannot give: whether a counter is still climbing, whether an error came back after it was cleared, and whether a server stopped reporting.
+      </div>
       <p class="note">Last verified: 2026-08-30 against Crucible v1.1.1 (fresh installs on four validation hosts: Rocky, Debian, Alma, Ubuntu).</p>
     </section>
 

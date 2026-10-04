@@ -212,6 +212,7 @@
             </span>
           </li>
         </ol>
+        <p class="group-intro">Not ready to install anything? <a href="/docs/ai-assistants">Paste command output into ChatGPT or Claude</a> and the same alert rules read it, with no account.</p>
       </section>
 
       <section id="guides">
@@ -224,7 +225,7 @@
           <li><a href="/docs/rules">Alert rules</a><span>All {rulesData.length} rules, what each one watches, and the remediation it carries.</span></li>
           <li><a href="/docs/programmatic-api">Programmatic API</a><span>Account keys, scopes, rate limits, idempotency, and error shapes.</span></li>
           <li><a href="/docs/automated-onboarding">Automated onboarding</a><span>Enrolling hosts from Ansible, Terraform or a script.</span></li>
-          <li><a href="/docs/mcp">MCP</a><span>Querying your fleet from an AI tool, and what self-hosting it requires.</span></li>
+          <li><a href="/docs/mcp">MCP</a><span>Giving an AI client your own fleet's health and alerts through scoped OAuth, and what self-hosting it requires.</span></li>
           <li><a href="/docs/ai-assistants">ChatGPT and Claude</a><span>Paste command output into an AI assistant and get a verdict from Glassmkr's own alert rules. No account needed.</span></li>
           <li><a href="/docs/troubleshooting">Troubleshooting</a><span>When the agent will not start, or snapshots do not arrive.</span></li>
           <li><a href="/docs/faq">FAQ</a><span>The questions that come up before people install anything.</span></li>

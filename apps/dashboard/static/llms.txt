@@ -110,11 +110,21 @@ needs TLS in front and a few environment variables; see
 https://glassmkr.com/docs/mcp. The separate Bench project is archived and is no
 longer the MCP path.
 
+Paste triage: app.glassmkr.com also serves a separate, anonymous MCP endpoint at
+/api/triage/mcp. It runs the alert rules on command output a user pastes into an
+AI assistant (smartctl, zpool status, /proc/mdstat and mdadm --detail, dmesg or
+journalctl -k, ipmitool sel and sdr, nvidia-smi -q and nvlink --status). No
+authentication, never reads fleet data, read-only tools: analyze_server_output,
+get_capture_command, get_monitoring_setup. Off by default on a self-hosted
+dashboard (MCP_TRIAGE_ENABLED). See https://glassmkr.com/docs/ai-assistants
+
 ## Documentation
 
 - Getting started: https://glassmkr.com/docs/getting-started
 - Documentation index: https://glassmkr.com/docs
 - Alert rules: https://glassmkr.com/docs/rules
+- MCP server (your fleet): https://glassmkr.com/docs/mcp
+- Paste triage in AI assistants: https://glassmkr.com/docs/ai-assistants
 - Configuration: https://glassmkr.com/docs/configuration
 - Channels: https://glassmkr.com/docs/channels
 - API reference: https://glassmkr.com/docs/api

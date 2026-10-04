@@ -165,7 +165,7 @@ Everything else is non-retryable: retrying it unchanged will fail identically.
 `,
 
   "docs/mcp/llms.txt": () =>
-    header("Glassmkr MCP map", "A first-party MCP server over the same fleet data, with scoped OAuth.") +
+    header("Glassmkr MCP map", "A first-party MCP server over the same fleet data, with scoped OAuth, plus a separate anonymous paste-triage endpoint.") +
     `
 ## Endpoint and discovery
 

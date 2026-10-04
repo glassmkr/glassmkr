@@ -207,6 +207,7 @@
       <a href="/docs/getting-started">Getting started</a>
       <a href="/docs/self-hosting">Self-hosting</a>
       <a href="/docs/rules">Alert rules</a>
+      <a href="/docs/ai-assistants">AI assistants</a>
       <a href="/blog">Blog</a>
       <a href="/about">About</a>
     </nav>

@@ -67,6 +67,7 @@ unused devices: <none>
 | `scripts/validate-openai-plugin.mjs` | Checks the package against the final-submission rules (limits, URLs, icons, copy rules, review cases). |
 | `scripts/validate-openai-plugin.test.mjs` | Known-bad fixtures for that checker. |
 | `scripts/build-openai-plugin-zip.sh` | Validates, then writes `dist/glassmkr-openai-plugin-<version>.zip`. |
+| `mcp-registry/server.json` | The entry for the official MCP Registry (see below). Not published yet. |
 
 ```
 node integrations/ai-assistants/scripts/validate-openai-plugin.test.mjs
@@ -78,3 +79,20 @@ The server itself lives in `apps/dashboard/src/lib/server/triage/` and
 server daily and holds changed tool definitions until they pass its automated
 checks, so keep tool schemas backward compatible. Changes to anything in
 `openai-plugin/` need a new package version and a new OpenAI review.
+
+## Official MCP Registry
+
+`mcp-registry/server.json` is the remote server's entry for the official MCP
+Registry, which marketplaces and aggregators read; it stores metadata only.
+Its `version` is `TRIAGE_SERVER_VERSION` in `mcp-server.ts`: bump the two
+together.
+
+Publishing is Simon's step, not CI's, because the `com.glassmkr/*` namespace is
+proven with a key only he holds:
+
+1. Prove `glassmkr.com`, either with a DNS TXT record on the apex,
+   `v=MCPv1; k=ed25519; p=<public key>`, or with the same line served at
+   `https://glassmkr.com/.well-known/mcp-registry-auth` (it would go in
+   `apps/site/static/.well-known/`).
+2. From `mcp-registry/`, run `mcp-publisher login dns` (or `login http`) with
+   `--domain glassmkr.com` and the private key, then `mcp-publisher publish`.

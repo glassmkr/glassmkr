@@ -99,8 +99,8 @@ is no known reason it would not work behind your own TLS, but nobody has run it
 end to end on a self-hosted hostname yet. If you try it, the maintainer would
 genuinely like to hear how it went.
 
-The anonymous paste-triage endpoint (`/api/triage/mcp`, the one the public
-ChatGPT and Claude connectors use) is off on a self-hosted dashboard. It needs
+The anonymous paste-triage endpoint (`/api/triage/mcp`, which ChatGPT and
+Claude users add by URL) is off on a self-hosted dashboard. It needs
 no account, so turning it on exposes an unauthenticated endpoint; set
 `MCP_TRIAGE_ENABLED=1` only if you want that. It reuses the same
 `MCP_PUBLIC_ORIGIN` host check. Its rate limits live in Redis: the stock

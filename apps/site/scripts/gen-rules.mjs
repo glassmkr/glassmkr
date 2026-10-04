@@ -188,6 +188,7 @@ function writeLlmsFull(rules, docs) {
   lines.push("- Pricing: https://glassmkr.com/pricing");
   lines.push("- Documentation: https://glassmkr.com/docs");
   lines.push("- Trust + security: https://glassmkr.com/trust");
+  lines.push("- Paste triage in AI assistants: https://glassmkr.com/docs/ai-assistants");
   lines.push("- Per-rule pages: https://glassmkr.com/docs/rules/<rule_id>");
   lines.push("- Crucible agent source (AGPL-3.0-only): https://github.com/glassmkr/crucible");
   lines.push("");
@@ -205,6 +206,10 @@ function writeLlmsFull(rules, docs) {
   lines.push(`service at app.glassmkr.com is free up to ${HOSTED_NODE_CAP} nodes per account. AI`);
   lines.push("analysis points at any OpenAI-compatible endpoint via LLM_API_URL and is");
   lines.push("optional; leave it unset and everything else works.");
+  lines.push("A separate anonymous MCP endpoint, https://app.glassmkr.com/api/triage/mcp,");
+  lines.push("runs the alert rules that apply to command output a user pastes into an AI");
+  lines.push("assistant (smartctl, zpool status, mdadm, dmesg, ipmitool, nvidia-smi), with");
+  lines.push("no account and nothing installed.");
   lines.push("");
 
   // Guide pages: the full Markdown of each static docs page (derived from the
@@ -264,7 +269,7 @@ function writeLlmsIndex(crucibleVersion, ruleCount, docs) {
 
 > Open-source bare-metal infrastructure monitoring. AGPL-3.0-only dashboard and Crucible agent on npm, self-hostable from one compose file with no node limit. Optional hosted service, free up to ${HOSTED_NODE_CAP} nodes.
 
-Scoped maps, if your question is narrow: /docs/llms.txt (documentation), /docs/rules/llms.txt (the alert catalogue), /docs/api/llms.txt (REST, auth, errors), /docs/mcp/llms.txt (MCP endpoint, scopes, safety model). For the complete public documentation in a single file, see /llms-full.txt; it is large, so prefer a scoped map when one fits. Every page on glassmkr.com is also served as clean Markdown by appending .md to its URL (e.g. /vs/datadog.md, /pricing.md, homepage at /index.md); each page's HTML head also carries a <link rel="alternate" type="text/markdown">. Fetch the .md instead of scraping HTML. The whole site is server-rendered, so it also works without JavaScript.
+Scoped maps, if your question is narrow: /docs/llms.txt (documentation), /docs/rules/llms.txt (the alert catalogue), /docs/api/llms.txt (REST, auth, errors), /docs/mcp/llms.txt (the authenticated MCP endpoint, scopes, safety model, and the anonymous paste-triage endpoint). For the complete public documentation in a single file, see /llms-full.txt; it is large, so prefer a scoped map when one fits. Every page on glassmkr.com is also served as clean Markdown by appending .md to its URL (e.g. /vs/datadog.md, /pricing.md, homepage at /index.md); each page's HTML head also carries a <link rel="alternate" type="text/markdown">. Fetch the .md instead of scraping HTML. The whole site is server-rendered, so it also works without JavaScript.
 
 ## Quick reference
 
@@ -273,6 +278,7 @@ Scoped maps, if your question is narrow: /docs/llms.txt (documentation), /docs/r
 - Per-rule pages: https://glassmkr.com/docs/rules
 - Pricing: https://glassmkr.com/pricing
 - Trust + security: https://glassmkr.com/trust
+- Paste triage in AI assistants (anonymous MCP endpoint, no account): https://glassmkr.com/docs/ai-assistants (endpoint: https://app.glassmkr.com/api/triage/mcp)
 - Verticals: https://glassmkr.com/for-storage, https://glassmkr.com/for-compute, https://glassmkr.com/for-gpu, https://glassmkr.com/for-providers
 - Comparison pages: https://glassmkr.com/vs/datadog, /vs/prometheus, /vs/netdata, /vs/checkmk, /vs/zabbix, /vs/librenms, /vs/cloudwatch, /vs/newrelic
 - Agent source (AGPL-3.0-only): https://github.com/glassmkr/crucible
