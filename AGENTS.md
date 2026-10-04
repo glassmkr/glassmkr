@@ -98,7 +98,10 @@ the generator instead.
 
 The rule definitions themselves are YAML under the alert rules directory and are
 the single source of truth for both runtime evaluation and the published
-catalogue. A rule change starts there.
+catalogue. A rule change starts there. One rule surface is hand-maintained:
+`apps/dashboard/static/llms.txt` lists every rule id under the priority its YAML
+declares, and `check-machine-surface.mjs` fails until a new, renamed or
+re-prioritized rule is listed there.
 
 Adding a new `/docs/<slug>.md` twin means adding the slug to
 `STATIC_DOC_SLUGS` in `docs-md.mjs`.
