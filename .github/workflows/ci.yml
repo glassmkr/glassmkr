@@ -145,7 +145,9 @@ jobs:
   # belongs to session starts and launch gate 5, not per-push CI.
   pivot-integrity:
     name: Ground truth + notices + SBOM
-    runs-on: ubuntu-latest
+    # Pinned for the Playwright install in the rendered-output step: 1.59.1
+    # has no chromium deps for ubuntu 26.04 (see e2e.yml).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
