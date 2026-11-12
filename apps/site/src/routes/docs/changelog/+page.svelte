@@ -75,6 +75,25 @@
       <p class="docs-subtitle">Behavior changes, operational improvements, and notable fixes for Glassmkr and the Crucible agent. Most recent at top.</p>
     </header>
 
+    <section class="release" id="2026-11-12">
+      <h2><a href="#2026-11-12" class="anchor-link">#</a>2026-11-12</h2>
+
+      <h3>Crucible v1.2.5</h3>
+      <p><strong>Current.</strong> The agent is at v1.2.5 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Collector parsing fixes and a security update of the agent's HTTP client.</p>
+      <p><strong>Older distributions now report out-of-memory kills and kernel I/O errors.</strong> On a host whose <code>dmesg</code> predates the <code>--since</code> option (util-linux before 2.35: RHEL 8, Debian 10, Ubuntu 20.04) the recent out-of-memory kill count was always 0 and the recent kernel I/O error count was always missing, so <code>oom_kills</code>, the out-of-memory corroboration of <code>mem_pressure_high</code>, and the I/O error input of <code>disk_io_errors</code> could not fire there. The agent now falls back to a full kernel-log read and applies the same window itself (5 minutes for out-of-memory kills, 10 minutes for I/O errors), so older events are not counted. The out-of-memory count also works with busybox <code>dmesg</code>.</p>
+      <p><strong>ZFS pools are classified and rated more accurately.</strong> A dRAID vdev is now classified as dRAID; it was reported as a stripe, so a degraded dRAID pool was described as having no redundancy. A pool whose most recent scan is a resilver or a canceled scrub is no longer reported as never scrubbed: <code>zpool status</code> shows only the latest scan, so those lines hide an earlier scrub rather than prove there was none. This revises the v1.2.2 behavior, and a pool that truly was never scrubbed and has since resilvered no longer keeps the never-scrubbed advisory. A degraded raidz2 whose only failed member is already covered by a hot spare is now rated a warning instead of critical; a second failed member, or two spares rebuilding at once, still rates critical.</p>
+      <p><strong>A degraded software RAID array no longer names the wrong disk.</strong> Only members the kernel marks faulty are named as failed. Previously the rebuild target could be named as the failed disk, which told the operator to pull the drive that was resyncing. Arrays that were skipped or misread are now reported: inactive arrays, auto-read-only arrays, named arrays (<code>md_&lt;name&gt;</code>) and members with a dash in the name (<code>dm-0</code>). A broken raid0 or linear array is now reported degraded instead of healthy.</p>
+      <p><strong>Benign kernel lines no longer raise disk alerts, and real medium errors are no longer missed.</strong> "Shutdown timeout set to 8 seconds" is printed on every boot of every NVMe host and was read as a controller fault that raised a critical <code>disk_io_errors</code>. Real aborts, controller resets and dead or disabled controllers still count. SCSI sense lines in the modern format are now matched, so medium errors that were missed are reported, while sense reports that are not media faults (No Sense, the Recovered Error a <code>smartctl</code> or <code>hdparm</code> pass-through returns, the Illegal Request a WRITE SAME or UNMAP probe gets) are skipped.</p>
+      <p><strong>IPMI and GPU readings are interpreted correctly.</strong> "Non-critical" threshold crossings in the event log are now warnings instead of critical, and an orderly power-off is informational. Fan status now reads the extended threshold codes, so a fan below its lower critical threshold that still reports a non-zero RPM no longer reads as ok. Memory ECC counts from the event log count asserted events only; each assert and deassert pair used to count twice. An event with no readable time is now reported with an empty time instead of the collection time; such an event used to look brand new on every snapshot, so the same IPMI or XID event could notify again each cycle. NVIDIA <code>retired_pages.pending</code>, printed as Yes or No, is now read as 1 or 0 instead of being dropped, so a memory page waiting for a reboot to retire is visible to <code>gpu_uncorrected_ecc</code>.</p>
+      <p><strong>Security update of the HTTP client.</strong> undici, the agent's only outbound path, moves from 8.10.0 to 8.12.4, which fixes 19 published advisories, 7 of them rated high. No code change was needed and the minimum Node.js version is unchanged.</p>
+      <p><strong>Requires <code>glassmkr-crucible init</code> to take full effect.</strong> Two existing actions of the narrow privileged helper now run a different command. A host running the unprivileged service user that upgrades without <code>init</code> keeps counting as before and does not get the fallback for older <code>dmesg</code>. No config or CLI changes.</p>
+
+      <h3>Upgrade</h3>
+      <pre><code>sudo npm install -g @glassmkr/crucible@1.2.5
+sudo glassmkr-crucible init
+sudo systemctl restart glassmkr-crucible</code></pre>
+    </section>
+
     <section class="release" id="2026-10-04">
       <h2><a href="#2026-10-04" class="anchor-link">#</a>2026-10-04</h2>
 
@@ -89,7 +108,7 @@
       <h2><a href="#2026-09-16" class="anchor-link">#</a>2026-09-16</h2>
 
       <h3>Crucible v1.2.4</h3>
-      <p><strong>Current.</strong> The agent is at v1.2.4 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. GPU and CLI fixes. NVIDIA Xid 154 ("GPU recovery action changed to GPU Reset Required") is now treated as a critical GPU error: it follows Xid 119 (a GSP timeout) and leaves the affected GPU unusable until a power cycle, so it now pages like the other fatal Xids instead of passing unnoticed. Separately, <code>--help</code> and <code>--version</code> now respond before the agent runtime loads, so they still work when the runtime cannot start, and an unreadable state file is reported as unreadable rather than misreported as corrupt. Upgrade the agent to receive these; no new privileged wrapper action, so no wrapper refresh is required.</p>
+      <p><strong>Superseded by v1.2.5.</strong> The agent was at v1.2.4 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. GPU and CLI fixes. NVIDIA Xid 154 ("GPU recovery action changed to GPU Reset Required") is now treated as a critical GPU error: it follows Xid 119 (a GSP timeout) and leaves the affected GPU unusable until a power cycle, so it now pages like the other fatal Xids instead of passing unnoticed. Separately, <code>--help</code> and <code>--version</code> now respond before the agent runtime loads, so they still work when the runtime cannot start, and an unreadable state file is reported as unreadable rather than misreported as corrupt. Upgrade the agent to receive these; no new privileged wrapper action, so no wrapper refresh is required.</p>
 
       <h3>Upgrade</h3>
       <pre><code>sudo npm install -g @glassmkr/crucible@1.2.4
