@@ -75,11 +75,27 @@
       <p class="docs-subtitle">Behavior changes, operational improvements, and notable fixes for Glassmkr and the Crucible agent. Most recent at top.</p>
     </header>
 
+    <section class="release" id="2026-11-13">
+      <h2><a href="#2026-11-13" class="anchor-link">#</a>2026-11-13</h2>
+
+      <h3>Crucible v1.2.6</h3>
+      <p><strong>Current.</strong> The agent is at v1.2.6 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. A security update of the library that validates the agent's config file.</p>
+      <p><strong>Security update of the config validator.</strong> zod moves from version 3 to version 4 (4.6.7), which fixes GHSA-mrhx-c7xc-m3w5, rated high. No release in the zod 3 line fixes it. zod validates the agent's config file and is used nowhere else in the agent. v1.2.5 shipped with this advisory open; with v1.2.6, <code>npm audit --omit=dev</code> reports no known advisories in the agent's production dependencies (checked 2026-11-13).</p>
+      <p><strong>Config validation behaves the same.</strong> 129 config files, valid and invalid, were run through the config loader on both zod versions: the same 51 load and the same 78 are refused, the loaded values and defaults are identical, the warnings are identical, and every refusal blames the same key.</p>
+      <p><strong>The wording inside a config refusal changes.</strong> The line still starts with <code>[config] Refusing to start: &lt;path&gt; failed integrity or schema validation:</code> followed by the validator's issue list as JSON, but zod 4 phrases the issues differently: "Too small: expected number to be &gt;=60" where v1.2.5 printed "Number must be greater than or equal to 60". A script that matches on the old wording needs updating.</p>
+      <p><strong>Nothing to do when upgrading from v1.2.5.</strong> No config, CLI, privileged helper or snapshot change, and the minimum Node.js version (22.19.0) is unchanged. When upgrading from v1.2.4 or earlier, the v1.2.5 note below still applies: <code>glassmkr-crucible init</code> has to run on a host running the unprivileged service user.</p>
+
+      <h3>Upgrade</h3>
+      <pre><code>sudo npm install -g @glassmkr/crucible@1.2.6
+sudo glassmkr-crucible init
+sudo systemctl restart glassmkr-crucible</code></pre>
+    </section>
+
     <section class="release" id="2026-11-12">
       <h2><a href="#2026-11-12" class="anchor-link">#</a>2026-11-12</h2>
 
       <h3>Crucible v1.2.5</h3>
-      <p><strong>Current.</strong> The agent is at v1.2.5 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Collector parsing fixes and a security update of the agent's HTTP client.</p>
+      <p><strong>Superseded by v1.2.6.</strong> The agent was at v1.2.5 on npm (<code>@glassmkr/crucible</code>), AGPL-3.0-only. Collector parsing fixes and a security update of the agent's HTTP client.</p>
       <p><strong>Older distributions now report out-of-memory kills and kernel I/O errors.</strong> On a host whose <code>dmesg</code> predates the <code>--since</code> option (util-linux before 2.35: RHEL 8, Debian 10, Ubuntu 20.04) the recent out-of-memory kill count was always 0 and the recent kernel I/O error count was always missing, so <code>oom_kills</code>, the out-of-memory corroboration of <code>mem_pressure_high</code>, and the I/O error input of <code>disk_io_errors</code> could not fire there. The agent now falls back to a full kernel-log read and applies the same window itself (5 minutes for out-of-memory kills, 10 minutes for I/O errors), so older events are not counted. The out-of-memory count also works with busybox <code>dmesg</code>.</p>
       <p><strong>ZFS pools are classified and rated more accurately.</strong> A dRAID vdev is now classified as dRAID; it was reported as a stripe, so a degraded dRAID pool was described as having no redundancy. A pool whose most recent scan is a resilver or a canceled scrub is no longer reported as never scrubbed: <code>zpool status</code> shows only the latest scan, so those lines hide an earlier scrub rather than prove there was none. This revises the v1.2.2 behavior, and a pool that truly was never scrubbed and has since resilvered no longer keeps the never-scrubbed advisory. A degraded raidz2 whose only failed member is already covered by a hot spare is now rated a warning instead of critical; a second failed member, or two spares rebuilding at once, still rates critical.</p>
       <p><strong>A degraded software RAID array no longer names the wrong disk.</strong> Only members the kernel marks faulty are named as failed. Previously the rebuild target could be named as the failed disk, which told the operator to pull the drive that was resyncing. Arrays that were skipped or misread are now reported: inactive arrays, auto-read-only arrays, named arrays (<code>md_&lt;name&gt;</code>) and members with a dash in the name (<code>dm-0</code>). A broken raid0 or linear array is now reported degraded instead of healthy.</p>
